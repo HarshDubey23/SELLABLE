@@ -36,6 +36,11 @@ Incoming Razorpay webhooks verify HMAC on the raw body before parsing,
 dedupe on `X-Razorpay-Event-Id`, and apply a status hierarchy so
 out-of-order events never downgrade the payment ledger.
 
+## Philosophy
+
+[Why no LLM decides money](docs/PHILOSOPHY.md) — LLM proposes,
+deterministic policy disposes, audit log remembers.
+
 ## Docs
 
 - [docs/blueprint.md](docs/blueprint.md) — full build spec
