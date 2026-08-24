@@ -85,3 +85,12 @@ R1-R10 pure functions, zero LLM imports.
 Fail-closed engine, first-violation-wins.
 30 hand-written tests.
 Audit hash chain + tamper detection.
+
+## Post-EOD note: in-memory state needs persistence (Day 3 carryover)
+processed_event_ids, payment_ledger, quotes, orders, idempotency_seen,
+and the audit chain are all in-memory. A server restart wipes them. For
+Day 2 demo scale this is fine; Day 3 must persist:
+- audit chain -> JSONL file (chain.py docstring already commits to this)
+- processed_event_ids -> SQLite or Redis set (webhook idempotency)
+- orders + idempotency_seen -> SQLite (so a restart doesn't double-create)
+- quotes -> optional, can stay in-memory (30-min TTL self-expires)
