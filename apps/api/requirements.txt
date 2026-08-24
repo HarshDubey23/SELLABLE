@@ -6,6 +6,7 @@ pydantic
 requests
 pytest
 httpx
+google-genai
 # dev
 ruff
 mypy

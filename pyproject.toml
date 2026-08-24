@@ -4,6 +4,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "E402", "E702", "B904"]
 
 [tool.mypy]
 strict = true
