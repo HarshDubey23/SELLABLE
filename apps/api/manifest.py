@@ -35,6 +35,10 @@ MANIFEST = {
         {"name": "check_payment", "method": "GET",
          "endpoint": "/tools/check_payment/{order_id}",
          "params": {"order_id": "string"}},
+        {"name": "injection_demo", "method": "GET",
+         "endpoint": "/demo/injection/{n}",
+         "params": {"n": "string (I1-I8 or 1-8)"},
+         "description": "Shows one adversarial injection payload and the deterministic gateway verdict that neutralizes it"},
     ],
     "payment": {
         "gateway": "razorpay_test",

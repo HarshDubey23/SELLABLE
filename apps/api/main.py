@@ -11,6 +11,7 @@ from .tools import router as tools_router
 from .webhook.receiver import router as webhook_router, processed_event_ids, payment_ledger
 from .audit import chain as audit_chain
 from .gateway.proof import compute_proof
+from .demo import router as demo_router
 
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 
@@ -21,6 +22,7 @@ print(f"[BOOT] audit chain verify -> {CHAIN_OK_AT_BOOT}")
 app.include_router(manifest_router)
 app.include_router(tools_router)
 app.include_router(webhook_router)
+app.include_router(demo_router)
 
 
 @app.get("/health")
