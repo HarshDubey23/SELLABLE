@@ -39,6 +39,12 @@ MANIFEST = {
          "endpoint": "/demo/injection/{n}",
          "params": {"n": "string (I1-I8 or 1-8)"},
          "description": "Shows one adversarial injection payload and the deterministic gateway verdict that neutralizes it"},
+        {"name": "gateway_proof", "method": "GET",
+         "endpoint": "/gateway/proof", "params": {},
+         "description": "Machine-provable purity report for the policy gateway (no LLM/network/IO patterns, source SHA-256)"},
+        {"name": "audit_timeline", "method": "GET",
+         "endpoint": "/audit/timeline", "params": {},
+         "description": "Human-readable HTML rendering of the hash-chained audit ledger"},
     ],
     "payment": {
         "gateway": "razorpay_test",
