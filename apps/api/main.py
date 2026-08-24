@@ -10,6 +10,7 @@ from .manifest import router as manifest_router
 from .tools import router as tools_router
 from .webhook.receiver import router as webhook_router, processed_event_ids, payment_ledger
 from .audit import chain as audit_chain
+from .gateway.proof import compute_proof
 
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 
@@ -35,3 +36,12 @@ def health():
 @app.get("/audit")
 def get_audit_chain():
     return {"entries": audit_chain.entries(), "verified": audit_chain.verify()}
+
+
+@app.get("/gateway/proof")
+def gateway_proof():
+    """Machine-provable purity report for the policy gateway."""
+    proof = compute_proof()
+    audit_chain.append("system", "PROOF_EMITTED",
+                       {"source_sha256": proof["source_sha256"]})
+    return proof
