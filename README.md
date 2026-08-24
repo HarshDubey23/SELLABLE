@@ -1,5 +1,7 @@
 # SELLABLE
 
+[![CI](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml)
+
 SELLABLE — agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode.
 
 ## Quick start
