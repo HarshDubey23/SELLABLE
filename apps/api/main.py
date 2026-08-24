@@ -1,18 +1,20 @@
-import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # .env from project root (2 levels up from apps/api/main.py)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from fastapi import FastAPI
+
+from .audit import chain as audit_chain
+from .audit.timeline import router as timeline_router
+from .demo import router as demo_router
+from .gateway.proof import compute_proof
 from .manifest import router as manifest_router
 from .tools import router as tools_router
-from .webhook.receiver import router as webhook_router, processed_event_ids, payment_ledger
-from .audit import chain as audit_chain
-from .gateway.proof import compute_proof
-from .demo import router as demo_router
-from .audit.timeline import router as timeline_router
+from .webhook.receiver import payment_ledger, processed_event_ids
+from .webhook.receiver import router as webhook_router
 
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 

@@ -1,5 +1,7 @@
 """T23, T25: R9 signature — valid passes, missing/invalid fails closed."""
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ.setdefault("MISSION_HMAC_KEY", "test-key-not-a-real-secret")

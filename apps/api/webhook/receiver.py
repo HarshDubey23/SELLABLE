@@ -13,7 +13,9 @@ import hashlib
 import hmac
 import json
 import os
+
 from fastapi import APIRouter, Header, HTTPException, Request
+
 from ..audit import chain as audit_chain
 
 router = APIRouter()

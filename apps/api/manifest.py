@@ -1,7 +1,6 @@
 """Agent-native discovery: /.well-known/agent-manifest.json"""
 
 from fastapi import APIRouter
-from .products import get_categories
 
 router = APIRouter()
 
@@ -45,6 +44,9 @@ MANIFEST = {
         {"name": "audit_timeline", "method": "GET",
          "endpoint": "/audit/timeline", "params": {},
          "description": "Human-readable HTML rendering of the hash-chained audit ledger"},
+        {"name": "demo_e2e", "method": "GET",
+         "endpoint": "/demo/e2e", "params": {},
+         "description": "Runs one complete end-to-end mission flow with real Razorpay test order creation"},
     ],
     "payment": {
         "gateway": "razorpay_test",

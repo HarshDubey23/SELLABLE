@@ -6,17 +6,22 @@ Nothing a client sends can change a price. This kills I3/I5 by design.
 `razorpay` is imported ONLY inside razorpay_client (single import boundary).
 """
 
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
-from typing import Optional
-import hashlib, hmac, json, os, time
+import hashlib
+import hmac
+import json
+import os
+import time
 
-from .products import CATALOG, search as catalog_search
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
 from . import razorpay_client as rp_client
+from .audit import chain
+from .gateway import mission_verify
 from .gateway.engine import evaluate
 from .gateway.types import Mission, Proposal, ProposalItem
-from .gateway import mission_verify
-from .audit import chain
+from .products import CATALOG
+from .products import search as catalog_search
 
 router = APIRouter()
 
@@ -51,7 +56,7 @@ class CreateOrderReq(BaseModel):
     quote_id: str
     proposal_hash: str
     # Day 2: gateway not built yet. Day 3 makes approve_seq required.
-    approve_seq: Optional[int] = None
+    approve_seq: int | None = None
 
 
 class VerdictSeq:
@@ -60,9 +65,9 @@ class VerdictSeq:
 
 
 @router.get("/tools/search_products")
-async def tool_search(query: Optional[str] = None,
-                      category: Optional[str] = None,
-                      max_price_paise: Optional[int] = None,
+async def tool_search(query: str | None = None,
+                      category: str | None = None,
+                      max_price_paise: int | None = None,
                       limit: int = 10):
     results = catalog_search(query or "", category, max_price_paise)[:limit]
     return {

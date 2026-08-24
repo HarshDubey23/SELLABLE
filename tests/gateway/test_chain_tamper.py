@@ -1,5 +1,8 @@
 """T30: audit chain — tamper one byte -> verify() False."""
-import os, sys, importlib
+import importlib
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import apps.api.audit.chain as chain

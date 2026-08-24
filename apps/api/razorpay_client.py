@@ -1,6 +1,7 @@
-import razorpay  # THE ONLY PLACE THIS IMPORT LIVES IN THE CODEBASE
-from functools import lru_cache
 import os
+from functools import lru_cache
+
+import razorpay  # THE ONLY PLACE THIS IMPORT LIVES IN THE CODEBASE
 
 
 @lru_cache(maxsize=1)

@@ -102,9 +102,14 @@ def main() -> int:
                             full_page=False)
             print("[screenshots] day02_openapi.png")
 
+            page.goto(f"{BASE}/demo/injection/I1", wait_until="networkidle")
+            page.screenshot(path=str(LOG / "day02_injection_demo.png"),
+                            full_page=True)
+            print("[screenshots] day02_injection_demo.png")
+
             browser.close()
 
-        # TXT evidence
+        # TXT / JSON evidence
         proof = urllib.request.urlopen(
             f"{BASE}/gateway/proof", timeout=5).read().decode()
         (LOG / "day02_gateway_proof.txt").write_text(proof, encoding="utf-8")
@@ -112,6 +117,11 @@ def main() -> int:
         inj = urllib.request.urlopen(
             f"{BASE}/demo/injection/I1", timeout=5).read().decode()
         (LOG / "day02_injection_demo.txt").write_text(inj, encoding="utf-8")
+        try:
+            inj_json = json.dumps(json.loads(inj), indent=2)
+            (LOG / "day02_injection_demo.json").write_text(inj_json, encoding="utf-8")
+        except Exception:
+            (LOG / "day02_injection_demo.json").write_text(inj, encoding="utf-8")
 
         smoke = subprocess.run([_find_bash(), "scripts/smoke.sh"], cwd=ROOT,
                                capture_output=True, text=True)

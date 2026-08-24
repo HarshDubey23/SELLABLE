@@ -6,8 +6,14 @@ Usage:
     python tests/send_test_webhook.py outoforder   # captured then authorized
     python tests/send_test_webhook.py badsig
 """
-import hmac, hashlib, json, sys, os, requests
+import hashlib
+import hmac
+import json
+import os
+import sys
 from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")

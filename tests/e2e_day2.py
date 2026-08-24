@@ -1,9 +1,14 @@
 """E2E proof: sign mission -> propose (approve+reject) -> quote -> order -> replay."""
-import os, sys, json, time
+import json
+import os
+import sys
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dotenv import load_dotenv
 from pathlib import Path
+
 import requests
+from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from apps.api.gateway import mission_verify as mv

@@ -1,5 +1,7 @@
 """T26-T28: R10 expiry — valid / expired / exact-boundary fails closed."""
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from apps.api.gateway.rules import rule_r10_expiry

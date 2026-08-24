@@ -1,5 +1,7 @@
 """T01-T03: R1 budget — under / over / exact boundary."""
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from apps.api.gateway.rules import rule_r1_budget
