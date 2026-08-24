@@ -32,7 +32,7 @@ mission_state = {}     # mission_id -> {"proposal_ts": [...]}
 
 def _hmac(payload: str) -> str:
     return hmac.new(
-        os.environ["RAZORPAY_WEBHOOK_SECRET"].encode(),
+        os.environ["MISSION_HMAC_KEY"].encode(),
         payload.encode(), hashlib.sha256
     ).hexdigest()
 
