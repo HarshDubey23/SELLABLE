@@ -64,26 +64,6 @@ def _find_bash() -> str:
     return "bash"
 
 
-def warm_chain() -> None:
-    """Generate real audit entries (quote, proof, demo) before capture."""
-    import json as _json
-
-    def post(path: str, body: dict) -> None:
-        req = urllib.request.Request(
-            f"{BASE}{path}", data=_json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=5).read()
-
-    urllib.request.urlopen(f"{BASE}/tools/search_products?query=cricket",
-                           timeout=5).read()
-    post("/tools/quote", {"items": [{"sku": "BAT-001", "qty": 1}],
-                          "mission_id": "screenshot"})
-    urllib.request.urlopen(f"{BASE}/gateway/proof", timeout=5).read()
-    urllib.request.urlopen(f"{BASE}/demo/injection/I1", timeout=5).read()
-    urllib.request.urlopen(f"{BASE}/tools/get_product/KIT-001",
-                           timeout=5).read()
-
-
 def main() -> int:
     LOG.mkdir(parents=True, exist_ok=True)
     proc = ensure_server()
