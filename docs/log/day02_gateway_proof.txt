@@ -1,0 +1,1 @@
+{"files":6,"total_lines":407,"llm_imports_detected":0,"io_calls_detected":0,"forbidden_patterns_seen":[],"source_sha256":"25768d4411e6dc2a7e93e5300b04538515607815b3086eeb83286856ee18b618","invariant_test":"tests/invariants/test_gateway_purity.py"}

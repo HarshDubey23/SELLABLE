@@ -9,3 +9,4 @@ httpx
 # dev
 ruff
 mypy
+playwright
