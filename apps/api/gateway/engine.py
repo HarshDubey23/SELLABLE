@@ -9,24 +9,38 @@ Phase severity semantics:
 
 On APPROVE the verdict binds proposal_hash so post-approve tampering is caught.
 """
-from . import rules as R
-from .types import (
-    Decision, Mission, Proposal, Verdict, canonical_json, sha256_hex,
-)
 import time as _time
+from typing import Any
+
+from . import rules as R
+from .rules import VerifyFn
+from .types import (
+    Decision,
+    Mission,
+    Proposal,
+    Verdict,
+    canonical_json,
+    sha256_hex,
+)
 
 
-def evaluate(*, mission, proposal, catalog, verify_fn,
-             state=None, now_ts=None,
-             merchant_id="SELLABLE-DEMO",
-             allowlist=frozenset({"SELLABLE-DEMO"}),
-             chain_ok=True) -> Verdict:
+def evaluate(*, mission: Mission | None,
+             proposal: Proposal | None,
+             catalog: dict[str, dict[str, Any]],
+             verify_fn: VerifyFn,
+             state: dict[str, Any] | None = None,
+             now_ts: int | None = None,
+             merchant_id: str = "SELLABLE-DEMO",
+             allowlist: frozenset[str] = frozenset({"SELLABLE-DEMO"}),
+             chain_ok: bool = True) -> Verdict:
 
     state = state if state is not None else {}
     now_ts = now_ts if now_ts is not None else int(_time.time())
-    phash = lambda: sha256_hex(canonical_json(proposal))
 
-    def reject(rule_id, reason):
+    def phash() -> str:
+        return sha256_hex(canonical_json(proposal))
+
+    def reject(rule_id: str, reason: str) -> Verdict:
         return Verdict(Decision.REJECT, rule_id, reason, phash(), None)
 
     # ---- G3 fail-closed: any missing input is a REJECT, never a pass ----

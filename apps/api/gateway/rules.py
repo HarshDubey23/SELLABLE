@@ -1,9 +1,16 @@
 """R1-R10 pure rule functions. Violation | None. stdlib only."""
-from typing import Optional
-from .types import Mission, Proposal, Violation
+
+from collections.abc import Callable, Iterable
+from typing import Any
+
+from .types import Mission, Proposal, ProposalItem, Violation
+
+VerifyFn = Callable[[str, str], bool]
+Catalog = dict[str, dict[str, Any]]
 
 
-def rule_r9_signature(mission: Optional[Mission], verify_fn) -> Optional[Violation]:
+def rule_r9_signature(mission: Mission | None,
+                      verify_fn: VerifyFn) -> Violation | None:
     if mission is None or not getattr(mission, "signature", ""):
         return Violation("R9_SIGNATURE", "mission signature missing (fail-closed)")
     blob = {k: v for k, v in vars(mission).items() if k != "signature"}
@@ -13,7 +20,7 @@ def rule_r9_signature(mission: Optional[Mission], verify_fn) -> Optional[Violati
     return None
 
 
-def rule_r10_expiry(mission: Mission, now_ts: int) -> Optional[Violation]:
+def rule_r10_expiry(mission: Mission, now_ts: int) -> Violation | None:
     # == also rejects: fail-closed at the boundary
     if now_ts >= mission.expires_at:
         return Violation(
@@ -25,17 +32,17 @@ def rule_r10_expiry(mission: Mission, now_ts: int) -> Optional[Violation]:
     return None
 
 
-def rule_r8_abort(mission_id: str, aborted_ids: frozenset) -> Optional[Violation]:
+def rule_r8_abort(mission_id: str, aborted_ids: frozenset[str]) -> Violation | None:
     if mission_id in aborted_ids:
         return Violation("R8_ABORT", f"mission {mission_id} is aborted; terminal")
     return None
 
 
-def _total(catalog: dict, items) -> int:
+def _total(catalog: Catalog, items: Iterable[ProposalItem]) -> int:
     return sum(catalog[i.sku]["price_paise"] * i.qty for i in items)
 
 
-def rule_r1_budget(proposal: Proposal, catalog: dict, mission: Mission) -> Optional[Violation]:
+def rule_r1_budget(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
     total = _total(catalog, proposal.items)
     if total > mission.budget_paise:
         over = total - mission.budget_paise
@@ -48,7 +55,7 @@ def rule_r1_budget(proposal: Proposal, catalog: dict, mission: Mission) -> Optio
     return None
 
 
-def rule_r2_forbidden(proposal: Proposal, catalog: dict, mission: Mission) -> Optional[Violation]:
+def rule_r2_forbidden(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
     for i in proposal.items:
         cat = catalog[i.sku]["category"]
         if cat in mission.forbidden_categories:
@@ -60,7 +67,7 @@ def rule_r2_forbidden(proposal: Proposal, catalog: dict, mission: Mission) -> Op
     return None
 
 
-def rule_r5_scope(proposal: Proposal, catalog: dict, mission: Mission) -> Optional[Violation]:
+def rule_r5_scope(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
     for i in proposal.items:
         cat = catalog[i.sku]["category"]
         if mission.allowed_categories and cat not in mission.allowed_categories:
@@ -72,8 +79,8 @@ def rule_r5_scope(proposal: Proposal, catalog: dict, mission: Mission) -> Option
     return None
 
 
-def rule_r4_upsell_cap(proposal: Proposal, catalog: dict, mission: Mission,
-                       baseline_total: int) -> Optional[Violation]:
+def rule_r4_upsell_cap(proposal: Proposal, catalog: Catalog, mission: Mission,
+                       baseline_total: int) -> Violation | None:
     cap = int(mission.budget_paise * mission.upsell_cap)
     total = _total(catalog, proposal.items)
     if total > cap:
@@ -87,7 +94,7 @@ def rule_r4_upsell_cap(proposal: Proposal, catalog: dict, mission: Mission,
     return None
 
 
-def rule_r3_price_drift(proposal: Proposal, catalog: dict) -> Optional[Violation]:
+def rule_r3_price_drift(proposal: Proposal, catalog: Catalog) -> Violation | None:
     for i in proposal.items:
         truth = catalog[i.sku]["price_paise"]
         if i.price_paise != truth:
@@ -100,8 +107,8 @@ def rule_r3_price_drift(proposal: Proposal, catalog: dict) -> Optional[Violation
     return None
 
 
-def rule_r6_rate_limit(mission_id: str, state: dict, now_ts: int,
-                       max_per_window: int = 5, window_s: int = 60) -> Optional[Violation]:
+def rule_r6_rate_limit(mission_id: str, state: dict[str, Any], now_ts: int,
+                       max_per_window: int = 5, window_s: int = 60) -> Violation | None:
     recent = [t for t in state.get("proposal_ts", {}).get(mission_id, [])
               if now_ts - t < window_s]
     if len(recent) >= max_per_window:
@@ -114,7 +121,7 @@ def rule_r6_rate_limit(mission_id: str, state: dict, now_ts: int,
     return None
 
 
-def rule_r7_allowlist(merchant_id: str, allowlist: frozenset) -> Optional[Violation]:
+def rule_r7_allowlist(merchant_id: str, allowlist: frozenset[str]) -> Violation | None:
     if merchant_id not in allowlist:
         return Violation("R7_ALLOWLIST", f"merchant '{merchant_id}' not allowlisted")
     return None

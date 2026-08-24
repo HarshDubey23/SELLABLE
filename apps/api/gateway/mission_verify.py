@@ -6,19 +6,19 @@ This module verifies mission signatures using MISSION_HMAC_KEY from env.
 The Buyer Agent process NEVER receives MISSION_HMAC_KEY in its environment.
 The agent carries a signed mission blob; it cannot mint or modify one.
 """
-import hmac
 import hashlib
+import hmac
 import json
 import os
 
 
-def dumps(obj) -> str:
+def dumps(obj: object) -> str:
     if isinstance(obj, str):
         return obj
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
-def verify_mission(canonical_blob, signature: str) -> bool:
+def verify_mission(canonical_blob: object, signature: str) -> bool:
     key = os.environ.get("MISSION_HMAC_KEY")
     if not key or not signature:
         return False  # fail-closed: no key or missing signature, no trust
@@ -27,7 +27,7 @@ def verify_mission(canonical_blob, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
-def sign_mission(canonical_blob) -> str:
+def sign_mission(canonical_blob: object) -> str:
     """Issuer-side helper (CLI / human side). The agent process NEVER calls this."""
     key = os.environ.get("MISSION_HMAC_KEY", "")
     if not key:

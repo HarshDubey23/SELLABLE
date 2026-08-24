@@ -6,3 +6,6 @@ pydantic
 requests
 pytest
 httpx
+# dev
+ruff
+mypy
