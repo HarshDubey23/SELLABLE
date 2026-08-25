@@ -9,6 +9,7 @@ waits for /health, then captures:
   docs/log/day02_injection_demo.txt   - JSON from /demo/injection/I1
   docs/log/day02_pytest.txt           - stdout of python -m pytest -q
 """
+import json
 import os
 import subprocess
 import sys
