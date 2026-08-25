@@ -23,7 +23,8 @@ def test_T02_r1_over_budget():
     prop = Proposal("m1", (ProposalItem("BAT-001", 2, 149900),))
     v = rule_r1_budget(prop, CATALOG, MISSION)
     assert v is not None and v.rule_id == "R1_BUDGET"
-    assert v.attempted_value == 299800 and v.limit_value == 200000
+    # Day 3: limit is now the EFFECTIVE budget (budget x cap = 260000)
+    assert v.attempted_value == 299800 and v.limit_value == 260000
 
 
 def test_T03_r1_exact_boundary():
