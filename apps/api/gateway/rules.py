@@ -43,13 +43,27 @@ def _total(catalog: Catalog, items: Iterable[ProposalItem]) -> int:
 
 
 def rule_r1_budget(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
+    """
+    R1: Total must be within EFFECTIVE budget.
+
+    Effective budget = budget_paise x upsell_cap.
+
+    This is the actual ceiling for any proposal. The base budget
+    represents the agent's original intent; the cap defines the maximum
+    allowed after legitimate upsells. The upsell engine pre-gates its
+    offers to this same threshold, so anything the engine offers will
+    pass this rule.
+    """
+    effective_budget = int(mission.budget_paise * mission.upsell_cap)
     total = _total(catalog, proposal.items)
-    if total > mission.budget_paise:
-        over = total - mission.budget_paise
+    if total > effective_budget:
+        over = total - effective_budget
         return Violation(
             "R1_BUDGET",
-            f"total {total} paise exceeds budget {mission.budget_paise} paise by {over}",
-            attempted_value=total, limit_value=mission.budget_paise,
+            f"total {total} paise exceeds effective budget "
+            f"{effective_budget} paise by {over} "
+            f"(budget {mission.budget_paise} x cap {mission.upsell_cap})",
+            attempted_value=total, limit_value=effective_budget,
             hint="drop an item, reduce qty, or pick a cheaper sku",
         )
     return None
@@ -81,6 +95,14 @@ def rule_r5_scope(proposal: Proposal, catalog: Catalog, mission: Mission) -> Vio
 
 def rule_r4_upsell_cap(proposal: Proposal, catalog: Catalog, mission: Mission,
                        baseline_total: int) -> Violation | None:
+    """
+    R4: Defense-in-depth check on the upsell cap.
+
+    NOTE: after the R1 fix (effective budget = budget x cap) this rule
+    checks the same threshold as R1 and will not fire independently.
+    It is kept as redundant safety — if R1's logic is ever changed or
+    removed, R4 still enforces the cap.
+    """
     cap = int(mission.budget_paise * mission.upsell_cap)
     total = _total(catalog, proposal.items)
     if total > cap:

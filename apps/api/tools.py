@@ -1,8 +1,13 @@
 """
 Storefront tools — the agent-facing API surface.
 
-Security invariant: prices ALWAYS come from CATALOG (server-side truth).
-Nothing a client sends can change a price. This kills I3/I5 by design.
+Security invariants:
+- Prices ALWAYS come from CATALOG (server-side truth). Nothing a client
+  sends can change a price. This kills I3/I5 by design.
+- create_order REQUIRES an APPROVE binding (approve_seq + proposal_hash).
+  No gateway APPROVE = no order = no money. INV-1 enforcement point.
+- State is durable: quotes/orders/verdicts live in SQLite and are
+  reloaded at boot, so a restart never loses a binding or an order.
 `razorpay` is imported ONLY inside razorpay_client (single import boundary).
 """
 
@@ -19,9 +24,12 @@ from . import razorpay_client as rp_client
 from .audit import chain
 from .gateway import mission_verify
 from .gateway.engine import evaluate
-from .gateway.types import Mission, Proposal, ProposalItem
+from .gateway.types import Decision, Mission, Proposal, ProposalItem, Verdict
 from .products import CATALOG
 from .products import search as catalog_search
+from .store import db as store
+from .upsell.crosssell import find_cross_sell_candidates
+from .upsell.engine import generate_upsell_offers
 
 router = APIRouter()
 
@@ -30,9 +38,14 @@ QUOTE_TTL_SECONDS = 30 * 60  # 30 minutes
 quotes = {}            # quote_id -> quote dict
 orders = {}            # order_id -> order dict
 idempotency_seen = {}  # idempotency_key -> order_id
-verdicts = {}          # seq -> verdict dict (for explain_reject)
+verdicts = {}          # seq -> VerdictSeq (for explain_reject)
 approved_bindings = {} # seq -> proposal_hash (G1: order needs this match)
-mission_state = {}     # mission_id -> {"proposal_ts": [...]}
+mission_state = {}     # mission_id -> {"proposal_ts": [...], "mission": {...}}
+
+
+class VerdictSeq:
+    def __init__(self, seq, v):
+        self.seq, self.v = seq, v
 
 
 def _hmac(payload: str) -> str:
@@ -40,6 +53,59 @@ def _hmac(payload: str) -> str:
         os.environ["MISSION_HMAC_KEY"].encode(),
         payload.encode(), hashlib.sha256
     ).hexdigest()
+
+
+def _load_persisted_state() -> None:
+    """Reload every durable structure from SQLite at boot."""
+    global quotes, orders, idempotency_seen, verdicts, approved_bindings
+
+    for row in store.query(
+        "SELECT quote_id, mission_id, items, total_paise, expires_at, "
+        "signature FROM quotes"
+    ):
+        quotes[row["quote_id"]] = {
+            "quote_id": row["quote_id"],
+            "mission_id": row["mission_id"],
+            "items": json.loads(row["items"]),
+            "total_paise": row["total_paise"],
+            "expires_at": row["expires_at"],
+            "signature": row["signature"],
+        }
+
+    for row in store.query(
+        "SELECT order_id, idempotency_key, amount_paise, status, quote_id, "
+        "mission_id, proposal_hash, approve_seq, created_at FROM orders"
+    ):
+        orders[row["order_id"]] = {
+            "order_id": row["order_id"],
+            "amount_paise": row["amount_paise"],
+            "quote_id": row["quote_id"],
+            "mission_id": row["mission_id"],
+            "proposal_hash": row["proposal_hash"],
+            "idempotency_key": row["idempotency_key"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+        }
+        if row["idempotency_key"]:
+            idempotency_seen[row["idempotency_key"]] = row["order_id"]
+
+    for row in store.query(
+        "SELECT seq, decision, rule_id, reason, proposal_hash, mission_id "
+        "FROM verdicts ORDER BY seq"
+    ):
+        v = Verdict(
+            decision=Decision(row["decision"]),
+            rule_id=row["rule_id"],
+            reason=row["reason"] or "",
+            proposal_hash=row["proposal_hash"],
+            seq=row["seq"],
+        )
+        verdicts[row["seq"]] = VerdictSeq(row["seq"], v)
+        if row["decision"] == "APPROVE":
+            approved_bindings[row["seq"]] = row["proposal_hash"]
+
+
+_load_persisted_state()
 
 
 class QuoteReq(BaseModel):
@@ -55,27 +121,30 @@ class ProposalReq(BaseModel):
 class CreateOrderReq(BaseModel):
     quote_id: str
     proposal_hash: str
-    # Day 2: gateway not built yet. Day 3 makes approve_seq required.
-    approve_seq: int | None = None
-
-
-class VerdictSeq:
-    def __init__(self, seq, v):
-        self.seq, self.v = seq, v
+    approve_seq: int  # REQUIRED — no APPROVE binding, no money
 
 
 @router.get("/tools/search_products")
 async def tool_search(query: str | None = None,
                       category: str | None = None,
                       max_price_paise: int | None = None,
+                      min_rating: float | None = None,
+                      attribute: str | None = None,
                       limit: int = 10):
-    results = catalog_search(query or "", category, max_price_paise)[:limit]
+    results = catalog_search(
+        query or "", category, max_price_paise,
+        min_rating=min_rating, attribute=attribute,
+    )[:limit]
     return {
         "count": len(results),
         "results": [
             {"sku": r["sku"], "name": r["name"], "category": r["category"],
              "price_paise": r["price_paise"],
-             "price_display": f"Rs {r['price_paise']/100:,.0f}"}
+             "price_display": f"Rs {r['price_paise']/100:,.0f}",
+             "rating": r.get("rating"),
+             "attributes": r.get("attributes", {}),
+             "compatible_with": r.get("compatible_with", []),
+             "stock": r.get("stock", 0)}
             for r in results
         ],
     }
@@ -94,7 +163,7 @@ async def tool_get_product(sku: str):
                       "hint": "use /tools/search_products to list valid skus"}})
     return {"sku": sku, **p,
             "price_display": f"Rs {p['price_paise']/100:,.0f}",
-            "in_stock": True}
+            "in_stock": p.get("stock", 0) > 0}
 
 
 @router.post("/tools/quote")
@@ -130,8 +199,16 @@ async def tool_quote(req: QuoteReq):
 
     quotes[quote_id] = {"quote_id": quote_id, "mission_id": req.mission_id,
                         "items": line_items, "total_paise": total,
-                        "expires_at": expires_at, "signature": sig,
-                        "signed_payload": payload}
+                        "expires_at": expires_at, "signature": sig}
+
+    # PERSIST: survive restarts so APPROVE bindings stay spendable.
+    store.execute(
+        "INSERT OR REPLACE INTO quotes "
+        "(quote_id, mission_id, items, total_paise, expires_at, signature, "
+        " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (quote_id, req.mission_id, json.dumps(line_items), total,
+         expires_at, sig, int(time.time()))
+    )
 
     return {"quote_id": quote_id, "items": line_items, "total_paise": total,
             "total_display": f"Rs {total/100:,.0f}",
@@ -175,10 +252,20 @@ async def tool_submit_proposal(req: ProposalReq):
                                   price_paise=CATALOG[sku]["price_paise"]))
     proposal = Proposal(mission_id=mission.mission_id, items=tuple(items))
 
-    # R6 contract: state["proposal_ts"] is {mission_id: [ts, ...]}
-    state = mission_state.setdefault(
-        mission.mission_id, {"proposal_ts": {}})
+    # R6 contract: state["proposal_ts"] is {mission_id: [ts, ...]}.
+    # The signed mission snapshot also rides along so the upsell engine
+    # can pre-gate offers against the same bounds the gateway enforces.
+    state = mission_state.setdefault(mission.mission_id, {"proposal_ts": {}})
     state["proposal_ts"].setdefault(mission.mission_id, []).append(int(time.time()))
+    state["mission"] = {
+        "intent": mission.intent,
+        "budget_paise": mission.budget_paise,
+        "allowed_categories": list(mission.allowed_categories),
+        "forbidden_categories": list(mission.forbidden_categories),
+        "upsell_cap": mission.upsell_cap,
+        "expires_at": mission.expires_at,
+        "signature": mission.signature,
+    }
 
     verdict = evaluate(mission=mission, proposal=proposal, catalog=CATALOG,
                        verify_fn=mission_verify.verify_mission,
@@ -192,6 +279,15 @@ async def tool_submit_proposal(req: ProposalReq):
                         "mission_id": mission.mission_id})
     bound = VerdictSeq(seq, verdict)
     verdicts[seq] = bound
+
+    # PERSIST: verdicts and bindings must outlive the process.
+    store.execute(
+        "INSERT OR REPLACE INTO verdicts "
+        "(seq, decision, rule_id, reason, proposal_hash, mission_id, "
+        " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (seq, verdict.decision.value, verdict.rule_id, verdict.reason,
+         verdict.proposal_hash, mission.mission_id, int(time.time()))
+    )
 
     if verdict.decision.value == "APPROVE":
         approved_bindings[seq] = verdict.proposal_hash
@@ -225,13 +321,16 @@ async def policy():
         {"rule_id": "R8_ABORT", "phase": 1, "severity": "FATAL",
          "check_description": "mission not aborted"},
         {"rule_id": "R1_BUDGET", "phase": 2, "severity": "REVISABLE",
-         "check_description": "catalog-priced total <= budget_paise"},
+         "check_description":
+             "catalog-priced total <= budget_paise x upsell_cap "
+             "(effective budget)"},
         {"rule_id": "R2_FORBIDDEN", "phase": 2, "severity": "REVISABLE",
          "check_description": "no forbidden-category items"},
         {"rule_id": "R5_SCOPE", "phase": 2, "severity": "REVISABLE",
          "check_description": "items within allowed_categories"},
         {"rule_id": "R4_UPSELL_CAP", "phase": 2, "severity": "REVISABLE",
-         "check_description": "total <= budget * upsell_cap"},
+         "check_description":
+             "defense-in-depth mirror of the effective-budget ceiling"},
         {"rule_id": "R3_PRICE_DRIFT", "phase": 3, "severity": "FATAL",
          "check_description": "claimed price == catalog price (+-0 paise)"},
         {"rule_id": "R7_ALLOWLIST", "phase": 3, "severity": "FATAL",
@@ -246,8 +345,9 @@ async def tool_create_order(req: CreateOrderReq,
                             x_idempotency_key: str = Header(default="")):
     """Create a REAL Razorpay order (test mode).
 
-    G1: requires approve_seq + matching proposal_hash from a stored APPROVE.
-    Day 3 adds: full mission replay at the executor boundary.
+    G1 INVARIANT: requires approve_seq + matching proposal_hash from a
+    stored APPROVE verdict. No APPROVE = no order = no money. This is
+    the single enforcement point of INV-1 at the executor boundary.
     """
     idem = (x_idempotency_key or "").strip()
     if not idem:
@@ -269,18 +369,21 @@ async def tool_create_order(req: CreateOrderReq,
                       "retryable": True,
                       "hint": "request a fresh quote"}})
 
-    # G1 gate: no APPROVE binding, no money
-    # Day 2: gateway not built yet. Day 3 makes approve_seq required.
-    if req.approve_seq is not None:
-        if approved_bindings.get(req.approve_seq) != req.proposal_hash:
-            raise HTTPException(403, detail={
-                "ok": False,
-                "error": {"error_code": "ORDER_HASH_MISMATCH",
-                          "rule_id": None,
-                          "message": f"no APPROVE binding at seq {req.approve_seq} "
-                                     f"matches proposal_hash",
-                          "retryable": False,
-                          "hint": "submit_proposal first and use its seq+hash"}})
+    # G1 GATE: No APPROVE binding, no money. EVER.
+    # This is INV-1 enforcement — the only path to order creation.
+    if approved_bindings.get(req.approve_seq) != req.proposal_hash:
+        raise HTTPException(403, detail={
+            "ok": False,
+            "error": {
+                "error_code": "ORDER_HASH_MISMATCH",
+                "rule_id": None,
+                "message": f"No APPROVE binding at seq {req.approve_seq} "
+                           f"matches proposal_hash "
+                           f"{req.proposal_hash[:16]}...",
+                "retryable": False,
+                "hint": "submit_proposal first, get APPROVE, then use its "
+                        "seq + proposal_hash here"
+            }})
 
     try:
         rp = rp_client.create_order(
@@ -304,6 +407,17 @@ async def tool_create_order(req: CreateOrderReq,
         "status": "created", "created_at": int(time.time()),
     }
     idempotency_seen[idem] = rp["id"]
+
+    # PERSIST: the order (and its idempotency key) hits disk immediately.
+    store.execute(
+        "INSERT OR REPLACE INTO orders "
+        "(order_id, idempotency_key, amount_paise, status, quote_id, "
+        " mission_id, proposal_hash, approve_seq, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (rp["id"], idem, q["total_paise"], "created", q["quote_id"],
+         q["mission_id"], req.proposal_hash, req.approve_seq, int(time.time()))
+    )
+
     chain.append("executor", "order_created",
                  {"order_id": rp["id"], "amount_paise": q["total_paise"]})
 
@@ -330,3 +444,91 @@ async def tool_check_payment(order_id: str):
             "status": rp_status if rp_status != "api_error" else local["status"],
             "local_status": local["status"],
             "razorpay_status": rp_status, "paid": rp_paid}
+
+
+@router.get("/tools/upsell_offers")
+async def tool_upsell_offers(mission_id: str, skus: str):
+    """Get PRE-GATED upsell offers for a proposed cart.
+
+    Offers are bounded by the mission's signed upsell_cap — the engine
+    never offers anything the gateway would reject. Every offer event
+    lands in the audit chain.
+    """
+    sku_list = [s.strip() for s in skus.split(",") if s.strip()]
+
+    for sku in sku_list:
+        if sku not in CATALOG:
+            raise HTTPException(400, detail={
+                "ok": False,
+                "error": {"error_code": "SKU_NOT_FOUND", "rule_id": None,
+                          "message": f"unknown sku {sku}", "retryable": False}})
+
+    mission_data = mission_state.get(mission_id, {}).get("mission")
+    if not mission_data:
+        return {"offers": [], "count": 0,
+                "reason": "mission not found or expired"}
+
+    mission = Mission(
+        mission_id=mission_id,
+        intent=mission_data.get("intent", ""),
+        budget_paise=mission_data.get("budget_paise", 0),
+        allowed_categories=tuple(mission_data.get("allowed_categories", ())),
+        forbidden_categories=tuple(mission_data.get("forbidden_categories", ())),
+        upsell_cap=float(mission_data.get("upsell_cap", 1.3)),
+        expires_at=int(mission_data.get("expires_at", 0)),
+        signature=mission_data.get("signature", ""),
+    )
+
+    offers = generate_upsell_offers(sku_list, CATALOG, mission)
+
+    chain.append("merchant_ai", "upsell_offered", {
+        "mission_id": mission_id,
+        "cart_skus": sku_list,
+        "offer_count": len(offers),
+        "offers": [
+            {"from": o["from_sku"], "to": o["to_sku"],
+             "delta_paise": o["delta_paise"]}
+            for o in offers
+        ],
+    })
+
+    return {"offers": offers, "count": len(offers)}
+
+
+@router.get("/tools/crosssell_offers")
+async def tool_crosssell_offers(mission_id: str, skus: str):
+    """Get PRE-GATED cross-sell offers based on product compatibility."""
+    sku_list = [s.strip() for s in skus.split(",") if s.strip()]
+
+    for sku in sku_list:
+        if sku not in CATALOG:
+            raise HTTPException(400, detail={
+                "ok": False,
+                "error": {"error_code": "SKU_NOT_FOUND", "rule_id": None,
+                          "message": f"unknown sku {sku}", "retryable": False}})
+
+    mission_data = mission_state.get(mission_id, {}).get("mission")
+    if not mission_data:
+        return {"offers": [], "count": 0,
+                "reason": "mission not found or expired"}
+
+    mission = Mission(
+        mission_id=mission_id,
+        intent=mission_data.get("intent", ""),
+        budget_paise=mission_data.get("budget_paise", 0),
+        allowed_categories=tuple(mission_data.get("allowed_categories", ())),
+        forbidden_categories=tuple(mission_data.get("forbidden_categories", ())),
+        upsell_cap=float(mission_data.get("upsell_cap", 1.3)),
+        expires_at=int(mission_data.get("expires_at", 0)),
+        signature=mission_data.get("signature", ""),
+    )
+
+    offers = find_cross_sell_candidates(sku_list, CATALOG, mission)
+
+    chain.append("merchant_ai", "crosssell_offered", {
+        "mission_id": mission_id,
+        "cart_skus": sku_list,
+        "offer_count": len(offers),
+    })
+
+    return {"offers": offers, "count": len(offers)}

@@ -6,6 +6,8 @@ Key behaviors:
 2. Event deduplication keyed strictly on X-Razorpay-Event-Id header.
 3. Out-of-order tolerant payment status ledger (created < authorized < captured < refunded).
 4. Append-only logging to events.log and audit chain on payment.captured.
+5. Every event is persisted to SQLite; the dedup set and payment ledger
+   are rebuilt from disk at boot, so restarts lose nothing.
 """
 
 import datetime
@@ -13,10 +15,12 @@ import hashlib
 import hmac
 import json
 import os
+import time
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from ..audit import chain as audit_chain
+from ..store import db as store
 
 router = APIRouter()
 
@@ -40,6 +44,45 @@ def log_line(msg: str):
             f.write(line + "\n")
     except Exception:
         pass
+
+
+def _load_persisted_state() -> None:
+    """Rebuild the dedup set and payment ledger from the DB on boot."""
+    global processed_event_ids, payment_ledger
+
+    for row in store.query("SELECT event_id FROM webhook_events"):
+        processed_event_ids.add(row["event_id"])
+
+    # Rebuild ledger by replaying persisted events through the same
+    # status hierarchy the live handler uses (stale events never win).
+    for ev in store.query(
+        "SELECT order_id, event_type, payment_id, amount_paise, status "
+        "FROM webhook_events WHERE order_id IS NOT NULL "
+        "AND order_id != 'no-order' ORDER BY received_at"
+    ):
+        entry = payment_ledger.setdefault(ev["order_id"], {
+            "order_id": ev["order_id"],
+            "payment_id": ev["payment_id"] or "",
+            "status": "created",
+            "amount_paise": ev["amount_paise"] or 0,
+            "events": [],
+            "last_event_id": "",
+        })
+        if ev["payment_id"] and not entry.get("payment_id"):
+            entry["payment_id"] = ev["payment_id"]
+        new_rank = STATUS_RANK.get(ev["status"], -1)
+        old_rank = STATUS_RANK.get(entry["status"], -1)
+        if new_rank > old_rank:
+            entry["status"] = ev["status"]
+            entry["amount_paise"] = ev["amount_paise"] or 0
+        entry["events"].append({
+            "event": ev["event_type"], "event_id": "(persisted)",
+            "payment_id": ev["payment_id"] or "", "status": ev["status"],
+            "ts": "(pre-boot)",
+        })
+
+
+_load_persisted_state()
 
 
 @router.post("/webhook")
@@ -109,6 +152,15 @@ async def webhook(
     amount = payment.get("amount", 0)
     status = payment.get("status", "unknown")
 
+    # ---- PERSIST: the event hits disk before any state mutation ----
+    store.execute(
+        "INSERT OR IGNORE INTO webhook_events "
+        "(event_id, event_type, order_id, payment_id, amount_paise, status, "
+        " received_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event_id, event_name, order_id, payment_id, amount, status,
+         int(time.time()))
+    )
+
     # ---- PHASE 3: Update ledger (hierarchy enforcement) ----
     if order_id not in payment_ledger:
         payment_ledger[order_id] = {
@@ -149,6 +201,14 @@ async def webhook(
 
     # ---- PHASE 4: Audit Chain append on payment.captured ----
     if event_name == "payment.captured" or status == "captured":
+        # PERSIST: reflect capture onto the durable order row.
+        try:
+            store.execute(
+                "UPDATE orders SET status = ? WHERE order_id = ?",
+                (status, order_id)
+            )
+        except Exception as e:
+            log_line(f"[DB-WARN] failed to update order status: {e}")
         try:
             audit_chain.append(
                 "webhook",
