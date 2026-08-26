@@ -9,3 +9,6 @@ ignore = ["E501", "E402", "E702", "B904"]
 [tool.mypy]
 strict = true
 files = ["apps/api/gateway/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/gateway", "tests/invariants", "tests/test_upsell.py"]

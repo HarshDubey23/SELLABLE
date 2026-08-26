@@ -105,3 +105,36 @@ Scenarios (live Gemini + live Razorpay):
   corrupt kar sakta tha. Test isolation persistence ke saath aati hai.
 - Real LLM + deterministic policy ka combo demo karna easy hai jab trace
   har step record kare — judge ko sirf result nahi, poora protocol dikhao.
+
+## Day 4 addendum — honesty overhaul + deterministic recovery
+
+- buyer.py ab final_payment_status pe branch karta hai: `completed` sirf
+  captured/refunded pe; warna `payment_failed_then_link_issued`,
+  `order_created_payment_pending`, `rejected`. Mission_completed event bhi
+  conditional.
+- Playwright-on-hosted-modal poora hata diya (Day 3 mein ek bhi capture nahi
+  hua tha). Replacement: documented public-key POST /v1/payments flow —
+  browser jaisa hi, par pure HTTP. Result callback page ke embedded JSON se
+  parse hota hai; authoritative status hamesha GET orders/{id}/payments se
+  re-read hoti hai.
+- REAL failure-recovery demo live chala: UPI rail merchant pe disabled hai
+  -> Razorpay ka structured refusal -> audit aud_67 (error_code
+  BAD_REQUEST_ERROR, review_state=escalated) -> real Gemini reasoning
+  ("payment link should be generated...") -> aud_68 (parent=aud_67,
+  reasoning_trace saved) -> REAL payment link plink_TUFe85E3GyhciA
+  (https://rzp.io/rzp/eEt7AgE) -> aud_69 (parent=aud_67,
+  idempotency_key=idem_d62f..., review_state=pending_merchant).
+  Final status: payment_failed_then_link_issued.
+- Audit schema enrich: parent_action_id, idempotency_key, error_code,
+  error_reason, reasoning_trace, mandate_id, review_state (+ migration).
+- Custody split: scripts/sign_mission.py CLI missions/*.json pre-sign
+  karta hai; FastAPI process sirf verify karta hai, sign kabhi nahi.
+  scenarios.py ab loader hai, signer nahi.
+- Idempotency keys: har mutating Razorpay POST pe X-Razorpay-Idempotency-Key,
+  deterministically derived (mission/proposal/seq), audit row mein mirrored.
+- Gemini quota fallback: primary gemini-3.6-flash ka free-tier daily quota
+  (20/day) khatam ho gaya tha; ab ordered fallbacks (3.7-flash ->
+  3.5-flash -> 2.5-flash) 429 pe degrade karte hain.
+- Hygiene: e2e_day2/send_test_webhook scripts/ mein move, pytest testpaths
+  pin, MIT LICENSE, /catalog.jsonld (schema.org Product+Offer), manifest
+  mein supported_protocols declaration.

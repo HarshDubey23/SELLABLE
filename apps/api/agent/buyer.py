@@ -20,6 +20,7 @@ If the model is unavailable or errors out, a deterministic fallback
 proposer keeps missions observable end-to-end; every fallback is marked
 in the trace so nothing is silently faked.
 """
+import asyncio
 import json
 import re
 import time
@@ -472,32 +473,28 @@ Propose which items to buy:"""
                    {"order_id": order_id, "amount_paise": amount_paise,
                     "checkout_url": order.get("checkout_url")})
 
-        # ============ STEP 8: PAYMENT ATTEMPT (browser automation) ============
-        checkout_url = order.get("checkout_url")
-        payment_result: dict[str, Any] = {}
-        if checkout_url:
-            trace.emit("buyer_agent", "payment_initiated",
-                       f"Opening checkout for {order_id}")
-            from ..payment.checkout import complete_payment
+        # ============ STEP 8: PAYMENT ATTEMPT (real Razorpay API) ======
+        # Deterministic, API-driven: attempt the UPI rail the way
+        # Checkout's browser would (public-key POST /v1/payments).
+        # No DOM automation anywhere in this loop.
+        trace.emit("buyer_agent", "payment_initiated",
+                   f"Attempting UPI payment on {order_id} via "
+                   f"api.razorpay.com")
 
-            payment_url = f"{base_url}{checkout_url}"
-            payment_result = await complete_payment(payment_url, payment_mode)
+        from .recovery import run_recovery
 
-            trace.emit("buyer_agent", "payment_attempt_done",
-                       f"Payment attempt: {payment_result.get('status', 'unknown')}",
-                       payment_result)
+        # requests-based Razorpay calls are blocking; keep the loop free.
+        recovery = await asyncio.to_thread(
+            run_recovery, order_id, amount_paise, mission_id)
+        outcome = recovery.get("outcome", "unknown")
 
-            if payment_result.get("status") != "captured":
-                from ..payment.checkout import complete_payment_with_retry
-                retry_result = await complete_payment_with_retry(payment_url)
-                trace.emit("buyer_agent", "payment_retry_result",
-                           f"Retry: {retry_result.get('status', 'unknown')}",
-                           retry_result)
-                payment_result = retry_result
+        if outcome == "captured":
+            trace.emit("executor", "payment_captured",
+                       f"Payment captured for {order_id}", recovery)
 
-        # ============ STEP 9: FINAL PAYMENT STATUS (webhook authority) ====
+        # ============ STEP 9: AUTHORITATIVE STATUS + HONEST BRANCH ====
         final_status = None
-        for _ in range(6):  # webhook may take a moment to land
+        for _ in range(6):  # webhook/ledger may lag the API slightly
             try:
                 status_resp = await client.get(
                     f"{base_url}/tools/check_payment/{order_id}")
@@ -505,22 +502,63 @@ Propose which items to buy:"""
                 final_status = payment_status.get("local_status")
                 trace.emit("executor", "payment_status",
                            f"Final status: {final_status}", payment_status)
-                if final_status in ("captured", "refunded"):
+                if final_status in ("captured", "refunded", "failed"):
                     break
             except Exception as e:
                 trace.emit("executor", "status_check_failed", str(e))
             time.sleep(1.0)
 
-        trace.emit("system", "mission_completed",
-                   f"Mission {mission_id} completed")
-
-        return {
-            "status": "completed",
+        result_payload: dict[str, Any] = {
             "order_id": order_id,
             "amount_paise": amount_paise,
             "proposed_skus": proposed_skus,
-            "payment": payment_result,
+            "recovery": recovery,
             "final_payment_status": final_status,
             "trace": trace.to_dict(),
         }
+
+        # HONEST STATUS BRANCH — never call a failed payment completed.
+        if final_status in ("captured", "refunded"):
+            trace.emit("system", "mission_completed",
+                       f"Mission {mission_id} completed: "
+                       f"payment {final_status}")
+            result_payload["status"] = "completed"
+            return result_payload
+
+        if outcome == "captured":
+            # API said captured; ledger may still be catching up.
+            trace.emit("system", "mission_completed",
+                       f"Mission {mission_id} completed: captured per API")
+            result_payload["status"] = "completed"
+            return result_payload
+
+        if outcome in ("payment_failed_then_link_issued",
+                       "payment_failed_no_recovery_action"):
+            trace.emit("buyer_agent", "payment_attempt_done",
+                       f"UPI attempt failed on rail: "
+                       f"{recovery.get('failure', {}).get('description')}",
+                       recovery.get("failure"))
+            trace.emit("system", "mission_recovery_issued",
+                       f"Mission {mission_id}: failure handled, outcome="
+                       f"{outcome}",
+                       {"reasoning_action_id":
+                        recovery.get("reasoning_action_id"),
+                        "link_action_id": recovery.get("link_action_id")})
+            result_payload["status"] = (
+                "payment_failed_then_link_issued"
+                if outcome == "payment_failed_then_link_issued"
+                else "payment_failed")
+            return result_payload
+
+        if outcome == "authorized":
+            trace.emit("system", "mission_pending",
+                       f"Mission {mission_id}: payment authorized, "
+                       f"capture pending")
+            result_payload["status"] = "payment_authorized_capture_pending"
+            return result_payload
+
+        trace.emit("system", "mission_pending",
+                   f"Mission {mission_id}: order created, payment pending")
+        result_payload["status"] = "order_created_payment_pending"
+        return result_payload
 

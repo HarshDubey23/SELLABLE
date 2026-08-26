@@ -1,31 +1,71 @@
 {
- "status": "completed",
- "order_id": "order_TU6uSK4Exd4ijE",
- "amount_paise": 69800,
+ "order_id": "order_TUFe1UFsbLGu0U",
+ "amount_paise": 29900,
  "proposed_skus": [
-  "BOOK-001",
   "BOOK-002"
  ],
- "payment": {
-  "status": "unknown",
-  "error": "razorpay checkout iframe never appeared",
-  "screenshot": "docs/log/day03/checkout-no-iframe.png"
+ "recovery": {
+  "order_id": "order_TUFe1UFsbLGu0U",
+  "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-SIGNED",
+  "attempt_rail": "upi",
+  "attempt_result": {
+   "error": {
+    "code": "BAD_REQUEST_ERROR",
+    "description": "UPI transactions are not enabled for the merchant",
+    "source": "NA",
+    "step": "NA",
+    "reason": "NA",
+    "metadata": {
+     "order_id": "order_TUFe1UFsbLGu0U"
+    }
+   },
+   "http_status_code": 400
+  },
+  "authoritative_payments": [],
+  "failed_payment_action_id": "aud_67",
+  "failure": {
+   "code": "BAD_REQUEST_ERROR",
+   "description": "UPI transactions are not enabled for the merchant",
+   "source": "NA",
+   "step": "NA",
+   "reason": "NA",
+   "field": null,
+   "payment_id": null
+  },
+  "reasoning_action_id": "aud_68",
+  "llm": {
+   "model": "gemini-3.7-flash",
+   "latency_ms": 2864,
+   "error": null,
+   "raw_response": "{\"reasoning\": \"The payment failed because UPI transactions are not enabled for the merchant. A payment link should be generated to provide the customer with alternative payment rails.\", \"action\": \"create_payment_link\"}"
+  },
+  "llm_decision": {
+   "reasoning": "The payment failed because UPI transactions are not enabled for the merchant. A payment link should be generated to provide the customer with alternative payment rails.",
+   "action": "create_payment_link"
+  },
+  "outcome": "payment_failed_then_link_issued",
+  "link_action_id": "aud_69",
+  "payment_link": {
+   "id": "plink_TUFe85E3GyhciA",
+   "short_url": "https://rzp.io/rzp/eEt7AgE"
+  },
+  "idempotency_key": "idem_d62f8ead2f330e185ed99bc68f05655bd092d404"
  },
  "final_payment_status": "created",
  "trace": {
-  "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-8992897e",
-  "event_count": 27,
+  "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-SIGNED",
+  "event_count": 24,
   "events": [
    {
-    "ts": 1787684441.834299,
+    "ts": 1787715198.566436,
     "seq": 1,
     "actor": "system",
     "action": "mission_started",
-    "summary": "Mission MSN-PAYMENT_FAILURE_RECOVERY-8992897e started",
+    "summary": "Mission MSN-PAYMENT_FAILURE_RECOVERY-SIGNED started",
     "data": {}
    },
    {
-    "ts": 1787684441.8503697,
+    "ts": 1787715198.6421301,
     "seq": 2,
     "actor": "buyer_agent",
     "action": "tool_call",
@@ -33,7 +73,7 @@
     "data": {}
    },
    {
-    "ts": 1787684442.1388192,
+    "ts": 1787715198.946613,
     "seq": 3,
     "actor": "buyer_agent",
     "action": "tool_result",
@@ -45,6 +85,11 @@
        "description": "Agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode.",
        "version": "1.0.0",
        "protocol": "sellable-v1"
+      },
+      "supported_protocols": {
+       "sellable-v1": "native (this manifest)",
+       "schema.org": "Product/Offer JSON-LD via /catalog.jsonld",
+       "acp_ap2_x402": "tracked; patterns (mandates, bounded offers) implemented in mission + upsell design"
       },
       "capabilities": [
        "search",
@@ -179,7 +224,7 @@
     }
    },
    {
-    "ts": 1787684442.1427994,
+    "ts": 1787715198.9511907,
     "seq": 4,
     "actor": "buyer_agent",
     "action": "tool_result",
@@ -335,7 +380,7 @@
     }
    },
    {
-    "ts": 1787684442.1428056,
+    "ts": 1787715198.9511955,
     "seq": 5,
     "actor": "buyer_agent",
     "action": "tool_call",
@@ -343,7 +388,7 @@
     "data": {}
    },
    {
-    "ts": 1787684442.1459997,
+    "ts": 1787715198.9540317,
     "seq": 6,
     "actor": "buyer_agent",
     "action": "tool_result",
@@ -377,7 +422,7 @@
     }
    },
    {
-    "ts": 1787684442.1460054,
+    "ts": 1787715198.9540365,
     "seq": 7,
     "actor": "buyer_agent",
     "action": "tool_call",
@@ -385,7 +430,7 @@
     "data": {}
    },
    {
-    "ts": 1787684442.150257,
+    "ts": 1787715198.956237,
     "seq": 8,
     "actor": "buyer_agent",
     "action": "tool_result",
@@ -419,7 +464,7 @@
     }
    },
    {
-    "ts": 1787684442.1502638,
+    "ts": 1787715198.9562414,
     "seq": 9,
     "actor": "buyer_agent",
     "action": "tool_call",
@@ -427,7 +472,7 @@
     "data": {}
    },
    {
-    "ts": 1787684442.1540494,
+    "ts": 1787715198.9583964,
     "seq": 10,
     "actor": "buyer_agent",
     "action": "tool_result",
@@ -462,7 +507,7 @@
     }
    },
    {
-    "ts": 1787684442.1541278,
+    "ts": 1787715198.9584587,
     "seq": 11,
     "actor": "buyer_agent",
     "action": "llm_call",
@@ -470,44 +515,40 @@
     "data": {}
    },
    {
-    "ts": 1787684448.899297,
+    "ts": 1787715205.623087,
     "seq": 12,
     "actor": "buyer_agent",
-    "action": "llm_reasoning",
-    "summary": "Agent proposes: ['BOOK-001', 'BOOK-002']",
+    "action": "llm_fallback",
+    "summary": "model unavailable (gemini-3.7-flash: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}); deterministic fallback proposed ['BOOK-002']",
     "data": {
      "skus": [
-      "BOOK-001",
       "BOOK-002"
      ],
-     "reason": "I selected the two highest-rated books in the allowed category that fit within the Rs 1,000 budget.",
-     "model": "gemini-3.6-flash",
-     "latency_ms": 6744,
-     "raw_response": "SKUS: BOOK-001,BOOK-002\nREASON: I selected the two highest-rated books in the allowed category that fit within the Rs 1,000 budget."
+     "llm_error": "gemini-3.7-flash: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
     }
    },
    {
-    "ts": 1787684448.8993056,
+    "ts": 1787715205.6230943,
     "seq": 13,
     "actor": "buyer_agent",
     "action": "proposal_submitted",
-    "summary": "POST /tools/submit_proposal items=['BOOK-001', 'BOOK-002']",
+    "summary": "POST /tools/submit_proposal items=['BOOK-002']",
     "data": {}
    },
    {
-    "ts": 1787684449.206496,
+    "ts": 1787715205.9115632,
     "seq": 14,
     "actor": "gateway",
     "action": "verdict_received",
     "summary": "APPROVE (all rules passed)",
     "data": {
      "decision": "APPROVE",
-     "seq": 55,
-     "proposal_hash": "b9d5e9fbb0e9a70255628c4d277cdaf12a33351903040a2bf2ffc0de58b87fc1"
+     "seq": 64,
+     "proposal_hash": "e882d75a5481514e4da32b21d1e2f95bb7a1b65bdc9ea9b816b6a1c15a30f0b8"
     }
    },
    {
-    "ts": 1787684449.2207947,
+    "ts": 1787715205.9287326,
     "seq": 15,
     "actor": "merchant_ai",
     "action": "no_offers",
@@ -515,160 +556,130 @@
     "data": {}
    },
    {
-    "ts": 1787684449.220806,
+    "ts": 1787715205.9287415,
     "seq": 16,
     "actor": "buyer_agent",
     "action": "creating_order",
-    "summary": "Creating Razorpay order for ['BOOK-001', 'BOOK-002']",
+    "summary": "Creating Razorpay order for ['BOOK-002']",
     "data": {}
    },
    {
-    "ts": 1787684449.5164905,
+    "ts": 1787715210.3546047,
     "seq": 17,
     "actor": "executor",
     "action": "order_created",
-    "summary": "Razorpay order order_TU6uSK4Exd4ijE Rs 698 (backed by APPROVE seq=55)",
+    "summary": "Razorpay order order_TUFe1UFsbLGu0U Rs 299 (backed by APPROVE seq=64)",
     "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "checkout_url": "/checkout/order_TU6uSK4Exd4ijE"
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "checkout_url": "/checkout/order_TUFe1UFsbLGu0U"
     }
    },
    {
-    "ts": 1787684449.5164964,
+    "ts": 1787715210.3546102,
     "seq": 18,
     "actor": "buyer_agent",
     "action": "payment_initiated",
-    "summary": "Opening checkout for order_TU6uSK4Exd4ijE",
+    "summary": "Attempting UPI payment on order_TUFe1UFsbLGu0U via api.razorpay.com",
     "data": {}
    },
    {
-    "ts": 1787684480.182876,
+    "ts": 1787715219.8676314,
     "seq": 19,
-    "actor": "buyer_agent",
-    "action": "payment_attempt_done",
-    "summary": "Payment attempt: failed",
+    "actor": "executor",
+    "action": "payment_status",
+    "summary": "Final status: created",
     "data": {
-     "status": "failed",
-     "error": "Locator.count: Frame was detached"
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
+     "local_status": "created",
+     "razorpay_status": "attempted",
+     "paid": false
     }
    },
    {
-    "ts": 1787684502.839255,
+    "ts": 1787715221.5239189,
     "seq": 20,
-    "actor": "buyer_agent",
-    "action": "payment_retry_result",
-    "summary": "Retry: unknown",
+    "actor": "executor",
+    "action": "payment_status",
+    "summary": "Final status: created",
     "data": {
-     "status": "unknown",
-     "error": "razorpay checkout iframe never appeared",
-     "screenshot": "docs/log/day03/checkout-no-iframe.png"
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
+     "local_status": "created",
+     "razorpay_status": "attempted",
+     "paid": false
     }
    },
    {
-    "ts": 1787684503.501247,
+    "ts": 1787715225.8219457,
     "seq": 21,
     "actor": "executor",
     "action": "payment_status",
     "summary": "Final status: created",
     "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
      "local_status": "created",
-     "razorpay_status": "created",
+     "razorpay_status": "attempted",
      "paid": false
     }
    },
    {
-    "ts": 1787684504.9141202,
+    "ts": 1787715227.3173804,
     "seq": 22,
     "actor": "executor",
     "action": "payment_status",
     "summary": "Final status: created",
     "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
      "local_status": "created",
-     "razorpay_status": "created",
+     "razorpay_status": "attempted",
      "paid": false
     }
    },
    {
-    "ts": 1787684506.4252462,
+    "ts": 1787715228.798769,
     "seq": 23,
     "actor": "executor",
     "action": "payment_status",
     "summary": "Final status: created",
     "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
      "local_status": "created",
-     "razorpay_status": "created",
+     "razorpay_status": "attempted",
      "paid": false
     }
    },
    {
-    "ts": 1787684507.8112595,
+    "ts": 1787715231.8844292,
     "seq": 24,
     "actor": "executor",
     "action": "payment_status",
     "summary": "Final status: created",
     "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
+     "order_id": "order_TUFe1UFsbLGu0U",
+     "amount_paise": 29900,
+     "status": "attempted",
      "local_status": "created",
-     "razorpay_status": "created",
+     "razorpay_status": "attempted",
      "paid": false
     }
-   },
-   {
-    "ts": 1787684509.2045777,
-    "seq": 25,
-    "actor": "executor",
-    "action": "payment_status",
-    "summary": "Final status: created",
-    "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
-     "local_status": "created",
-     "razorpay_status": "created",
-     "paid": false
-    }
-   },
-   {
-    "ts": 1787684511.1163945,
-    "seq": 26,
-    "actor": "executor",
-    "action": "payment_status",
-    "summary": "Final status: created",
-    "data": {
-     "order_id": "order_TU6uSK4Exd4ijE",
-     "amount_paise": 69800,
-     "status": "created",
-     "local_status": "created",
-     "razorpay_status": "created",
-     "paid": false
-    }
-   },
-   {
-    "ts": 1787684512.1166046,
-    "seq": 27,
-    "actor": "system",
-    "action": "mission_completed",
-    "summary": "Mission MSN-PAYMENT_FAILURE_RECOVERY-8992897e completed",
-    "data": {}
    }
   ]
  },
+ "status": "payment_failed_then_link_issued",
  "scenario": {
   "id": "payment_failure_recovery",
-  "title": "Payment Failure + Recovery",
-  "description": "Agent creates order, payment fails (failure test card), then retries. Shows graceful failure handling in the trace.",
-  "expected": "Order created -> payment fails -> retry -> recovery cycle visible in trace."
+  "title": "Payment Failure + Deterministic Recovery",
+  "description": "Agent creates order, attempts the UPI rail against the real api.razorpay.com, receives the real failure, reasons with Gemini, and issues a Payment Link as an alternative rail. The audit chain links failure -> diagnosis -> recovery via parent_action_id.",
+  "expected": "UPI attempt fails for real -> LLM recovery reasoning -> payment_link_issued with parent_action_id chain. Final status: payment_failed_then_link_issued."
  }
 }

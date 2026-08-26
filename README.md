@@ -139,7 +139,7 @@ I8  proposal  category relabeled from cricket to books (spoofing at submit time)
 
 Hand-authored. Planted in our own catalog. On purpose. We attacked ourselves before anyone else could. The gateway reads price and category from `CATALOG` — never from the proposal, never from the description. R1 kills inflated totals. R5 kills scope violations. R9 kills tampered signatures. R3 kills price drift.
 
-## A real mission
+## An order-creation mission (honest trace)
 
 ```
 $ curl -X POST localhost:8000/agent/run-scenario/happy_path
@@ -154,12 +154,40 @@ $ curl -X POST localhost:8000/agent/run-scenario/happy_path
 [16] buyer_agent upsell_accepted Accepted upgrade to BAT-002 (rating 4.1 -> 4.6)
 [17] gateway    verdict         APPROVE (upsell accepted, new total approved)
 [19] executor   order_created   order_TU6jlAHhHSJxRN Rs 2,499 (backed by APPROVE seq=53)
-[29] system     mission_completed
 
-status: completed
+status: order_created_payment_pending
 ```
 
-Every step is a real HTTP call. The LLM made a real decision. The gateway ran real rules. The order is on Razorpay's dashboard. Full traces live in [`docs/log/day03/`](docs/log/day03/).
+This is the full trace — nothing hidden. The order is real on Razorpay's
+dashboard, but no payment was captured on this run, so the agent reports
+`order_created_payment_pending`, not `completed`. A mission is only
+`completed` when a payment reaches `captured`/`refunded`.
+
+## The failure-recovery mission (the bar)
+
+```
+$ curl -X POST localhost:8000/agent/run-scenario/payment_failure_recovery
+
+[17] executor   order_created       order_TUFe1UFsbLGu0U Rs 299 (APPROVE seq=64)
+[18] buyer_agent payment_initiated  Attempting UPI via api.razorpay.com
+    -> REAL failure: "UPI transactions are not enabled for the merchant"
+       audit: aud_67 payment_attempt_failed error_code=BAD_REQUEST_ERROR
+              review_state=escalated
+[LLM] gemini reasons (outside money path):
+     "The payment failed because UPI transactions are not enabled for the
+      merchant. A payment link should be generated to provide the customer
+      with alternative payment rails." -> action=create_payment_link
+       audit: aud_68 recovery_reasoned parent_action_id=aud_67
+[19] executor   payment_link_issued plink_TUFe85E3GyhciA
+                    short_url https://rzp.io/rzp/eEt7AgE
+       audit: aud_69 parent_action_id=aud_67 idempotency_key=idem_d62f...
+
+status: payment_failed_then_link_issued
+```
+
+One failure handled gracefully: real Razorpay API refusal, real Gemini
+reasoning, real Payment Link with a 24-hour expiry, and an audit chain that
+visibly links failure -> diagnosis -> recovery via `parent_action_id`.
 
 ## The security boundary
 
@@ -293,7 +321,15 @@ If an LLM sits between a buyer and a payment, every string it reads is an attack
 
 ## Status
 
-Day 3 complete. Storefront, gateway, durable audit chain, webhook receiver, upsell engine, buyer agent with protocol trace, persistence, Playwright payment automation, 47 tests. Known limitation documented: checkout automation tracks Razorpay's DOM and fails loudly (with screenshots) rather than faking success. Next: mission control frontend, three-arm eval harness, pitch video.
+Day 3 + Day 4 complete. Storefront, gateway, durable audit chain with
+enriched fields (parent_action_id, idempotency_key, error_code,
+reasoning_trace, review_state), webhook receiver, upsell engine, buyer
+agent with protocol trace, persistence, deterministic API-driven failure
+recovery (real UPI refusal -> Gemini reasoning -> Payment Link), custody-
+split mission signer CLI, schema.org JSON-LD catalog, 47 tests. Mission
+statuses are honest by design: `completed` only on captured/refunded;
+otherwise `payment_failed_then_link_issued`, `order_created_payment_pending`,
+or `rejected`. Next: one live captured-payment run on video, pitch video.
 
 ## Logs
 

@@ -1,6 +1,11 @@
-"""Agent-native discovery: /.well-known/agent-manifest.json"""
+"""Agent-native discovery: /.well-known/agent-manifest.json
+and the schema.org JSON-LD catalog at /catalog.jsonld."""
 
-from fastapi import APIRouter
+import json
+
+from fastapi import APIRouter, Response
+
+from .products import CATALOG
 
 router = APIRouter()
 
@@ -11,7 +16,14 @@ MANIFEST = {
         "version": "1.0.0",
         "protocol": "sellable-v1",
     },
-    "capabilities": ["search", "get_product", "quote", "propose", "checkout", "payment_status"],
+    "supported_protocols": {
+        "sellable-v1": "native (this manifest)",
+        "schema.org": "Product/Offer JSON-LD via /catalog.jsonld",
+        "acp_ap2_x402": "tracked; patterns (mandates, bounded offers) "
+                        "implemented in mission + upsell design",
+    },
+    "capabilities": ["search", "get_product", "quote", "propose",
+                     "checkout", "payment_status"],
     "tools": [
         {"name": "search_products", "method": "GET",
          "endpoint": "/tools/search_products",
@@ -71,3 +83,42 @@ async def agent_manifest():
 @router.get("/tools/merchant_policy")
 async def merchant_policy():
     return MANIFEST["policies"]
+
+
+@router.get("/catalog.jsonld")
+async def catalog_jsonld():
+    """schema.org Product + Offer JSON-LD for every SKU.
+
+    Machine-readable catalog per the agent-commerce direction: prices in
+    INR subunits, availability from stock, ratings and category linkage
+    included so external agents can reason without bespoke parsing.
+    """
+    products = []
+    for sku, p in CATALOG.items():
+        products.append({
+            "@type": "Product",
+            "name": p["name"],
+            "sku": sku,
+            "category": p["category"],
+            "description": p["description"],
+            "aggregateRating": {
+                "@type": "AggregateRating",
+                "ratingValue": p["rating"],
+                "bestRating": 5,
+            },
+            "offers": {
+                "@type": "Offer",
+                "priceCurrency": "INR",
+                "price": p["price_paise"] / 100,
+                "availability": ("https://schema.org/InStock"
+                                 if p.get("stock", 0) > 0 else
+                                 "https://schema.org/OutOfStock"),
+            },
+        })
+    payload = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "itemListElement": products,
+    }
+    return Response(content=json.dumps(payload, indent=1),
+                    media_type="application/ld+json")

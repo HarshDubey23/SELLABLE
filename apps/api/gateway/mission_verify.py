@@ -2,9 +2,11 @@
 G5 enforcement point: verify a mission's HMAC using MISSION_HMAC_KEY.
 
 Key Custody Note (G5):
-This module verifies mission signatures using MISSION_HMAC_KEY from env.
-The Buyer Agent process NEVER receives MISSION_HMAC_KEY in its environment.
-The agent carries a signed mission blob; it cannot mint or modify one.
+Note: The custody invariant (separating the signer from the verifier
+process) is enforced in this deployment via scripts/sign_mission.py —
+missions are signed out-of-band by the CLI into missions/*.json, and
+the FastAPI process only verifies signatures; it never signs one. The
+signing key lives in .env, read exclusively by the CLI.
 """
 import hashlib
 import hmac

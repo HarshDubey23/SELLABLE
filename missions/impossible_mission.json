@@ -1,0 +1,12 @@
+{
+ "intent": "laptop",
+ "budget_paise": 15000,
+ "allowed_categories": [
+  "electronics"
+ ],
+ "forbidden_categories": [],
+ "upsell_cap": 1.0,
+ "mission_id": "MSN-IMPOSSIBLE_MISSION-SIGNED",
+ "expires_at": 1787777635,
+ "signature": "b3a3750454004d00355f557df44ec317650d4776834e7d6ced6fa0e52e5150eb"
+}

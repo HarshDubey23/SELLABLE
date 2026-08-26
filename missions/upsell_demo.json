@@ -1,0 +1,12 @@
+{
+ "intent": "cricket bat",
+ "budget_paise": 300000,
+ "allowed_categories": [
+  "cricket"
+ ],
+ "forbidden_categories": [],
+ "upsell_cap": 1.5,
+ "mission_id": "MSN-UPSELL_DEMO-SIGNED",
+ "expires_at": 1787777635,
+ "signature": "2db68558bfc567c250889bf657696bf898e7cef29f05f8f65552e739ad112e5a"
+}

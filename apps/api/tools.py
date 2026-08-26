@@ -385,6 +385,11 @@ async def tool_create_order(req: CreateOrderReq,
                         "seq + proposal_hash here"
             }})
 
+    # Deterministic idempotency key: same mission + proposal + verdict
+    # always derives the same key, so a replay is detectable end-to-end.
+    idem_key = rp_client.derive_idempotency_key(
+        "create_order", q["mission_id"], req.proposal_hash, req.approve_seq)
+
     try:
         rp = rp_client.create_order(
             amount_paise=q["total_paise"],   # integer paise
@@ -392,6 +397,7 @@ async def tool_create_order(req: CreateOrderReq,
             notes={"quote_id": q["quote_id"],
                    "mission_id": q["mission_id"],
                    "proposal_hash": req.proposal_hash},
+            idempotency_key=idem_key,
         )
     except Exception as e:
         raise HTTPException(503, detail={
@@ -419,7 +425,9 @@ async def tool_create_order(req: CreateOrderReq,
     )
 
     chain.append("executor", "order_created",
-                 {"order_id": rp["id"], "amount_paise": q["total_paise"]})
+                 {"order_id": rp["id"], "amount_paise": q["total_paise"]},
+                 idempotency_key=idem_key,
+                 review_state="auto_approved")
 
     return {"order_id": rp["id"], "amount_paise": q["total_paise"],
             "amount_display": f"Rs {q['total_paise']/100:,.0f}",

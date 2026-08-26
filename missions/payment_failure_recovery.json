@@ -1,0 +1,12 @@
+{
+ "intent": "books",
+ "budget_paise": 100000,
+ "allowed_categories": [
+  "books"
+ ],
+ "forbidden_categories": [],
+ "upsell_cap": 1.2,
+ "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-SIGNED",
+ "expires_at": 1787777635,
+ "signature": "2a42dbf93430e378efb8d4ec84162076b6aefdc4a6a4071f7ea1484254fbaed7"
+}

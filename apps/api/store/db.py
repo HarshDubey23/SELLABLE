@@ -53,8 +53,7 @@ def init_schema() -> None:
                     payload_hash TEXT NOT NULL,
                     prev_hash TEXT NOT NULL,
                     hash TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS webhook_events (
+                );                CREATE TABLE IF NOT EXISTS webhook_events (
                     event_id TEXT PRIMARY KEY,
                     event_type TEXT,
                     order_id TEXT,
@@ -97,6 +96,39 @@ def init_schema() -> None:
                 CREATE INDEX IF NOT EXISTS idx_events_order
                     ON webhook_events(order_id);
             """)
+            conn.commit()
+        finally:
+            conn.close()
+    # Outside the lock: _migrate_audit_columns takes the lock itself
+    # (threading.Lock is NOT reentrant — calling it inside would deadlock).
+    _migrate_audit_columns()
+
+
+_AUDIT_EXTRA_COLUMNS = {
+    "parent_action_id": "TEXT",
+    "idempotency_key": "TEXT",
+    "error_code": "TEXT",
+    "error_reason": "TEXT",
+    "reasoning_trace": "TEXT",
+    "mandate_id": "TEXT",
+    "review_state": "TEXT",
+}
+
+
+def _migrate_audit_columns() -> None:
+    """Add enriched audit columns to pre-existing tables (idempotent)."""
+    with _lock:
+        conn = _connect()
+        try:
+            existing = {
+                row["name"] for row in
+                conn.execute("PRAGMA table_info(audit_chain)").fetchall()
+            }
+            for col, coltype in _AUDIT_EXTRA_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE audit_chain ADD COLUMN {col} {coltype}"
+                    )
             conn.commit()
         finally:
             conn.close()
