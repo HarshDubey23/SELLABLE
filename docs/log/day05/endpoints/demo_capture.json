@@ -1,0 +1,81 @@
+{
+  "order_id": "order_TVLNA2egYMkJlj",
+  "amount_paise": 179800,
+  "final_status": "failed",
+  "captured": false,
+  "parent_action_id": "aud_301",
+  "audit_tail": [
+    {
+      "seq": 296,
+      "actor": "merchant",
+      "action": "negotiation_offer_merchant",
+      "action_id": "aud_296",
+      "parent_action_id": "aud_295",
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 297,
+      "actor": "merchant",
+      "action": "negotiation_accepted",
+      "action_id": "aud_297",
+      "parent_action_id": "aud_296",
+      "error_code": null,
+      "review_state": "pending_merchant"
+    },
+    {
+      "seq": 298,
+      "actor": "merchant",
+      "action": "negotiation_opened",
+      "action_id": "aud_298",
+      "parent_action_id": null,
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 299,
+      "actor": "buyer",
+      "action": "negotiation_offer_buyer",
+      "action_id": "aud_299",
+      "parent_action_id": "aud_298",
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 300,
+      "actor": "merchant",
+      "action": "negotiation_offer_merchant",
+      "action_id": "aud_300",
+      "parent_action_id": "aud_299",
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 301,
+      "actor": "demo",
+      "action": "demo_capture_started",
+      "action_id": "aud_301",
+      "parent_action_id": null,
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 302,
+      "actor": "merchant",
+      "action": "order_created",
+      "action_id": "aud_302",
+      "parent_action_id": "aud_301",
+      "error_code": null,
+      "review_state": "auto_approved"
+    },
+    {
+      "seq": 303,
+      "actor": "buyer",
+      "action": "payment_attempted",
+      "action_id": "aud_303",
+      "parent_action_id": "aud_302",
+      "error_code": null,
+      "review_state": "auto_approved"
+    }
+  ]
+}

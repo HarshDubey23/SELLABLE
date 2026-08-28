@@ -1,0 +1,28 @@
+Scenario happy_path: status=payment_failed_then_link_issued order=order_TVMdOcYZ8iRUqg amount=249900
+events=27
+1 system/mission_started: Mission MSN-HAPPY_PATH-SIGNED started
+2 user/intent_mandate_carried: {'ceiling_paise': 260000, 'note': 'user signed intent out-of-band (AP2 pattern)'}
+3 buyer_agent/tool_call: GET /.well-known/agent-manifest.json
+4 buyer_agent/tool_result: manifest: 11 tools discovered
+5 buyer_agent/tool_result: found 8 products for intent 'cricket gift'
+6 buyer_agent/tool_call: GET /tools/get_product/BAT-001
+7 buyer_agent/tool_result: BAT-001: SG Cricket Bat Kashmir Willow Rs 1,499
+8 buyer_agent/tool_call: GET /tools/get_product/BAT-002
+9 buyer_agent/tool_result: BAT-002: SS Ton Elite English Willow Bat Rs 2,499
+10 buyer_agent/tool_call: GET /tools/get_product/BALL-001
+11 buyer_agent/tool_result: BALL-001: SG Test Leather Ball (Pack of 3) Rs 899
+12 buyer_agent/llm_call: asking model to propose items for: cricket gift
+13 buyer_agent/llm_reasoning: Agent proposes: ['BAT-001']
+14 buyer_agent/proposal_submitted: POST /tools/submit_proposal items=['BAT-001']
+15 gateway/verdict_received: APPROVE (all rules passed)
+16 merchant_ai/upsell_offered: Merchant offers 1 upgrade(s)
+17 buyer_agent/upsell_accepted: Accepted upgrade to BAT-002: The significant rating increase from 4.1 to 4.6 and the upgrade to an English Willow bat ju
+18 gateway/verdict_received: APPROVE (upsell accepted, new total approved)
+19 buyer_agent/creating_order: Creating Razorpay order for ['BAT-002']
+20 executor/order_created: Razorpay order order_TVMdOcYZ8iRUqg Rs 2,499 (backed by APPROVE seq=330)
+21 buyer_agent/payment_initiated: Attempting UPI payment on order_TVMdOcYZ8iRUqg via api.razorpay.com
+22 executor/payment_status: Final status: created
+23 executor/payment_status: Final status: created
+24 executor/payment_status: Final status: created
+25 executor/payment_status: Final status: created
+recovery outcome=payment_failed_then_link_issued link=https://rzp.io/rzp/KmUfQKs
