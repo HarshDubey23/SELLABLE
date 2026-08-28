@@ -13,3 +13,4 @@ Thumbs.db
 node_modules/
 data/*
 !data/.gitkeep
+missions/*_mandate.json

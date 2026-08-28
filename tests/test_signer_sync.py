@@ -39,6 +39,9 @@ def test_mission_jsons_are_signed():
     repo = Path(__file__).resolve().parents[1]
     missions_dir = repo / "missions"
     for mf in missions_dir.glob("*.json"):
+        # Mandate files are side-effects of agent runs (wallet_bridge), not missions
+        if "_mandate" in mf.name:
+            continue
         blob = json.loads(mf.read_text())
         assert blob.get("signature"), f"{mf.name}: missing or empty signature"
         assert blob.get("mission_id"), f"{mf.name}: missing mission_id"
