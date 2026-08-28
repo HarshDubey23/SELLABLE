@@ -122,6 +122,8 @@ class CreateOrderReq(BaseModel):
     quote_id: str
     proposal_hash: str
     approve_seq: int  # REQUIRED — no APPROVE binding, no money
+    intent_mandate: dict | None = None
+    cart_mandate: dict | None = None
 
 
 @router.get("/tools/search_products")
@@ -385,6 +387,37 @@ async def tool_create_order(req: CreateOrderReq,
                         "seq + proposal_hash here"
             }})
 
+    # INV-3: user-signed intent + cart mandates required before any order.
+    from .mandates.mandates import MandateError, verify_cart, verify_intent
+
+    intent_blob = req.intent_mandate
+    cart_blob = req.cart_mandate
+    total_paise = q["total_paise"]
+    if intent_blob is None or cart_blob is None:
+        chain.append("executor", "mandate_rejected",
+                     {"mission_id": q["mission_id"], "order_blocked": True},
+                     error_code="MANDATE_MISSING",
+                     review_state="blocked_mandate")
+        raise HTTPException(422, detail={
+            "error": "MANDATE_REQUIRED", "code": "MANDATE_MISSING",
+            "detail": "INV-3: user-signed intent + cart mandates required"})
+    try:
+        verify_intent(intent_blob, order_total_paise=total_paise)
+        verify_cart(cart_blob, proposal_hash=req.proposal_hash,
+                    amount_paise=total_paise)
+    except MandateError as exc:
+        chain.append("executor", "mandate_rejected",
+                     {"mission_id": q["mission_id"], "code": exc.code},
+                     error_code=exc.code,
+                     review_state="blocked_mandate")
+        raise HTTPException(403, detail={
+            "error": "MANDATE_REJECTED", "code": exc.code})
+    chain.append("executor", "mandate_verified",
+                 {"mission_id": q["mission_id"],
+                  "cart_hash": req.proposal_hash,
+                  "amount_paise": total_paise},
+                 review_state="verified")
+
     # Deterministic idempotency key: same mission + proposal + verdict
     # always derives the same key, so a replay is detectable end-to-end.
     idem_key = rp_client.derive_idempotency_key(
@@ -425,7 +458,8 @@ async def tool_create_order(req: CreateOrderReq,
     )
 
     chain.append("executor", "order_created",
-                 {"order_id": rp["id"], "amount_paise": q["total_paise"]},
+                 {"order_id": rp["id"], "amount_paise": q["total_paise"],
+                  "mission_id": q["mission_id"]},
                  idempotency_key=idem_key,
                  review_state="auto_approved")
 
@@ -540,3 +574,9 @@ async def tool_crosssell_offers(mission_id: str, skus: str):
     })
 
     return {"offers": offers, "count": len(offers)}
+
+
+@router.post("/tools/scan_copy")
+async def scan_copy_endpoint(body: dict) -> dict:
+    from .guardrails.dark_patterns import scan_copy
+    return scan_copy(str(body.get("text", "")))

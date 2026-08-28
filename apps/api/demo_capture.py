@@ -17,9 +17,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .audit import chain as audit
-from .razorpay_client import (RazorpayAPIError, attempt_checkout_payment,
-                              capture_payment, create_order,
-                              list_order_payments)
+from .razorpay_client import (
+    RazorpayAPIError,
+    attempt_checkout_payment,
+    capture_payment,
+    create_order,
+    list_order_payments,
+)
 
 router = APIRouter(prefix="/demo", tags=["demo-capture"])
 

@@ -12,9 +12,10 @@ external buyer agent would be. It:
 6. On REJECT: one bounded revision attempt, then re-submits
 7. On APPROVE: checks for upsell/cross-sell offers (ONE extra decision)
 8. If upsell accepted: re-proposes through the FULL gateway
-9. Creates a Razorpay order (requires an APPROVE binding — INV-1)
-10. Attempts payment completion via browser automation
-11. Returns the full trace
+9. Carries user-signed intent + final-cart mandates — INV-3
+10. Creates a Razorpay order (requires an APPROVE binding — INV-1)
+11. Attempts payment completion via the Razorpay payments API
+12. Returns the full trace
 
 If the model is unavailable or errors out, a deterministic fallback
 proposer keeps missions observable end-to-end; every fallback is marked
@@ -141,6 +142,19 @@ async def run_mission(
         trace = MissionTrace(mission_id)
 
     trace.emit("system", "mission_started", f"Mission {mission_id} started")
+
+    # INV-3: user pre-authorizes the mission out-of-band (wallet CLI).
+    from .wallet_bridge import carry_cart_consent, carry_intent
+    ceiling = int(mission_data.get("budget_paise", 0) *
+                 float(mission_data.get("upsell_cap", 1.3)))
+    try:
+        intent_mandate = carry_intent(mission_id, ceiling)
+        trace.emit("user", "intent_mandate_carried",
+                   {"ceiling_paise": ceiling,
+                    "note": "user signed intent out-of-band (AP2 pattern)"})
+    except Exception as exc:
+        trace.emit("system", "mandate_error", f"intent mandate failed: {exc}")
+        return {"status": "mandate_error", "trace": trace.to_dict()}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
 
@@ -384,9 +398,15 @@ Propose which items to buy:"""
                     accept_sku = accept_sku_r
 
             if accept_sku:
+                detail_by_sku = {p.get("sku"): p for p in detailed_products}
+                before_paise = sum(
+                    int(detail_by_sku.get(s, {}).get("price_paise", 0))
+                    for s in proposed_skus
+                )
                 trace.emit("buyer_agent", "upsell_accepted",
                            f"Accepted upgrade to {accept_sku}: {upsell_reason}",
-                           {"to_sku": accept_sku, "reason": upsell_reason})
+                           {"to_sku": accept_sku, "reason": upsell_reason,
+                            "before_paise": before_paise})
 
                 new_skus = []
                 for s in proposed_skus:
@@ -450,6 +470,10 @@ Propose which items to buy:"""
                     "quote_id": quote["quote_id"],
                     "proposal_hash": proposal_hash,
                     "approve_seq": seq,
+                    "intent_mandate": intent_mandate,
+                    "cart_mandate": carry_cart_consent(
+                        mission_id, proposal_hash, int(quote["total_paise"])
+                    ),
                 },
                 headers={"X-Idempotency-Key":
                          f"agent-{mission_id}-{time.time_ns()}"},

@@ -11,9 +11,11 @@ from .agent.runner import router as agent_router
 from .audit import chain as audit_chain
 from .audit.timeline import router as timeline_router
 from .checkout_route import router as checkout_router
+from .dashboard.mission_explain import router as mission_dashboard_router
 from .demo import router as demo_router
 from .gateway.proof import compute_proof
 from .manifest import router as manifest_router
+from .metrics.api import router as metrics_router
 from .store import db as store
 from .tools import orders, quotes
 from .tools import router as tools_router
@@ -48,6 +50,8 @@ app.include_router(tools_router)
 app.include_router(webhook_router)
 app.include_router(demo_router)
 app.include_router(timeline_router)
+app.include_router(mission_dashboard_router)
+app.include_router(metrics_router)
 app.include_router(checkout_router)
 app.include_router(agent_router)
 
