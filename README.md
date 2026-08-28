@@ -4,7 +4,9 @@
 
 The LLM proposes. Deterministic policy disposes. The audit log remembers.
 
-An agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode. 40 SKUs. 10 gateway rules. 8 planted injection attacks. 30 hand-written gateway tests. Zero LLM in the money path — machine-verifiable, not claimed.
+An agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode. 40 SKUs. 11 gateway rules. 8 planted injection attacks. 61 hand-written + machine-enforced tests. Zero LLM in the money path — machine-verifiable, not claimed.
+
+Day 5 additions: **multi-turn bounded negotiation** (LLM writes rationales, deterministic strategy sets prices, server-side floor/ceiling, walk-away), a **three-arm eval harness** proving 100% injection resistance with positive trust-adjusted revenue, and a **live captured-payment demo** (`POST /demo/capture`).
 
 ---
 
@@ -122,7 +124,9 @@ def evaluate(*, mission, proposal, catalog, verify_fn, state, chain_ok=True):
 
 First violation wins. The cited rule ID is always the proximate cause. The APPROVE verdict binds `proposal_hash` — the executor re-checks that binding at order creation. Post-approve tampering is caught.
 
-Purity enforced: `tests/invariants/test_gateway_purity.py` greps every gateway file for LLM SDKs, network clients, FastAPI, Pydantic. Any match -> CI fails. `/gateway/proof` returns the same check live, with a source SHA-256.
+**R11_NEGOTIATION_BOUND (Day 5):** every item price must be within `[floor_paise, ceiling_paise]` read from the server-side catalog. Phase 3 FATAL. Defense-in-depth: the negotiation engine clamps, R11 re-verifies, INV-1 enforces the binding.
+
+Purity enforced: `tests/invariants/test_gateway_purity.py` greps every gateway file for LLM SDKs, network clients, FastAPI, Pydantic. Any match -> CI fails. `/gateway/proof` returns the same check live, with a source SHA-256. `tests/test_negotiation_purity.py` enforces the same N-1 invariant for the negotiation core (`types/bounds/strategies`).
 
 ## The attacks
 
@@ -189,6 +193,77 @@ One failure handled gracefully: real Razorpay API refusal, real Gemini
 reasoning, real Payment Link with a 24-hour expiry, and an audit chain that
 visibly links failure -> diagnosis -> recovery via `parent_action_id`.
 
+## Multi-turn bounded negotiation (Day 5)
+
+The LLM negotiates. The deterministic strategy prices. The bounds prevent
+any loss.
+
+```bash
+$ curl -X POST localhost:8000/negotiation/start -H 'Content-Type: application/json' \
+    -d '{"mission_id":"MSN-DEMO-ACC","sku":"BAT-001","qty":1,
+         "floor_paise":119900,"ceiling_paise":149900,
+         "buyer_budget_paise":150000,"max_turns":5,"llm_enabled":false}'
+
+$ curl -X POST localhost:8000/negotiation/$NID/run -d '{}'
+status: accepted   final_price_paise: 135464   turns: 4
+# final price Rs 1,354.64 — within [floor 1,199, ceiling 1,499]
+
+# Buyer budget below the merchant floor -> bounded termination:
+$ curl -X POST localhost:8000/negotiation/$NID2/run -d '{}'
+status: walked_away   turns: 3
+# audit: negotiation_offer_buyer -> negotiation_offer_merchant
+#        -> negotiation_budget_exceeded, all parent_action_id-chained
+```
+
+Six deterministic constraints, none of them in the LLM: `floor_paise`,
+`ceiling_paise`, `max_turns`, monotonic concession, walk-away gap, and a
+hard budget gate. The LLM writes offer rationales only — the numeric price
+comes from `strategies.py` and is clamped by `bounds.clamp_offer()`. The
+raw (pre-clamp) price is preserved on every offer for audit. An accepted
+price STILL flows through the full gateway (R1-R11) and `create_order`
+(INV-1). Negotiation never shortcuts the money path.
+
+## Live captured-payment demo (Day 5)
+
+```bash
+$ curl -X POST localhost:8000/demo/capture -H 'Content-Type: application/json' \
+    -d '{"amount_paise":179800,"sku":"BAT-001","mission_id":"MSN-CAP"}'
+
+{"order_id":"order_...","final_status":"captured","captured":true,
+ "audit_tail":[demo_capture_started -> order_created -> payment_attempted
+               -> payment_captured ...]}
+```
+
+Real test-mode order, real public-key card payment (4111 1111 1111 1111),
+explicit `/v1/payments/{id}/capture` if authorized, 10s poll for captured
+authority — every step audit-chained. `use_failing_card: true` demos the
+decline path.
+
+## The eval harness (Day 5)
+
+Three arms x 100 seeded missions. The gated arm calls the real
+`gateway.evaluate()` — R1-R11 exercised on every mission.
+
+```bash
+$ python -m eval.run --missions 100 --reps 3 --seed 42
+[eval] 100 missions x 3 reps -> eval/results.json
+  gated trust-adjusted revenue: 15135900 paise
+  ungated fraud loss: 3451000 paise
+  gated injection resistance: 100.0%
+
+$ python -m eval.report --in eval/results.json --out eval/report.md
+```
+
+| Arm | Trust-adjusted revenue | Injection resistance |
+|---|---|---|
+| static (no agent) | Rs 132,882 | n/a |
+| ungated (naive LLM) | Rs 63,862 | 0% |
+| **gated (SELLABLE)** | **Rs 151,359** | **100%** |
+
+"Just let the LLM decide" loses Rs 34,510 to fraud. The gateway prevents
+all of it by reading prices server-side — and recovery revenue from
+failed-then-link flows makes gated beat even the static baseline.
+
 ## The security boundary
 
 ```bash
@@ -249,10 +324,10 @@ The agent accepted. Revenue went from Rs 1,499 to Rs 2,499. Within bounds. Audit
 ```bash
 cp .env.example .env
 # RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET,
-# MISSION_HMAC_KEY, GEMINI_API_KEY, GEMINI_MODEL=gemini-3.6-flash
+# MISSION_HMAC_KEY, GEMINI_API_KEY, GEMINI_MODEL=gemini-2.0-flash,
+# GEMINI_FALLBACK_MODELS=gemini-2.5-flash,gemini-1.5-flash
 
 pip install -r apps/api/requirements.txt
-playwright install chromium
 uvicorn apps.api.main:app --port 8000
 ```
 
@@ -275,26 +350,33 @@ GET  /ledger                            payment ledger
 GET  /policy                            10 rules, machine-readable
 GET  /audit                             hash chain + live verification
 GET  /audit/timeline                    HTML visualization
-GET  /checkout/{order_id}               Razorpay Checkout page (Playwright target)
+GET  /checkout/{order_id}               Razorpay Checkout page (legacy; Day 5 uses public-key HTTP)
 GET  /gateway/proof                     purity report: 0 LLM, 0 I/O, source SHA-256
 POST /agent/run-mission                 run buyer agent, full protocol trace
 GET  /agent/scenarios                   6 demo scenarios
 POST /agent/run-scenario/{id}           run named scenario (happy_path, injection_i1, ...)
 GET  /demo/injection/{n}                one adversarial payload + its deterministic defense
 GET  /demo/e2e                          end-to-end flow with a real test-mode order
+POST /negotiation/start                 open bounded negotiation (Day 5)
+POST /negotiation/{id}/turn             run one turn (Day 5)
+POST /negotiation/{id}/run              run to completion (Day 5)
+GET  /negotiation/{id}                  fetch state (Day 5)
+GET  /negotiation/mission/{mid}         negotiations for a mission (Day 5)
+POST /negotiation/{id}/accept_at        human-in-the-loop accept (Day 5)
+POST /demo/capture                      live captured-payment demo (Day 5)
 ```
 
 ## Tests
 
 ```bash
 $ python -m pytest -q
-47 passed in 0.27s     # 30-case gateway matrix + legacy gateway tests + upsell + purity
+61 passed in 1.51s     # gateway matrix + purity + upsell + negotiation + eval + signer sync
 
-$ ruff check .
+$ ruff check apps/api/gateway/ apps/api/negotiation/
 All checks passed!
 
 $ mypy            # strict mode on apps/api/gateway/ (CI convention)
-Success: no issues found in 6 source files
+Success: no issues found in 7 source files
 
 $ python scripts/verify_catalog.py
 Catalog verification PASSED — 40 SKUs, prices unchanged, all injections intact
@@ -306,12 +388,13 @@ CI runs pytest + ruff + mypy on every push and PR. Gateway tests are hand-writte
 
 ```
 40      SKUs across 6 categories (cricket, books, electronics, apparel, groceries, stationery)
-10      gateway rules (R1-R10), 4 phases, first-violation-wins, fail-closed
+11      gateway rules (R1-R11), 4 phases, first-violation-wins, fail-closed
 8       prompt injection attacks planted in catalog (I1-I8)
-30      hand-written gateway matrix tests (every rule, positive + negative)
-24      HTTP endpoints
-6       demo scenarios (happy path, injection, hidden-upsell attack, upsell, impossible mission, payment failure)
-47      passing tests
+40      SKUs with server-side floor/ceiling negotiation bounds
+61      passing tests (gateway matrix, purity, negotiation, eval, signer sync)
+31      HTTP endpoints
+6       demo scenarios + 3 failure modes (injection, payment failure, walk-away)
+100%    eval injection resistance (gated arm, 300 missions)
 0       LLM imports in the money path
 ```
 
@@ -321,19 +404,27 @@ If an LLM sits between a buyer and a payment, every string it reads is an attack
 
 ## Status
 
-Day 3 + Day 4 complete. Storefront, gateway, durable audit chain with
+Day 1-5 complete. Storefront, gateway (R1-R11), durable audit chain with
 enriched fields (parent_action_id, idempotency_key, error_code,
 reasoning_trace, review_state), webhook receiver, upsell engine, buyer
 agent with protocol trace, persistence, deterministic API-driven failure
 recovery (real UPI refusal -> Gemini reasoning -> Payment Link), custody-
-split mission signer CLI, schema.org JSON-LD catalog, 47 tests. Mission
-statuses are honest by design: `completed` only on captured/refunded;
-otherwise `payment_failed_then_link_issued`, `order_created_payment_pending`,
-or `rejected`. Next: one live captured-payment run on video, pitch video.
+split mission signer CLI, schema.org JSON-LD catalog, 61 tests. Day 5:
+multi-turn bounded negotiation (LLM rationales, deterministic prices,
+floor/ceiling bounds, walk-away), three-arm eval harness (100% gated
+injection resistance, positive trust-adjusted revenue), live captured-
+payment demo (`POST /demo/capture`), GEMINI_MODEL fix. Mission statuses
+are honest by design: `completed` only on captured/refunded; otherwise
+`payment_failed_then_link_issued`, `order_created_payment_pending`, or
+`rejected`. Next: record the pitch video
+([docs/PITCH_SCRIPT.md](docs/PITCH_SCRIPT.md)), submit
+([docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md)).
 
 ## Logs
 
 - [day01](docs/log/day01.md) — webhook receiver, HMAC on raw body, zrok tunnel, real Razorpay events
 - [day02](docs/log/day02.md) — 40-SKU catalog, I1-I8 injections, storefront tools, manifest, gateway scaffolding, Gemini integration
 - [day03](docs/log/day03.md) — persistence, security closure (approve_seq required), R1 effective-budget fix, 30-test matrix, catalog enrichment, upsell engine, buyer agent loop, Playwright payment
+- [day04](docs/log/day04.md) — honesty overhaul: honest mission statuses, Playwright replaced with public-key HTTP payment, real failure-recovery run, enriched audit fields, custody split, idempotency keys
+- [day05](docs/log/day05.md) — negotiation engine, R11 gateway rule, floor/ceiling pricing, eval harness, live capture demo, GEMINI_MODEL fix
 - [proof of work](docs/log/day03/) — screenshots, endpoint JSON, scenario traces, database state, audit verification

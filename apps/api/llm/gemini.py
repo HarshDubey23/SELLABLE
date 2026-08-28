@@ -15,14 +15,14 @@ def _key() -> str | None:
 
 
 def _model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+    return os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 def _fallback_models() -> list[str]:
     """Ordered degradation when the primary model's quota is exhausted."""
     raw = os.environ.get(
         "GEMINI_FALLBACK_MODELS",
-        "gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash")
+        "gemini-2.5-flash,gemini-1.5-flash")
     return [m.strip() for m in raw.split(",") if m.strip()
             and m.strip() != _model_name()]
 
@@ -55,8 +55,9 @@ def ask(system: str, user: str) -> dict:
                 msg = str(e)
                 last_error = f"{model}: {msg}"
                 if ("429" not in msg and "RESOURCE_EXHAUSTED" not in msg
-                        and "quota" not in msg.lower()):
-                    break  # non-quota failure: don't burn other models
+                        and "quota" not in msg.lower()
+                        and "404" not in msg and "NOT_FOUND" not in msg):
+                    break  # non-quota/non-404 failure: don't burn other models
         return {"text": "",
                 "latency_ms": int((time.time() - t0) * 1000),
                 "model": _model_name(), "error": last_error}

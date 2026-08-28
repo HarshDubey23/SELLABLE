@@ -153,6 +153,26 @@ def list_order_payments(order_id: str) -> list[dict]:
     return data.get("items", [])
 
 
+def capture_payment(payment_id: str, amount_paise: int,
+                    currency: str = "INR") -> dict:
+    """POST /v1/payments/{id}/capture — capture an authorized payment."""
+    _validate_amount(amount_paise)
+    url = f"{BASE_URL}/payments/{payment_id}/capture"
+    resp = requests.post(url, auth=_auth(),
+                         data={"amount": amount_paise, "currency": currency},
+                         headers={"Content-Type": "application/x-www-form-urlencoded",
+                                  "X-Razorpay-Idempotency-Key": f"idem_cap_{payment_id}"},
+                         timeout=TIMEOUT_S)
+    try:
+        data = resp.json()
+    except Exception:
+        data = {"raw": resp.text}
+    if resp.status_code >= 400:
+        err = data.get("error", data) if isinstance(data, dict) else data
+        raise RazorpayAPIError(resp.status_code, err)
+    return data if isinstance(data, dict) else {"raw": data}
+
+
 def attempt_checkout_payment(order_id: str, amount_paise: int,
                              method_body: dict,
                              email: str = "buyer@sellable.test",

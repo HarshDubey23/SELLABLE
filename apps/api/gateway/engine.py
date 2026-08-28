@@ -84,6 +84,14 @@ def evaluate(*, mission: Mission | None,
     v = R.rule_r3_price_drift(proposal, catalog)
     if v:
         return reject(v.rule_id, v.message)
+    # Day 5: R11 negotiation bound (defense-in-depth after R3)
+    try:
+        from .rules_r11 import rule_r11_negotiation_bound
+        v = rule_r11_negotiation_bound(proposal, catalog, mission)
+        if v:
+            return reject(v.rule_id, v.message)
+    except ImportError:
+        pass
     v = R.rule_r7_allowlist(merchant_id, allowlist)
     if v:
         return reject(v.rule_id, v.message)

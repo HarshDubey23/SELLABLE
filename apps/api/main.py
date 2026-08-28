@@ -20,6 +20,20 @@ from .tools import router as tools_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
 
+try:
+    from .demo_capture import router as capture_router
+    _CAPTURE_AVAILABLE = True
+except ImportError:
+    capture_router = None  # type: ignore
+    _CAPTURE_AVAILABLE = False
+
+try:
+    from .negotiation.api import router as negotiation_router
+    _NEGOTIATION_AVAILABLE = True
+except ImportError:
+    negotiation_router = None  # type: ignore
+    _NEGOTIATION_AVAILABLE = False
+
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 
 # G6: chain self-verifies at boot; tamper halts the money path
@@ -37,6 +51,19 @@ app.include_router(timeline_router)
 app.include_router(checkout_router)
 app.include_router(agent_router)
 
+if _CAPTURE_AVAILABLE and capture_router is not None:
+    app.include_router(capture_router)
+    print("[BOOT] capture demo: enabled (POST /demo/capture)")
+
+if _NEGOTIATION_AVAILABLE and negotiation_router is not None:
+    app.include_router(negotiation_router)
+    print("[BOOT] negotiation engine: enabled (max_turns=5, floor/ceiling gated)")
+
+if not _NEGOTIATION_AVAILABLE:
+    print("[BOOT] negotiation engine: disabled (import failed)")
+if not _CAPTURE_AVAILABLE:
+    print("[BOOT] capture demo: disabled (import failed)")
+
 
 @app.get("/health")
 def health():
@@ -48,6 +75,8 @@ def health():
         "quotes_tracked": len(quotes),
         "audit_entries": len(audit_chain.entries()),
         "audit_chain_ok": audit_chain.verify(),
+        "negotiation_enabled": _NEGOTIATION_AVAILABLE,
+        "capture_demo_available": _CAPTURE_AVAILABLE,
     }
 
 

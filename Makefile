@@ -42,6 +42,10 @@ demo-abort:
 demo-tamper:
 	bash scripts/demo_tamper.sh
 
+demo-capture:
+	curl -X POST http://localhost:8000/demo/capture -H 'Content-Type: application/json' \
+	  -d '{"amount_paise":179800,"sku":"BAT-001","mission_id":"MSN-DEMO"}'
+
 cold-start: install smoke
 	@echo "== cold-start complete =="
 

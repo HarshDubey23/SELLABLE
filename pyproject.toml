@@ -11,4 +11,4 @@ strict = true
 files = ["apps/api/gateway/"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/gateway", "tests/invariants", "tests/test_upsell.py"]
+testpaths = ["tests"]

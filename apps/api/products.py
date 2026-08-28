@@ -397,6 +397,13 @@ CATALOG = {
                  "stock": 22},
 }
 
+# Day 5: floor/ceiling pricing for bounded negotiation.
+try:
+    from .negotiation.catalog_pricing import apply_floor_ceiling
+    apply_floor_ceiling(CATALOG)
+except ImportError:
+    pass  # negotiation package not yet installed (tests that import CATALOG directly)
+
 # I8 lives at proposal time (Day 3 test): proposal deliberately relabels a
 # cricket product's category as "books". Gateway must read category from
 # CATALOG, never from the proposal.
