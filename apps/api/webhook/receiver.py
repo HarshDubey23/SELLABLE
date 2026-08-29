@@ -92,9 +92,22 @@ async def webhook(
     x_razorpay_event_id: str = Header(default=""),
 ):
     webhook_secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+    if not webhook_secret:
+        log_line("[SECURITY] WEBHOOK_SECRET missing — failing closed (503)")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": {
+                    "error_code": "WEBHOOK_SECRET_MISSING",
+                    "message": "webhook secret not configured — failing closed",
+                    "retryable": False,
+                },
+            },
+        )
     body = await request.body()
 
-    # ---- PHASE 0: HMAC verification (FATAL) ----
+    # ---- PHASE 0: HMAC verification on RAW body (before JSON parse) ----
     expected = hmac.new(
         webhook_secret.encode("utf-8"), body, hashlib.sha256
     ).hexdigest()
@@ -123,7 +136,8 @@ async def webhook(
         log_line(f"[DUPLICATE] {event_id} already processed -> ack 200, no-op")
         return {"status": "ok", "duplicate": True, "event_id": event_id}
 
-    processed_event_ids.add(event_id)
+    # Do NOT mark as seen before persistence — if DB fails, retry must be allowed
+    is_new_event = True
 
     # ---- PHASE 2: Parse payload ----
     try:
@@ -153,13 +167,30 @@ async def webhook(
     status = payment.get("status", "unknown")
 
     # ---- PERSIST: the event hits disk before any state mutation ----
-    store.execute(
-        "INSERT OR IGNORE INTO webhook_events "
-        "(event_id, event_type, order_id, payment_id, amount_paise, status, "
-        " received_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (event_id, event_name, order_id, payment_id, amount, status,
-         int(time.time()))
-    )
+    # If persistence fails, do NOT mark as seen — allow Razorpay retry
+    try:
+        store.execute(
+            "INSERT OR IGNORE INTO webhook_events "
+            "(event_id, event_type, order_id, payment_id, amount_paise, status, "
+            " received_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (event_id, event_name, order_id, payment_id, amount, status,
+             int(time.time()))
+        )
+    except Exception as e:
+        log_line(f"[PERSIST-FAIL] event {event_id} not persisted: {e} — will allow retry")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": {
+                    "error_code": "PERSISTENCE_FAILED",
+                    "message": f"failed to persist webhook event: {e}",
+                    "retryable": True,
+                },
+            },
+        )
+    # Only now mark as seen — persistence succeeded
+    processed_event_ids.add(event_id)
 
     # ---- PHASE 3: Update ledger (hierarchy enforcement) ----
     if order_id not in payment_ledger:
@@ -221,7 +252,18 @@ async def webhook(
                 },
             )
         except Exception as e:
-            log_line(f"[AUDIT-WARN] failed to append payment_captured to chain: {e}")
+            log_line(f"[AUDIT-FAIL] failed to append payment_captured to chain: {e} — failing closed")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "ok": False,
+                    "error": {
+                        "error_code": "AUDIT_APPEND_FAILED",
+                        "message": f"captured payment not durably audited: {e}",
+                        "retryable": True,
+                    },
+                },
+            )
 
     return {"status": "ok", "event_id": event_id, "event": event_name, "order_id": order_id}
 

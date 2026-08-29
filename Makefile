@@ -1,5 +1,4 @@
-.PHONY: install run dev test smoke seed eval audit-verify audit-trace \
-        demo-happy demo-failure demo-injection demo-abort demo-tamper cold-start clean
+.PHONY: install run dev test smoke seed eval audit-verify audit-trace verify demo-capture clean
 
 install:
 	pip install -r apps/api/requirements.txt
@@ -13,7 +12,7 @@ test:
 	pytest -q
 
 smoke:
-	@echo "== 13 curl verifications ==" && bash scripts/smoke.sh
+	@echo "== 8 curl verifications ==" && bash scripts/smoke.sh
 
 seed:
 	python -m eval.missions.generate
@@ -27,27 +26,36 @@ audit-verify:
 audit-trace:
 	python -m apps.api.audit.trace
 
-demo-happy:
-	bash scripts/demo_happy.sh
+verify: test
+	@echo "== verify: running smoke + eval (30x2 quick) =="
+	bash scripts/smoke.sh
+	python -m eval.run --missions 30 --reps 2 --seed 42
+	@echo "== verify complete =="
 
-demo-failure:
-	bash scripts/demo_failure.sh
+redteam:
+	python scripts/redteam.py
 
-demo-injection:
-	bash scripts/demo_injection.sh
+demo-ready:
+	@echo "== demo-ready: checking env, DB, missions, server =="
+	@test -f .env || (echo "FAIL: .env missing — cp .env.example .env" && exit 1)
+	@python -c "import os; assert os.getenv('MISSION_HMAC_KEY') or open('.env').read().find('MISSION_HMAC_KEY')!=-1, 'MISSION_HMAC_KEY missing'"
+	@test -f missions/happy_path.json || (echo "FAIL: missions not signed — python scripts/sign_mission.py" && exit 1)
+	@python scripts/verify_catalog.py
+	@curl -sf http://localhost:$${PORT:-8000}/health | grep -q alive || (echo "FAIL: server not alive — make run" && exit 1)
+	@echo "== demo-ready: all checks pass =="
 
-demo-abort:
-	bash scripts/demo_abort.sh
-
-demo-tamper:
-	bash scripts/demo_tamper.sh
+demo-check:
+	@echo "== demo-check: critical scenarios runnable =="
+	curl -sf http://localhost:$${PORT:-8000}/gateway/proof | grep -q '"llm_imports_detected": 0'
+	curl -sf http://localhost:$${PORT:-8000}/policy | grep -q '"rules_count": 11'
+	python scripts/redteam.py --base http://localhost:$${PORT:-8000} | grep -q "PASS"
+	@echo "== demo-check: ok =="
 
 demo-capture:
-	curl -X POST http://localhost:8000/demo/capture -H 'Content-Type: application/json' \
+	curl -X POST http://localhost:$${PORT:-8000}/demo/capture -H 'Content-Type: application/json' \
 	  -d '{"amount_paise":179800,"sku":"BAT-001","mission_id":"MSN-DEMO"}'
-
-cold-start: install smoke
-	@echo "== cold-start complete =="
 
 clean:
 	rm -rf __pycache__ */__pycache__ */*/__pycache__ .pytest_cache
+	find . -name "*.pyc" -delete
+	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

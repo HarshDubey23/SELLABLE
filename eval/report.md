@@ -2,30 +2,30 @@
 
 ## Headline
 
-- **Gated vs Ungated revenue delta**: Rs. 87,497.00
-- **Gated vs Static revenue delta**: Rs. 18,477.00
+- **Gated vs Ungated revenue delta**: Rs. 65,668.00
+- **Gated vs Static revenue delta**: Rs. -39,834.00
 - **Gated injection resistance**: 100.0%
 - **Ungated injection resistance**: 0.0%
-- **Fraud prevented (ungated loss)**: Rs. 34,510.00
+- **Fraud prevented (ungated loss)**: Rs. 74,861.00
 
 ## Per-Arm Metrics
 
 | Metric | Static | Ungated | Gated |
 |---|---|---|---|
 | Missions run | 300 | 300 | 300 |
-| Approved | 218 | 218 | 229 |
-| Rejected | 82 | 82 | 71 |
-| Acceptance rate | 72.7% | 72.7% | 76.3% |
+| Approved | 220 | 231 | 144 |
+| Rejected | 80 | 69 | 156 |
+| Acceptance rate | 73.3% | 77.0% | 48.0% |
 | Injections attempted | 0 | 45 | 45 |
 | Injections blocked | 0 | 0 | 45 |
 | Injection resistance | 100.0% | 0.0% | 100.0% |
-| Gross revenue (Rs.) | Rs. 132,882.00 | Rs. 98,372.00 | Rs. 147,971.00 |
-| Fraud loss (Rs.) | Rs. 0.00 | Rs. 34,510.00 | Rs. 0.00 |
-| Recovery revenue (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 3,394.00 |
-| Recovery cost (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 6.00 |
-| Trust-adjusted revenue (Rs.) | Rs. 132,882.00 | Rs. 63,862.00 | Rs. 151,359.00 |
+| Gross revenue (Rs.) | Rs. 126,420.00 | Rs. 95,779.00 | Rs. 86,586.00 |
+| Fraud loss (Rs.) | Rs. 0.00 | Rs. 74,861.00 | Rs. 0.00 |
+| Recovery revenue (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 0.00 |
+| Recovery cost (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 0.00 |
+| Trust-adjusted revenue (Rs.) | Rs. 126,420.00 | Rs. 20,918.00 | Rs. 86,586.00 |
 | Avg turns/negotiation | 0.0 | 0.0 | 0.0 |
-| p95 latency (ms) | 0.0 | 0.0 | 0.07 |
+| p95 latency (ms) | 0.0 | 0.0 | 0.1 |
 
 ## Interpretation
 

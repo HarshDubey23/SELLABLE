@@ -1,8 +1,15 @@
-"""Agent-side mandate CARRIER. Never signs. Never holds the wallet key.
+"""Agent-side mandate CARRIER — simulated wallet boundary (prototype).
 
-Mirrors the Day-4 mission-signer custody split: minting happens in a
-separate process (`scripts/mandate.py`). This module only shells out to
-that CLI and reads the resulting JSON blob.
+For this prototype, the wallet trust boundary is simulated locally as a
+separate process (`scripts/mandate.py`). This is NOT a production
+multi-device custody model. The buyer agent NEVER holds the wallet key
+(USER_MANDATE_KEY); it only shells out to the wallet CLI and reads the
+resulting JSON blob. The trace must show `simulated_user`/`wallet_process`
+as the actor, never `buyer_agent` as `user`.
+
+In production this would be a separate device / secure enclave / user
+confirmation. Here we simulate the consent ceremony locally so the
+money path can be exercised end-to-end without a human in the loop.
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ OUT_DIR = ROOT / "missions"
 
 
 def carry_intent(mission_id: str, ceiling_paise: int) -> dict:
-    """USER PRE-AUTHORIZATION (out-of-band): wallet CLI mints IntentMandate."""
+    """Simulated user pre-authorization: wallet CLI (separate process) mints IntentMandate."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [sys.executable, str(CLI), "issue-intent",
@@ -30,7 +37,7 @@ def carry_intent(mission_id: str, ceiling_paise: int) -> dict:
 
 
 def carry_cart_consent(mission_id: str, cart_hash: str, amount_paise: int) -> dict:
-    """USER CONSENT STEP (out-of-band): wallet CLI signs the final cart."""
+    """Simulated user consent: wallet CLI (separate process) signs the final cart."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [sys.executable, str(CLI), "approve-cart",

@@ -1,4 +1,4 @@
-.env
+﻿.env
 venv/
 __pycache__/
 *.pyc
@@ -14,3 +14,5 @@ node_modules/
 data/*
 !data/.gitkeep
 missions/*_mandate.json
+video_submission.txt
+

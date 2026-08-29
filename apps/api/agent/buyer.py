@@ -130,28 +130,37 @@ def _deterministic_pick(products: list[dict], mission_data: dict,
     return [cands[0]["sku"]]
 
 
+def _default_base_url() -> str:
+    import os
+    return os.getenv("SELLABLE_BASE_URL") or f"http://localhost:{os.getenv('PORT', '8000')}"
+
 async def run_mission(
     mission_data: dict[str, Any],
-    base_url: str = "http://localhost:8000",
+    base_url: str | None = None,
     trace: MissionTrace | None = None,
     payment_mode: str = "success",  # "success" or "failure"
 ) -> dict[str, Any]:
     """Run a complete buyer agent mission and return status + trace."""
+    if base_url is None:
+        base_url = _default_base_url()
     mission_id = mission_data.get("mission_id", "UNKNOWN")
     if trace is None:
         trace = MissionTrace(mission_id)
 
     trace.emit("system", "mission_started", f"Mission {mission_id} started")
 
-    # INV-3: user pre-authorizes the mission out-of-band (wallet CLI).
+    # INV-3: simulated user pre-authorizes via separate wallet process
+    # Prototype note: wallet trust boundary is simulated locally (see wallet_bridge.py)
     from .wallet_bridge import carry_cart_consent, carry_intent
     ceiling = int(mission_data.get("budget_paise", 0) *
                  float(mission_data.get("upsell_cap", 1.3)))
     try:
         intent_mandate = carry_intent(mission_id, ceiling)
-        trace.emit("user", "intent_mandate_carried",
+        trace.emit("simulated_user", "intent_mandate_carried",
                    {"ceiling_paise": ceiling,
-                    "note": "user signed intent out-of-band (AP2 pattern)"})
+                    "note": "simulated wallet_process signed intent (prototype: local separate process, not production custody)"})
+        trace.emit("wallet_process", "intent_mandate_issued",
+                   {"mission_id": mission_id, "ceiling_paise": ceiling})
     except Exception as exc:
         trace.emit("system", "mandate_error", f"intent mandate failed: {exc}")
         return {"status": "mandate_error", "trace": trace.to_dict()}
@@ -464,6 +473,11 @@ Propose which items to buy:"""
             return {"status": "error", "trace": trace.to_dict()}
 
         try:
+            cart_mandate = carry_cart_consent(mission_id, proposal_hash, int(quote["total_paise"]))
+            trace.emit("wallet_process", "cart_mandate_issued",
+                       {"mission_id": mission_id, "cart_hash": proposal_hash[:16], "amount_paise": int(quote["total_paise"])})
+            trace.emit("simulated_user", "cart_consent_given",
+                       {"note": "simulated wallet_process signed cart (prototype)"})
             order_resp = await client.post(
                 f"{base_url}/tools/create_order",
                 json={
@@ -471,9 +485,7 @@ Propose which items to buy:"""
                     "proposal_hash": proposal_hash,
                     "approve_seq": seq,
                     "intent_mandate": intent_mandate,
-                    "cart_mandate": carry_cart_consent(
-                        mission_id, proposal_hash, int(quote["total_paise"])
-                    ),
+                    "cart_mandate": cart_mandate,
                 },
                 headers={"X-Idempotency-Key":
                          f"agent-{mission_id}-{time.time_ns()}"},
