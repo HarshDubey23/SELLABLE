@@ -5,7 +5,9 @@ must import from here — never hard-code a separate list.
 """
 from __future__ import annotations
 
-RULE_REGISTRY: list[dict] = [
+from typing import Any
+
+RULE_REGISTRY: list[dict[str, Any]] = [
     {"rule_id": "R9_SIGNATURE", "phase": 0, "severity": "FATAL", "check_description": "mission HMAC must verify"},
     {"rule_id": "R10_EXPIRY", "phase": 0, "severity": "FATAL", "check_description": "now < expires_at (== rejects)"},
     {"rule_id": "R8_ABORT", "phase": 1, "severity": "FATAL", "check_description": "mission not aborted"},
