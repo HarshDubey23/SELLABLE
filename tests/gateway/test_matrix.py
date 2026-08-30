@@ -450,3 +450,37 @@ def test_chain_tamper_halts():
     verdict = run_gateway(mission, proposal, chain_ok=False)
     assert verdict.decision == Decision.REJECT
     assert verdict.rule_id == "CHAIN_TAMPER"
+
+
+# ============================================================
+# R11_NEGOTIATION_BOUND TEST (added Phase 1 — coverage guard)
+# ============================================================
+
+def test_r11_negotiation_bound_rejected():
+    """R11_NEGOTIATION_BOUND: an item priced above its catalog ceiling is
+    rejected (R3 still passes because the proposal price equals the
+    catalog price — only the ceiling bound is violated)."""
+    from apps.api.negotiation.catalog_pricing import apply_floor_ceiling
+    from apps.api.products import CATALOG
+
+    mission = make_mission(budget=500000, sign=True)
+    proposal = make_proposal([("BAT-001", 1)])  # price 149900 == catalog price (R3 passes)
+    cat = {k: dict(v) for k, v in CATALOG.items()}
+    apply_floor_ceiling(cat)
+    # Force ceiling below the catalog price so R11 fires; R3 still sees
+    # proposal price == catalog["BAT-001"]["price_paise"].
+    cat["BAT-001"]["ceiling_paise"] = cat["BAT-001"]["price_paise"] - 1000
+
+    def verify_fn(blob: str, sig: str) -> bool:
+        expected = hmac.new(
+            TEST_KEY.encode(), blob.encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected, sig)
+
+    verdict = evaluate(
+        mission=mission, proposal=proposal, catalog=cat,
+        verify_fn=verify_fn, state={}, now_ts=int(time.time()),
+        merchant_id="SELLABLE-DEMO", chain_ok=True,
+    )
+    assert verdict.decision == Decision.REJECT
+    assert verdict.rule_id == "R11_NEGOTIATION_BOUND"
