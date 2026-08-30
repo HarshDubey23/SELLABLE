@@ -59,11 +59,11 @@ else
     fail "V5" "http=$R injection marker not found"
 fi
 
-# V6: policy rules_count == 10
+# V6: policy rules_count == 11 (R1-R11; R11 added Day 5)
 R=$(curl -s -o /tmp/v6.json -w "%{http_code}" "$BASE/policy" || true)
 S=$(cat /tmp/v6.json)
 N=$(json_field "$S" rules_count)
-if [ "$R" = "200" ] && [ "$N" = "10" ]; then
+if [ "$R" = "200" ] && [ "$N" = "11" ]; then
     pass "V6"
 else
     fail "V6" "http=$R rules_count=$N"

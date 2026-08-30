@@ -20,6 +20,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("MISSION_HMAC_KEY", "test-injections-mission-key")
 os.environ.setdefault("RAZORPAY_KEY_ID", "test-rzp-key-id")
 
 from apps.api.main import app  # noqa: E402

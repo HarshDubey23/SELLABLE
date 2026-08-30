@@ -43,10 +43,17 @@ def _genesis() -> dict:
 
 
 def _load_from_db() -> None:
-    """Load all entries from the audit_chain table into _chain."""
+    """Load all entries from the audit_chain table into _chain.
+
+    Selects the enriched columns too, so the in-memory mirror matches
+    what disk already stores (parent linkage, idempotency, error surface,
+    reasoning trace, review state survive a module reload).
+    """
     global _chain
     rows = store.query(
-        "SELECT seq, ts, actor, action, payload_hash, prev_hash, hash "
+        "SELECT seq, ts, actor, action, payload_hash, prev_hash, hash, "
+        "parent_action_id, idempotency_key, error_code, error_reason, "
+        "reasoning_trace, mandate_id, review_state "
         "FROM audit_chain ORDER BY seq"
     )
     if rows:
