@@ -243,3 +243,172 @@ Structural reachability is therefore NOT guaranteed: if rules_r11.py ever failed
 import, the engine would silently skip R11 instead of crashing. This is finding
 F-06. It is intentionally left in place this phase; Phase 3 converts it to a hard
 module-top import and proves CI goes red when rules_r11.py is deleted.
+
+---
+
+## Phase 2 — Money path verification
+
+Date: 2026-08-30 (session 3 of day 6)
+
+**Goal:** prove the full money path end to end — mission → agent → gateway
+verdict → Razorpay test-mode order → webhook → audit chain — not claim it.
+
+### Built
+
+- `scripts/verify_catalog.py` — added the two missing checks: (b) injection
+  resolvability now covers I8 via `INJECTION_INDEX` (exactly I1–I8; I8 is
+  proposal-time by design, no description marker) and (c) every
+  `price_paise` is an int (paise-only, G4). Existing 40-SKU / frozen-price /
+  I1–I7 checks unchanged.
+- `tests/invariants/test_agent_custody.py` — the test mandates.py's docstring
+  promised but never shipped. Part (a): structural grep — no file under
+  apps/api/agent may reference `USER_MANDATE_KEY` / `sign_intent` /
+  `sign_cart`. Part (b): executor-level — create_order with no mandates →
+  422 MANDATE_REQUIRED; tampered cart mandate (mutated after signing) →
+  403 MANDATE_BAD_SIGNATURE; re-signed wrong cart_hash → 403
+  MANDATE_CART_MISMATCH; and NO order row created in any case (asserted
+  against the real SQLite orders table).
+- `apps/api/agent/trace.py` + `buyer.py` — added ONE field,
+  `used_fallback: bool` (default False), to trace-event construction and
+  serialization; set True on the three `_deterministic_pick`-derived events
+  (llm outage fallback, off-search-SKU fallback, bounded revision pick).
+  Touches nothing else. This is the hook Phase 7's counterfactual measures.
+- `tests/agent/test_deterministic_pick.py` — with the LLM stubbed to gemini.ask's
+  own outage shape (its contract is never-raise; buyer switches to
+  _deterministic_pick on the error dict) and the Razorpay boundary mocked at
+  apps/api/razorpay_client.*, the run still produces a proposal (BAT-*)
+  and the trace event carries `used_fallback: true`; order still created.
+- `tests/test_money_path_offline.py` — REAL buyer agent + REAL wallet CLI
+  subprocess (mandate custody) + REAL gateway/executor/audit chain/SQLite,
+  driven over in-process HTTP; ONLY the outbound Razorpay boundary is mocked
+  (create_order, deterministic UPI refusal, list/fetch). Asserts: APPROVE
+  verdict row (verdicts table, mission-linked), order row persisted with
+  approve_seq ↔ chain seq alignment, chain verified, parent linkage
+  failure → recovery_reasoned via parent_action_id, /audit/timeline renders
+  "Chain verified: True", and the run reports an HONEST non-captured status.
+- `tests/test_injections_structural.py` — 8 parametrized cases: for I1–I8 the
+  demo endpoint's REAL gateway verdict is REJECT and no order id appears.
+
+### Executor reality found in discovery (Task 2)
+
+The cart-mandate gate ALREADY EXISTS at the executor boundary (tools.py
+~371–395: verify_intent + verify_cart before any order; 422/403 refusals).
+**apps/api/tools.py was NOT modified this phase.** Custody grep
+(`USER_MANDATE_KEY|sign_intent|sign_cart` under apps/api/agent/) found ONE
+hit — a docstring mention in wallet_bridge.py ("(USER_MANDATE_KEY)"),
+comment-only, no executable reference (the agent shells out to
+scripts/mandate.py, a separate process). Per task contract the misleading
+mention was deleted from the docstring; no code was touched.
+
+## Verified
+
+```
+$ .venv\Scripts\python.exe scripts\verify_catalog.py
+Catalog verification PASSED
+   SKUs: 40
+   All prices unchanged
+   All prices are int paise (no floats)
+   All injection payloads intact (I1-I7 markers)
+   INJECTION_INDEX complete: I1-I8 (I8 proposal-time)
+   All compatible_with targets valid
+   All ratings in range [3.0, 5.0]
+   All stock values in range [3, 40]
+CATALOG_EXIT=0
+
+$ custody one-liner (grep USER_MANDATE_KEY over apps/api/agent/*.py)
+CUSTODY_OK
+
+$ .venv\Scripts\python.exe -m pytest -q
+82 passed, 1 warning in 3.87s
+
+$ .venv\Scripts\python.exe -m pytest tests/test_money_path_offline.py tests/invariants/test_agent_custody.py tests/test_injections_structural.py tests/agent/test_deterministic_pick.py -q
+12 passed, 1 warning in 2.70s
+
+$ .venv\Scripts\python.exe -m ruff check apps/api/gateway/ apps/api/agent/ scripts/verify_catalog.py tests/...
+All checks passed!
+
+$ .venv\Scripts\python.exe -m mypy --strict apps/api/gateway/
+Success: no issues found in 8 source files
+
+$ grep -c "except ImportError" apps/api/gateway/engine.py  → 1 (F-06 untouched)
+```
+
+### Live branch (KEYS_PRESENT — rzp_test keys in .env)
+
+Fresh server on :8000 (a stale day-5 server was found holding the port and
+killed; the fresh boot reports `audit_chain_ok: true`).
+
+```
+$ bash scripts/smoke.sh                    (Git Bash)
+--- V1: PASS  /health alive, chain ok
+--- V2: PASS  manifest
+--- V3: PASS  search cricket
+--- V4: PASS  BAT-001 = 149900
+--- V5: PASS  KIT-001 injection visible
+--- V6: FAIL: http=200 rules_count=11        ← smoke.sh hardcodes 10 (stale)
+--- V7: PASS  quote signed, total 179800
+--- V8: PASS  check_payment 200
+==== smoke: 7 passed, 1 failed ====
+```
+
+Real test-mode orders (order ids from the live runs, never typed by hand):
+
+```
+GET /demo/e2e →
+  sign_mission ok → submit_proposal APPROVE seq=461 → quote 4b6ca78d11b7ce90
+  → create_order ok order_id="order_TVy0c3wFQnALy0" (296ms)
+  → check_payment ok → {"audit_chain_seq_after": 462, "audit_verified": true}
+
+FULL EXECUTOR PATH (real custody: scripts/mandate.py wallet CLI signed both
+mandates out-of-band; INV-1 + INV-3 gates passed):
+  mission  MSN-LIVE-1788089861 (signed with MISSION_HMAC_KEY)
+  POST /tools/submit_proposal → {"decision":"APPROVE","seq":464,
+        "proposal_hash":"9b457217829c155808240cb362946493ebacad504624b18d0fea4b1d319bce24"}
+  POST /tools/quote           → quote_id 90b41f075f44e417, total 149900
+  scripts/mandate.py issue-intent + approve-cart (USER_MANDATE_KEY, separate process)
+  POST /tools/create_order    → {"order_id":"order_TVy2xzsEsduPFK",
+        "amount_paise":149900,"status":"created",
+        "razorpay_key_id":"rzp_test_...","checkout_url":"/checkout/order_TVy2xzsEsduPFK"}
+  GET  /tools/check_payment/order_TVy2xzsEsduPFK → status created, paid false
+
+$ python scripts/send_test_webhook.py once / replay   (RAZORPAY_WEBHOOK_SECRET)
+payment.authorized  evt_AAA111 -> 200 ok
+payment.captured    evt_BBB222 -> 200 ok
+payment.captured    evt_BBB222 -> 200 {"duplicate": true}   ← dedup works
+payment.captured    evt_BBB222 -> 200 {"duplicate": true}
+
+GET /audit → {"verified": true, "entries": 467}
+tail: seq=464 gateway/verdict_emitted · seq=465 executor/mandate_verified ·
+      seq=466 executor/order_created
+```
+
+## What broke
+
+- **Stale day-5 server on :8000** silently answered the first health check and
+  500'd /demo/e2e; killed it (PID 30036) and re-ran against a fresh boot.
+- **smoke.sh V6 is stale**: hardcodes `rules_count == 10`; the registry holds
+  11 since R11 (Day 5). Recorded, NOT fixed (out of Phase 2 scope) — Phase 3
+  should update the expectation to 11.
+- **/demo/e2e bypasses the executor registry**: its order (order_TVy0c3wFQnALy0)
+  hits Razorpay and the chain but never enters tools.orders, so
+  /tools/check_payment 404s for it. Structural gap of the demo endpoint
+  (the real /tools/create_order path persists correctly — proven by the live
+  executor-path transcript and the offline e2e test). Recorded, not fixed.
+- **`chain._load_from_db()` does not re-select the enriched columns**
+  (parent_action_id, review_state, ...): after any module reload (e.g. the
+  T30 reset pattern) pre-reload entries lose parent linkage in memory. Disk
+  is unaffected. Recorded as a small persistence gap; Phase 3 candidate.
+- **Two of my first-draft tests failed in the full suite** and were fixed in
+  the tests only: (1) mandate signing must read USER_MANDATE_KEY from the
+  live env (module collection order decides which test module seeds it);
+  (2) a fixed-id signed mission made verdict rows accumulate across tests,
+  so the offline e2e now signs a UNIQUE mission id with the signer's own
+  sign_blob, and picks THIS run's failure entry for the parent-linkage assert.
+- No BLOCKERS.md needed: keys were present, the live branch ran for real.
+
+## Learned
+
+The money path is real end to end, but only the executor path (not the demo
+path) is the durable one — and every "obviously fine" helper (a hardcoded
+expectation in smoke, a fixed mission id, an env value read at a different
+moment) is a test-order landmine waiting for the next phase.

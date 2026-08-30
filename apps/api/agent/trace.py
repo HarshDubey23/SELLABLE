@@ -18,6 +18,8 @@ class TraceEvent:
     action: str         # what they did
     summary: str        # one-line human-readable description
     data: dict          # full structured payload (JSON-serializable)
+    used_fallback: bool = False   # True when this event's outcome came from
+                                  # the deterministic fallback, not the LLM
 
 
 class MissionTrace:
@@ -29,7 +31,8 @@ class MissionTrace:
         self._seq = 0
 
     def emit(self, actor: str, action: str, summary: str,
-             data: dict | None = None) -> TraceEvent:
+             data: dict | None = None,
+             used_fallback: bool = False) -> TraceEvent:
         """Record an event and return it."""
         self._seq += 1
         event = TraceEvent(
@@ -39,6 +42,7 @@ class MissionTrace:
             action=action,
             summary=summary,
             data=data or {},
+            used_fallback=used_fallback,
         )
         self.events.append(event)
         return event
@@ -56,6 +60,7 @@ class MissionTrace:
                     "action": e.action,
                     "summary": e.summary,
                     "data": e.data,
+                    "used_fallback": e.used_fallback,
                 }
                 for e in self.events
             ],

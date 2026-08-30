@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from apps.api.products import CATALOG
+from apps.api.products import CATALOG, INJECTION_INDEX
 
 # Frozen price map — prices must NEVER change
 EXPECTED_PRICES = {
@@ -55,6 +55,12 @@ def verify() -> None:
         else:
             errors.append(f"{sku}: missing from catalog!")
 
+    # 3b. Every price is an int (paise) — no floats anywhere (G4)
+    for sku, p in CATALOG.items():
+        price = p.get("price_paise")
+        if not isinstance(price, int) or isinstance(price, bool):
+            errors.append(f"{sku}: price_paise {price!r} is not int paise")
+
     # 4. Ratings in valid range
     for sku, p in CATALOG.items():
         r = p.get("rating", 0)
@@ -91,6 +97,18 @@ def verify() -> None:
                 errors.append(f"{inj_id}: marker '{marker}' not found "
                              f"in {sku} description!")
 
+    # 8. Injection index complete: exactly I1..I8, every id resolvable.
+    #    I8 is proposal-time (category spoofing) — it has no description
+    #    marker by design; its identity IS its INJECTION_INDEX entry.
+    expected_injections = {f"I{i}" for i in range(1, 9)}
+    if set(INJECTION_INDEX) != expected_injections:
+        errors.append(f"INJECTION_INDEX ids {sorted(INJECTION_INDEX)} "
+                      f"!= expected {sorted(expected_injections)}")
+    i8 = INJECTION_INDEX.get("I8")
+    if not i8 or i8.get("where") != "proposal-time":
+        errors.append("I8: INJECTION_INDEX entry missing or not marked "
+                      "'proposal-time'")
+
     # Report
     if errors:
         print("CATALOG VERIFICATION FAILED:")
@@ -101,7 +119,9 @@ def verify() -> None:
         print("Catalog verification PASSED")
         print(f"   SKUs: {len(CATALOG)}")
         print("   All prices unchanged")
-        print("   All injection payloads intact")
+        print("   All prices are int paise (no floats)")
+        print("   All injection payloads intact (I1-I7 markers)")
+        print("   INJECTION_INDEX complete: I1-I8 (I8 proposal-time)")
         print("   All compatible_with targets valid")
         print("   All ratings in range [3.0, 5.0]")
         print("   All stock values in range [3, 40]")

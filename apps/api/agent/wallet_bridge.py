@@ -2,8 +2,8 @@
 
 For this prototype, the wallet trust boundary is simulated locally as a
 separate process (`scripts/mandate.py`). This is NOT a production
-multi-device custody model. The buyer agent NEVER holds the wallet key
-(USER_MANDATE_KEY); it only shells out to the wallet CLI and reads the
+multi-device custody model. The buyer agent NEVER holds the wallet
+key; it only shells out to the wallet CLI and reads the
 resulting JSON blob. The trace must show `simulated_user`/`wallet_process`
 as the actor, never `buyer_agent` as `user`.
 

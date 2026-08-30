@@ -272,7 +272,8 @@ Propose which items to buy:"""
             trace.emit("buyer_agent", "llm_fallback",
                        f"model unavailable ({llm_result['error']}); "
                        f"deterministic fallback proposed {proposed_skus}",
-                       {"skus": proposed_skus, "llm_error": llm_result["error"]})
+                       {"skus": proposed_skus, "llm_error": llm_result["error"]},
+                       used_fallback=True)
         else:
             proposed_skus = [s for s in _parse_skus(llm_result["text"])
                              if any(p["sku"] == s for p in detailed_products)]
@@ -282,7 +283,8 @@ Propose which items to buy:"""
                 proposed_skus = _deterministic_pick(detailed_products, mission_data)
                 trace.emit("buyer_agent", "llm_fallback",
                            f"model proposed unknown/off-search SKUs; "
-                           f"deterministic fallback proposed {proposed_skus}")
+                           f"deterministic fallback proposed {proposed_skus}",
+                           used_fallback=True)
             else:
                 trace.emit("buyer_agent", "llm_reasoning",
                            f"Agent proposes: {proposed_skus}",
@@ -345,7 +347,8 @@ Propose which items to buy:"""
 
             trace.emit("buyer_agent", "revised",
                        f"Revised proposal: {revised_skus}",
-                       {"from": proposed_skus, "to": revised_skus})
+                       {"from": proposed_skus, "to": revised_skus},
+                       used_fallback=True)
 
             proposal_body2 = {
                 "mission": mission_data,
