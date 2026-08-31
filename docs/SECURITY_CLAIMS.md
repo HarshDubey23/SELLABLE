@@ -20,3 +20,26 @@ Every claim below is defensible via code, test, or live demo. No marketing langu
 | Forged signature rejected | `rules.py:12` `R9_SIGNATURE` HMAC | `tests/test_signature.py` | `redteam 1` bad sig → `R9_SIGNATURE` | — |
 
 *All above verified via `make test` (65), `scripts/redteam.py` (20), and live `GET /gateway/proof`.*
+
+## Trust Boundary
+
+(Added Phase 3 — F-08.) What protects what, one layer each:
+
+- **Mission HMAC (R9)** protects proposal integrity: a proposal is valid only
+  against the mission it was priced and signed for; tampering with either breaks
+  the signature.
+- **The policy gateway** protects money decisions: every APPROVE/REJECT comes
+  from the numbered deterministic rules, never from a model. No prose reaches
+  this layer (machine-checked at GET /gateway/proof).
+- **APP_API_KEY (X-API-Key)** protects API access: every mutating endpoint —
+  order creation, proposals, negotiation, scenario runs, demo captures —
+  requires it. Missing or wrong key → 401. Key unset in the environment → 503
+  fail-closed. GET routes are exempt (read-only). The webhook receiver is
+  exempt by design: it is authenticated by Razorpay's HMAC over the raw body
+  plus event-id dedup, and an API-key requirement there would break event
+  delivery.
+- **Webhook HMAC + replay guard** protects money events: the signature on the
+  raw body is verified before parsing, duplicate event ids are dropped, and a
+  status hierarchy prevents out-of-order downgrades.
+- **The deployment** binds test-mode keys only: rzp_test_* keys in .env; no
+  production custody exists anywhere in this repository.

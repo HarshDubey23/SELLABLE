@@ -6,6 +6,12 @@ imported, so unit tests never read or pollute the real database under
 data/. Each pytest session starts from a fresh chain.
 """
 import os
+
+# F-08 (Phase 3): mutating routes require X-API-Key. Set a test key BEFORE the
+# app is imported anywhere in the suite. Individual authz tests override via
+# monkeypatch (see tests/test_authz.py).
+os.environ.setdefault("APP_API_KEY", "test-key-ci")
+
 import tempfile
 
 _TEST_DB = os.path.join(tempfile.gettempdir(), "sellable-test.db")

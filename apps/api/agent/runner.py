@@ -1,8 +1,9 @@
 """
 HTTP endpoints for running buyer agent missions.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..deps import require_api_key
 from .buyer import run_mission
 from .scenarios import get_scenario, list_scenarios
 
@@ -12,7 +13,7 @@ REQUIRED_MISSION_FIELDS = ["mission_id", "intent", "budget_paise",
                            "allowed_categories", "expires_at", "signature"]
 
 
-@router.post("/agent/run-mission")
+@router.post("/agent/run-mission", dependencies=[Depends(require_api_key)])
 async def run_mission_endpoint(mission_data: dict | None = None):
     """Run a buyer agent mission with a full protocol trace.
 
@@ -42,7 +43,7 @@ async def list_scenarios_endpoint():
     return {"scenarios": list_scenarios()}
 
 
-@router.post("/agent/run-scenario/{scenario_id}")
+@router.post("/agent/run-scenario/{scenario_id}", dependencies=[Depends(require_api_key)])
 async def run_scenario_endpoint(scenario_id: str):
     """Run a specific demo scenario. Returns the full protocol trace."""
     scenario = get_scenario(scenario_id)

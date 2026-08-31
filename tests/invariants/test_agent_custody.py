@@ -121,7 +121,7 @@ def test_order_creation_refused_without_verified_cart_mandate():
     """Part (b): the executor refuses order creation when the cart mandate is
     missing or fails verification, even with a valid APPROVE verdict — and no
     order row is created in either case."""
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": os.environ["APP_API_KEY"]})
     mission_id = "MSN-CUSTODY-GATE"
     seq, approved_hash = _approved_binding(client, mission_id)
     quote = _quote(client, mission_id)

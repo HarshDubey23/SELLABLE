@@ -1,11 +1,13 @@
 """Smoke tests for judge-facing HTTP surfaces."""
+import os
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
 
 
 def test_judge_facing_endpoints_are_mounted():
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": os.environ["APP_API_KEY"]})
     for path in (
         "/health",
         "/.well-known/agent-manifest.json",

@@ -7,8 +7,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - run: pip install -r apps/api/requirements.txt
-      - run: pip install ruff mypy
+      - run: pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
       - run: python -m pytest -q
       - run: ruff check apps/api/gateway/
       - run: mypy --strict apps/api/gateway/

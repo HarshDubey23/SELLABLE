@@ -14,10 +14,11 @@ evaluate() -> /tools/create_order (INV-1). Negotiation never shortcuts money.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..audit import chain as audit
+from ..deps import require_api_key
 from . import engine as E
 from . import persist as P
 from .types import NegotiationStatus
@@ -49,7 +50,7 @@ class AcceptAtReq(BaseModel):
     reason: str
 
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(require_api_key)])
 def start(req: StartReq):
     if req.floor_paise > req.ceiling_paise:
         raise HTTPException(400, "floor_paise must be <= ceiling_paise")
@@ -66,7 +67,7 @@ def start(req: StartReq):
     return _state_dict(state)
 
 
-@router.post("/{nid}/turn")
+@router.post("/{nid}/turn", dependencies=[Depends(require_api_key)])
 def run_turn(nid: str, req: TurnReq):
     state = P.load(nid)
     if not state:
@@ -75,7 +76,7 @@ def run_turn(nid: str, req: TurnReq):
     return _state_dict(state)
 
 
-@router.post("/{nid}/run")
+@router.post("/{nid}/run", dependencies=[Depends(require_api_key)])
 def run_to_completion(nid: str, req: TurnReq):
     state = P.load(nid)
     if not state:
@@ -99,7 +100,7 @@ def list_for_mission(mid: str):
             "negotiations": [_state_dict(s) for s in states]}
 
 
-@router.post("/{nid}/accept_at")
+@router.post("/{nid}/accept_at", dependencies=[Depends(require_api_key)])
 def accept_at(nid: str, req: AcceptAtReq):
     """Merchant (human reviewer) accepts the buyer's last offer.
 

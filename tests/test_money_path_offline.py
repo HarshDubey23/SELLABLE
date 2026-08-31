@@ -35,6 +35,16 @@ from apps.api.main import app  # noqa: E402
 from apps.api.store import db as store  # noqa: E402
 from scripts.sign_mission import MISSION_TEMPLATES, sign_blob  # noqa: E402
 
+# F-08: inject X-API-Key into the buyer's HTTP client so protected routes
+# are exercised successfully in the test environment.
+_orig_asyncclient_init = buyer.httpx.AsyncClient.__init__
+def _patched_asyncclient_init(self, *args, **kwargs):
+    kwargs.setdefault("headers", {}).__setitem__(
+        "X-API-Key", os.environ.get("APP_API_KEY", "")
+    )
+    _orig_asyncclient_init(self, *args, **kwargs)
+buyer.httpx.AsyncClient.__init__ = _patched_asyncclient_init
+
 FAKE_ORDER_ID = "order_test_offline_001"
 
 

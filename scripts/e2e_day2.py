@@ -11,6 +11,16 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+# F-08 (Phase 3): mutating endpoints require X-API-Key. Fail loudly if absent —
+# never silently POST into a 401.
+_API_KEY = os.getenv("APP_API_KEY")
+if not _API_KEY:
+    sys.exit("APP_API_KEY not set; e2e_day2 cannot call mutating endpoints. "
+             "Set APP_API_KEY in .env or the environment. Generate with: "
+             "python -c \"import secrets; print(secrets.token_hex(32))\"")
+HEADERS = {"X-API-Key": _API_KEY}
+
 from apps.api.gateway import mission_verify as mv
 
 BASE = "http://localhost:8000"
@@ -33,7 +43,8 @@ def show(tag, r):
 # 1. APPROVE path: BAT-001 (149900) under 200000 budget
 mission = signed_mission(200000)
 r = requests.post(f"{BASE}/tools/submit_proposal",
-                  json={"mission": mission, "items": [{"sku": "BAT-001", "qty": 1}]})
+                  json={"mission": mission, "items": [{"sku": "BAT-001", "qty": 1}]},
+                  headers=HEADERS)
 show("PROPOSE under-budget", r)
 v = r.json()
 assert v["data"]["decision"] == "APPROVE", v
@@ -42,7 +53,8 @@ seq, phash = v["seq"], v["data"]["proposal_hash"]
 # 2. REJECT path: KIT-001 (449900) over budget -> R1_BUDGET
 mission_hi = signed_mission(200000)
 r = requests.post(f"{BASE}/tools/submit_proposal",
-                  json={"mission": mission_hi, "items": [{"sku": "KIT-001", "qty": 1}]})
+                  json={"mission": mission_hi, "items": [{"sku": "KIT-001", "qty": 1}]},
+                  headers=HEADERS)
 show("PROPOSE over-budget", r)
 d = r.json()["data"]
 assert d["decision"] == "REJECT" and d["rule_id"] == "R1_BUDGET", d
@@ -58,14 +70,15 @@ print(f"--- POLICY: {r.status_code}, rules_count={r.json()['rules_count']}")
 # 5. quote + create_order with the APPROVE binding
 r = requests.post(f"{BASE}/tools/quote",
                   json={"items": [{"sku": "BAT-001", "qty": 1}],
-                        "mission_id": mission["mission_id"]})
+                        "mission_id": mission["mission_id"]},
+                  headers=HEADERS)
 show("QUOTE", r)
 quote_id = r.json()["quote_id"]
 
 r = requests.post(f"{BASE}/tools/create_order",
                   json={"quote_id": quote_id, "proposal_hash": phash,
                         "approve_seq": seq},
-                  headers={"X-Idempotency-Key": f"idem-{seq}"})
+                  headers={**HEADERS, "X-Idempotency-Key": f"idem-{seq}"})
 show("CREATE_ORDER (gated)", r)
 order_id = r.json().get("order_id")
 
@@ -73,7 +86,7 @@ order_id = r.json().get("order_id")
 r = requests.post(f"{BASE}/tools/create_order",
                   json={"quote_id": quote_id, "proposal_hash": phash,
                         "approve_seq": seq},
-                  headers={"X-Idempotency-Key": f"idem-{seq}"})
+                  headers={**HEADERS, "X-Idempotency-Key": f"idem-{seq}"})
 show("CREATE_ORDER replay", r)
 assert r.json().get("duplicate") is True
 
@@ -81,13 +94,14 @@ assert r.json().get("duplicate") is True
 r = requests.post(f"{BASE}/tools/create_order",
                   json={"quote_id": quote_id, "proposal_hash": phash,
                         "approve_seq": 99999},
-                  headers={"X-Idempotency-Key": f"idem-bad-{seq}"})
+                  headers={**HEADERS, "X-Idempotency-Key": f"idem-bad-{seq}"})
 print(f"--- CREATE_ORDER no-binding: HTTP {r.status_code} (expect 403)")
 
 # 8. unsigned/tampered mission must fail R9
 bad = signed_mission(200000); bad["budget_paise"] = 999999999  # tamper AFTER signing
 r = requests.post(f"{BASE}/tools/submit_proposal",
-                  json={"mission": bad, "items": [{"sku": "BAT-001", "qty": 1}]})
+                  json={"mission": bad, "items": [{"sku": "BAT-001", "qty": 1}]},
+                  headers=HEADERS)
 show("PROPOSE tampered-mission", r)
 assert r.status_code == 200 and r.json()["data"]["rule_id"] == "R9_SIGNATURE"
 

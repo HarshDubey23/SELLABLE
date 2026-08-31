@@ -14,6 +14,7 @@ from typing import Any
 
 from . import rules as R
 from .rules import VerifyFn
+from .rules_r11 import rule_r11_negotiation_bound
 from .types import (
     Decision,
     Mission,
@@ -85,13 +86,9 @@ def evaluate(*, mission: Mission | None,
     if v:
         return reject(v.rule_id, v.message)
     # Day 5: R11 negotiation bound (defense-in-depth after R3)
-    try:
-        from .rules_r11 import rule_r11_negotiation_bound
-        v = rule_r11_negotiation_bound(proposal, catalog, mission)
-        if v:
-            return reject(v.rule_id, v.message)
-    except ImportError:
-        pass
+    v = rule_r11_negotiation_bound(proposal, catalog, mission)
+    if v:
+        return reject(v.rule_id, v.message)
     v = R.rule_r7_allowlist(merchant_id, allowlist)
     if v:
         return reject(v.rule_id, v.message)

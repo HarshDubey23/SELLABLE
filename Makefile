@@ -1,7 +1,7 @@
 .PHONY: install run dev test smoke seed eval audit-verify audit-trace verify demo-capture clean
 
 install:
-	pip install -r apps/api/requirements.txt
+	pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
 
 run:
 	uvicorn apps.api.main:app --reload --port 8000
@@ -53,6 +53,7 @@ demo-check:
 
 demo-capture:
 	curl -X POST http://localhost:$${PORT:-8000}/demo/capture -H 'Content-Type: application/json' \
+	  -H "X-API-Key: $${APP_API_KEY:?APP_API_KEY not set - source .env or export it}" \
 	  -d '{"amount_paise":179800,"sku":"BAT-001","mission_id":"MSN-DEMO"}'
 
 clean:

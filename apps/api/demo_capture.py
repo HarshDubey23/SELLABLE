@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .audit import chain as audit
+from .deps import require_api_key
 from .razorpay_client import (
     RazorpayAPIError,
     attempt_checkout_payment,
@@ -35,7 +36,7 @@ class CaptureReq(BaseModel):
     use_failing_card: bool = False
 
 
-@router.post("/capture")
+@router.post("/capture", dependencies=[Depends(require_api_key)])
 def demo_capture(req: CaptureReq):
     """Run a live captured-payment demo. Returns the audit chain slice."""
     parent_seq = audit.append(

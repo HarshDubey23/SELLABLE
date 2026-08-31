@@ -24,6 +24,16 @@ _load_dotenv()
 # Ensure apps is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# F-08: API key requirement. Red-team must present a valid X-API-Key header;
+# exit loudly if missing so every POST either carries the key or gets a 401/503.
+_API_KEY = os.getenv("APP_API_KEY")
+if not _API_KEY:
+    print("APP_API_KEY not set; redteam cannot authenticate. Set APP_API_KEY in the environment or .env. "
+          "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\"")
+    raise SystemExit(1)
+
+DEFAULT_HEADERS = {"X-API-Key": _API_KEY}
+
 CATALOG_PRICE_BAT001 = 149900
 
 def _sign(mission: dict) -> str:
@@ -74,7 +84,7 @@ def main():
     # Helper to POST proposal and get verdict
     def submit(mission, sku="BAT-001", price=None):
         body = _proposal(mission, sku, price)
-        r = httpx.post(f"{base}/tools/submit_proposal", json=body, timeout=10)
+        r = httpx.post(f"{base}/tools/submit_proposal", json=body, timeout=10, headers=DEFAULT_HEADERS)
         j = r.json()
         data = j.get("data", j)
         return r, data, j.get("seq")
@@ -157,7 +167,7 @@ def main():
         if data.get("decision")!="APPROVE":
             return False, "not approve"
         # Try to create order with same seq but different hash
-        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10).json()
+        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Use wrong hash
         r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"badhash"*8,"approve_seq":seq,"intent_mandate":None,"cart_mandate":None}, headers={"X-Idempotency-Key":f"red8-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code==403
@@ -167,7 +177,7 @@ def main():
     # 9 invalid approval hash (no approve)
     def t9():
         m=_mission()
-        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10).json()
+        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"a"*64,"approve_seq":999999,"intent_mandate":None,"cart_mandate":None}, headers={"X-Idempotency-Key":f"red9-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code in (403,422)
         return ok, f"{r2.status_code}"
@@ -203,7 +213,7 @@ def main():
         r,data,seq=submit(m)
         if data.get("decision")!="APPROVE":
             return False, "no approve"
-        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10).json()
+        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Need mandates — generate via wallet
         from apps.api.gateway.mission_verify import verify_mission
         # Create dummy mandates via scripts/mandate.py is heavy; we test idempotency without mandates first (should 422 mandate missing, but idempotency still checked)
@@ -211,7 +221,7 @@ def main():
         # First, get a valid order via demo/e2e which doesn't need mandates
         e2e=httpx.get(f"{base}/demo/e2e", timeout=15).json()
         # Check duplicate via same idempotency key on create_order would need full flow; simplify: just ensure endpoint requires key
-        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, timeout=10)
+        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, timeout=10, headers=DEFAULT_HEADERS)
         ok=r2.status_code==400 and "Idempotency" in r2.text
         return ok, f"requires key {r2.status_code}"
     check("13 idempotency requires key", t13)
@@ -256,7 +266,7 @@ def main():
         r,data,seq=submit(m)
         if data.get("decision")!="APPROVE":
             return False, "no approve"
-        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10).json()
+        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, headers={"X-Idempotency-Key":f"red18-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code==422
         return ok, f"mandate required {r2.status_code}"
@@ -276,13 +286,26 @@ def main():
         r,data,seq=submit(m)
         if data.get("decision")!="APPROVE":
             return False, "no approve"
-        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10).json()
+        q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Create a mandate with wrong hash via direct call (if we can)
         # Instead we test that create_order with correct hash but no mandate still 422, so wrong hash also 422/403
         r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"f"*64,"approve_seq":seq,"intent_mandate":{"fake":1},"cart_mandate":{"fake":1}}, headers={"X-Idempotency-Key":f"red20-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code in (403,422)
         return ok, f"{r2.status_code}"
-    check("20 wrong cart hash", t20)
+
+    # 21 missing API key on mutating route → 401
+    def t21():
+        r=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":"red21"}, timeout=10)
+        ok=r.status_code==401
+        return ok, f"{r.status_code}"
+    check("21 missing API key → 401", t21)
+
+    # 22 wrong API key on mutating route → 401
+    def t22():
+        r=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":"red22"}, headers={"X-API-Key":"wrong-key"}, timeout=10)
+        ok=r.status_code==401
+        return ok, f"{r.status_code}"
+    check("22 wrong API key → 401", t22)
 
     print("[redteam] done")
     return 0

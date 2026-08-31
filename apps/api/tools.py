@@ -17,11 +17,12 @@ import json
 import os
 import time
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from . import razorpay_client as rp_client
 from .audit import chain
+from .deps import require_api_key
 from .gateway import mission_verify
 from .gateway.engine import evaluate
 from .gateway.types import Decision, Mission, Proposal, ProposalItem, Verdict
@@ -168,7 +169,7 @@ async def tool_get_product(sku: str):
             "in_stock": p.get("stock", 0) > 0}
 
 
-@router.post("/tools/quote")
+@router.post("/tools/quote", dependencies=[Depends(require_api_key)])
 async def tool_quote(req: QuoteReq):
     """Signed price lock, TTL 30 min. Total computed SERVER-SIDE."""
     line_items, total = [], 0
@@ -217,7 +218,7 @@ async def tool_quote(req: QuoteReq):
             "expires_at": expires_at, "signature": sig}
 
 
-@router.post("/tools/submit_proposal")
+@router.post("/tools/submit_proposal", dependencies=[Depends(require_api_key)])
 async def tool_submit_proposal(req: ProposalReq):
     """Gateway evaluate() — the ONLY path an agent has toward money.
     Prices in the proposal are filled from CATALOG here; the client cannot
@@ -323,7 +324,7 @@ async def policy():
     return {"rules_count": len(RULE_REGISTRY), "rules": RULE_REGISTRY}
 
 
-@router.post("/tools/create_order")
+@router.post("/tools/create_order", dependencies=[Depends(require_api_key)])
 async def tool_create_order(req: CreateOrderReq,
                             x_idempotency_key: str = Header(default="")):
     """Create a REAL Razorpay order (test mode).
@@ -557,7 +558,7 @@ async def tool_crosssell_offers(mission_id: str, skus: str):
     return {"offers": offers, "count": len(offers)}
 
 
-@router.post("/tools/scan_copy")
+@router.post("/tools/scan_copy", dependencies=[Depends(require_api_key)])
 async def scan_copy_endpoint(body: dict) -> dict:
     from .guardrails.dark_patterns import scan_copy
     return scan_copy(str(body.get("text", "")))

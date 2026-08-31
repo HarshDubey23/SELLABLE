@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source .env if present so APP_API_KEY is available without committing .env
+if [ -f .env ]; then
+    set -a && source .env && set +a
+fi
+
 BASE=${BASE:-http://localhost:8000}
 PASS=0
 FAIL=0
@@ -73,6 +78,7 @@ fi
 NOW=$(date +%s)
 R=$(curl -s -o /tmp/v7.json -w "%{http_code}" -X POST "$BASE/tools/quote" \
     -H "Content-Type: application/json" \
+    -H "X-API-Key: ${APP_API_KEY:?APP_API_KEY not set}" \
     -d '{"items":[{"sku":"BAT-001","qty":1},{"sku":"GRIP-001","qty":1}],"mission_id":"smoke"}' || true)
 S=$(cat /tmp/v7.json)
 T=$(json_field "$S" total_paise)

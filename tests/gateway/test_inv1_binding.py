@@ -111,7 +111,7 @@ def _quote(client: TestClient, mission_id: str) -> dict:
 def test_tampered_proposal_refused():
     """A proposal mutated AFTER its APPROVE verdict is recorded must be
     refused order creation (hash mismatch -> HTTP 403 ORDER_HASH_MISMATCH)."""
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": os.environ["APP_API_KEY"]})
     mission_id = "MSN-INV1-TAMPER"
     seq, approved_hash = _approved_binding(client, mission_id)
     quote = _quote(client, mission_id)
@@ -145,7 +145,7 @@ def test_valid_binding_proceeds(monkeypatch):
     gate and proceeds to the real Razorpay boundary — mocked offline — with
     valid INV-3 mandates, and the order is created from the quote total."""
     monkeypatch.setenv("USER_MANDATE_KEY", USER_KEY)
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": os.environ["APP_API_KEY"]})
     mission_id = "MSN-INV1-CONTROL"
     seq, approved_hash = _approved_binding(client, mission_id)
     quote = _quote(client, mission_id)
