@@ -47,7 +47,7 @@ demo-ready:
 demo-check:
 	@echo "== demo-check: critical scenarios runnable =="
 	curl -sf http://localhost:$${PORT:-8000}/gateway/proof | grep -q '"llm_imports_detected": 0'
-	curl -sf http://localhost:$${PORT:-8000}/policy | grep -q '"rules_count": 11'
+	curl -sf http://localhost:$${PORT:-8000}/policy | grep -q '"rules_count": 12'
 	python scripts/redteam.py --base http://localhost:$${PORT:-8000} | grep -q "PASS"
 	@echo "== demo-check: ok =="
 

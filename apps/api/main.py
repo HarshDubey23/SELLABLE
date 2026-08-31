@@ -18,6 +18,9 @@ from .gateway.proof import compute_proof
 from .manifest import router as manifest_router
 from .metrics.api import router as metrics_router
 from .negotiation.api import router as negotiation_router
+from .protocols.acp import router as acp_router
+from .protocols.ap2 import router as ap2_router
+from .protocols.x402 import router as x402_router
 from .store import db as store
 from .tools import orders, quotes
 from .tools import router as tools_router
@@ -46,6 +49,10 @@ app.include_router(capture_router)
 print("[BOOT] capture demo: enabled (POST /demo/capture)")
 app.include_router(negotiation_router)
 print("[BOOT] negotiation engine: enabled (max_turns=5, floor/ceiling gated)")
+app.include_router(acp_router)
+app.include_router(ap2_router)
+app.include_router(x402_router)
+print("[BOOT] protocol adapters: ACP/AP2 live, x402 honest 501 stub")
 
 
 @app.get("/health")

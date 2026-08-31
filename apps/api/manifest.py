@@ -19,8 +19,9 @@ MANIFEST = {
     "supported_protocols": {
         "sellable-v1": "native (this manifest)",
         "schema.org": "Product/Offer JSON-LD via /catalog.jsonld",
-        "acp_ap2_x402": "tracked; patterns (mandates, bounded offers) "
-                        "implemented in mission + upsell design",
+        "acp_ap2_x402": "ACP + AP2 adapters live at /protocol/* (translate "
+                        "to the canonical executor; the gateway decides); "
+                        "x402 is an honest 501 stub",
     },
     "capabilities": ["search", "get_product", "quote", "propose",
                      "checkout", "payment_status"],

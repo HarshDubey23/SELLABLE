@@ -1,6 +1,6 @@
 """Canonical rule registry — single source of truth for gateway.
 
-All 11 rules (R1-R11) are defined here. Engine, /policy, docs, and tests
+All 12 rules (R1-R12) are defined here. Engine, /policy, docs, and tests
 must import from here — never hard-code a separate list.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ RULE_REGISTRY: list[dict[str, Any]] = [
     {"rule_id": "R4_UPSELL_CAP", "phase": 2, "severity": "REVISABLE", "check_description": "defense-in-depth mirror of the effective-budget ceiling"},
     {"rule_id": "R3_PRICE_DRIFT", "phase": 3, "severity": "FATAL", "check_description": "claimed price == catalog price (+-0 paise)"},
     {"rule_id": "R11_NEGOTIATION_BOUND", "phase": 3, "severity": "FATAL", "check_description": "price within [floor_paise, ceiling_paise] from server catalog"},
+    {"rule_id": "R12_PROTOCOL_SCOPE", "phase": 3, "severity": "FATAL", "check_description": "proposal within protocol artifacts (merchant scope, category scope, amount ceiling, validity window); fails closed on malformed scope"},
     {"rule_id": "R7_ALLOWLIST", "phase": 3, "severity": "FATAL", "check_description": "merchant allowlisted"},
     {"rule_id": "R6_RATE_LIMIT", "phase": 3, "severity": "FATAL", "check_description": "<=5 proposals per 60s per mission"},
 ]

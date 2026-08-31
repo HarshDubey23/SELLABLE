@@ -117,6 +117,7 @@ class QuoteReq(BaseModel):
 class ProposalReq(BaseModel):
     mission: dict        # signed mission fields incl. signature
     items: list          # [{"sku", "qty"}] — prices filled from CATALOG server-side
+    protocol_scope: dict | None = None  # protocol artifacts (Phase 4): bound by R12 at the gateway; native traffic omits it
 
 
 class CreateOrderReq(BaseModel):
@@ -273,7 +274,8 @@ async def tool_submit_proposal(req: ProposalReq):
     verdict = evaluate(mission=mission, proposal=proposal, catalog=CATALOG,
                        verify_fn=mission_verify.verify_mission,
                        state=state, now_ts=int(time.time()),
-                       chain_ok=chain.verify())
+                       chain_ok=chain.verify(),
+                       protocol_scope=req.protocol_scope)
 
     seq = chain.append("gateway", "verdict_emitted",
                        {"decision": verdict.decision.value,

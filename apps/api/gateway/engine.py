@@ -5,7 +5,8 @@ Phase severity semantics:
   Phase 1 State      (FATAL):  R8 abort — mission dead, no revision, no money.
   Phase 2 Commerce (REVISABLE): R1 budget, R2 forbidden, R5 scope, R4 upsell —
                                 agent may revise and re-propose.
-  Phase 3 Integrity  (FATAL):  R3 drift, R7 allowlist, R6 rate-limit — terminal.
+  Phase 3 Integrity  (FATAL):  R3 drift, R11 bounds, R12 protocol scope,
+                                R7 allowlist, R6 rate-limit — terminal.
 
 On APPROVE the verdict binds proposal_hash so post-approve tampering is caught.
 """
@@ -15,6 +16,7 @@ from typing import Any
 from . import rules as R
 from .rules import VerifyFn
 from .rules_r11 import rule_r11_negotiation_bound
+from .rules_r12 import rule_r12_protocol_scope
 from .types import (
     Decision,
     Mission,
@@ -33,7 +35,8 @@ def evaluate(*, mission: Mission | None,
              now_ts: int | None = None,
              merchant_id: str = "SELLABLE-DEMO",
              allowlist: frozenset[str] = frozenset({"SELLABLE-DEMO"}),
-             chain_ok: bool = True) -> Verdict:
+             chain_ok: bool = True,
+             protocol_scope: dict[str, Any] | None = None) -> Verdict:
 
     state = state if state is not None else {}
     now_ts = now_ts if now_ts is not None else int(_time.time())
@@ -87,6 +90,12 @@ def evaluate(*, mission: Mission | None,
         return reject(v.rule_id, v.message)
     # Day 5: R11 negotiation bound (defense-in-depth after R3)
     v = rule_r11_negotiation_bound(proposal, catalog, mission)
+    if v:
+        return reject(v.rule_id, v.message)
+    # Phase 4: R12 protocol scope (defense-in-depth after R11; scope=None on
+    # native traffic skips it — adapters carry the artifacts)
+    v = rule_r12_protocol_scope(proposal, catalog, protocol_scope,
+                                merchant_id=merchant_id, now_ts=now_ts)
     if v:
         return reject(v.rule_id, v.message)
     v = R.rule_r7_allowlist(merchant_id, allowlist)

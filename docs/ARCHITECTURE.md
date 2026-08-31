@@ -167,10 +167,19 @@ ledger from disk. Restart loses nothing. Tests run against a throwaway DB
 - Upsell offer endpoints resolve the mission from in-memory state; after a
   restart they return "mission not found" until a fresh proposal is
   submitted. Orders/verdicts themselves survive restarts.
-- `supported_protocols: [ACP, AP2, x402]` in the agent manifest are declared
-  for forward compatibility; the protocol adapters are not yet implemented
-  (documented Day-6 stretch goal). The money-safety substrate they would sit
-  on (gateway + audit chain + negotiation bounds) is the Day 5 deliverable.
+- Protocol adapters (Phase 4): ACP and AP2 are live at
+  /protocol/acp/checkout_sessions and /protocol/ap2/mandates/evaluate —
+  they translate protocol payloads into the canonical executor
+  (`tool_submit_proposal`) and the gateway decides; x402 is an honest 501
+  stub (refuses rather than simulate an irreversible rail). Adapters never
+  import the gateway, never construct verdicts, and contain no rule logic
+  (machine-checked in tests/invariants/test_protocol_adapter_invariants.py).
+  R12_PROTOCOL_SCOPE (Phase 3 slot, FATAL) re-binds the adapters' protocol
+  artifacts (merchant scope, category scope, amount ceiling, validity
+  window) at decision time, rejecting with the drifted field path.
+  R13_WALLET_VELOCITY was CUT (cut-line-able per RECONCILIATION): R6
+  already bounds proposal velocity per mission, and a per-wallet event
+  store would add money-path risk for marginal demo value.
 - Negotiation persists to SQLite; the in-memory `NegotiationState` mirror is
   rebuilt from DB on `GET /negotiation/{id}`.
 

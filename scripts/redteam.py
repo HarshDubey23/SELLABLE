@@ -169,7 +169,7 @@ def main():
         # Try to create order with same seq but different hash
         q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Use wrong hash
-        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"badhash"*8,"approve_seq":seq,"intent_mandate":None,"cart_mandate":None}, headers={"X-Idempotency-Key":f"red8-{time.time_ns()}"}, timeout=10)
+        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"badhash"*8,"approve_seq":seq,"intent_mandate":None,"cart_mandate":None}, headers={**DEFAULT_HEADERS,"X-Idempotency-Key":f"red8-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code==403
         return ok, f"create_order {r2.status_code}"
     check("8 approval replay/wrong hash", t8)
@@ -178,7 +178,7 @@ def main():
     def t9():
         m=_mission()
         q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
-        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"a"*64,"approve_seq":999999,"intent_mandate":None,"cart_mandate":None}, headers={"X-Idempotency-Key":f"red9-{time.time_ns()}"}, timeout=10)
+        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"a"*64,"approve_seq":999999,"intent_mandate":None,"cart_mandate":None}, headers={**DEFAULT_HEADERS,"X-Idempotency-Key":f"red9-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code in (403,422)
         return ok, f"{r2.status_code}"
     check("9 invalid approval seq", t9)
@@ -267,7 +267,7 @@ def main():
         if data.get("decision")!="APPROVE":
             return False, "no approve"
         q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
-        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, headers={"X-Idempotency-Key":f"red18-{time.time_ns()}"}, timeout=10)
+        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, headers={**DEFAULT_HEADERS,"X-Idempotency-Key":f"red18-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code==422
         return ok, f"mandate required {r2.status_code}"
     check("18 invalid mandate missing", t18)
@@ -289,23 +289,38 @@ def main():
         q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Create a mandate with wrong hash via direct call (if we can)
         # Instead we test that create_order with correct hash but no mandate still 422, so wrong hash also 422/403
-        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"f"*64,"approve_seq":seq,"intent_mandate":{"fake":1},"cart_mandate":{"fake":1}}, headers={"X-Idempotency-Key":f"red20-{time.time_ns()}"}, timeout=10)
+        r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":"f"*64,"approve_seq":seq,"intent_mandate":{"fake":1},"cart_mandate":{"fake":1}}, headers={**DEFAULT_HEADERS,"X-Idempotency-Key":f"red20-{time.time_ns()}"}, timeout=10)
         ok=r2.status_code in (403,422)
         return ok, f"{r2.status_code}"
+    check("20 wrong cart hash", t20)
 
-    # 21 missing API key on mutating route → 401
+    # 21 missing API key on mutating route -> 401
     def t21():
         r=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":"red21"}, timeout=10)
         ok=r.status_code==401
         return ok, f"{r.status_code}"
-    check("21 missing API key → 401", t21)
+    check("21 missing API key -> 401", t21)
 
-    # 22 wrong API key on mutating route → 401
+    # 22 wrong API key on mutating route -> 401
     def t22():
         r=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":"red22"}, headers={"X-API-Key":"wrong-key"}, timeout=10)
         ok=r.status_code==401
         return ok, f"{r.status_code}"
-    check("22 wrong API key → 401", t22)
+    check("22 wrong API key -> 401", t22)
+
+    # 23 x402 adapter is an honest 501 stub (never pretends to authorize)
+    def t23():
+        r=httpx.post(f"{base}/protocol/x402/authorize", timeout=10, headers=DEFAULT_HEADERS)
+        ok=r.status_code==501 and r.json().get("implemented") is False
+        return ok, f"{r.status_code} implemented={r.json().get('implemented')}"
+    check("23 x402 honest 501 stub", t23)
+
+    # 24 ACP adapter gates on the API key (mutating route, F-08)
+    def t24():
+        r=httpx.post(f"{base}/protocol/acp/checkout_sessions", json={"mission":{}}, timeout=10)
+        ok=r.status_code==401
+        return ok, f"{r.status_code}"
+    check("24 ACP adapter requires API key -> 401", t24)
 
     print("[redteam] done")
     return 0

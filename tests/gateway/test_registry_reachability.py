@@ -14,7 +14,7 @@ import pathlib
 
 from apps.api.gateway.registry import RULE_REGISTRY
 
-EXPECTED_RULE_COUNT = 11  # Phase 4 raises to 12 (R12) or 13 (R12 + R13)
+EXPECTED_RULE_COUNT = 12  # Phase 4: R12_PROTOCOL_SCOPE. (R13 cut — cut-line-able; see docs/log/day08.md)
 
 ENGINE_SRC = pathlib.Path("apps/api/gateway/engine.py").read_text()
 
