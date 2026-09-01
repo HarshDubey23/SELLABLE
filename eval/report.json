@@ -1,0 +1,36 @@
+{
+  "metrics": {
+    "acceptance_rate": {
+      "value": 0.48
+    },
+    "aov_uplift": {
+      "value": 45.02
+    },
+    "false_block_cost": {
+      "value": 199268.0
+    },
+    "llm_fooled_rate": {
+      "value": 0.0
+    },
+    "money_loss_rate": {
+      "value": 0.0
+    },
+    "negotiation_margin": {
+      "value": 343.56
+    },
+    "p95_latency": {
+      "value": 0.1
+    },
+    "protocol_pass_rate": {
+      "value": 1.0
+    }
+  },
+  "methodology": {
+    "seed": 42,
+    "missions_per_arm": 100,
+    "llm_mode": "mock",
+    "structural_stage": true,
+    "behavioral_stage": true,
+    "real_keys_required": true
+  }
+}

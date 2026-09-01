@@ -8,6 +8,19 @@
 - **Ungated injection resistance**: 0.0%
 - **Fraud prevented (ungated loss)**: Rs. 74,861.00
 
+## V2 Metrics
+
+| Metric | Value |
+|---|---|
+| Acceptance rate | 48.0% |
+| AOV uplift (%) | 45.02 |
+| False block cost (₹) | 199268.0 |
+| LLM fooled rate | 0.0% |
+| Money loss rate | 0.0% |
+| Negotiation margin (%) | 343.56 |
+| p95 latency (ms) | 10.0% |
+| Protocol pass rate | 1.0 |
+
 ## Per-Arm Metrics
 
 | Metric | Static | Ungated | Gated |
@@ -21,16 +34,12 @@
 | Injection resistance | 100.0% | 0.0% | 100.0% |
 | Gross revenue (Rs.) | Rs. 126,420.00 | Rs. 95,779.00 | Rs. 86,586.00 |
 | Fraud loss (Rs.) | Rs. 0.00 | Rs. 74,861.00 | Rs. 0.00 |
-| Recovery revenue (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 0.00 |
-| Recovery cost (Rs.) | Rs. 0.00 | Rs. 0.00 | Rs. 0.00 |
-| Trust-adjusted revenue (Rs.) | Rs. 126,420.00 | Rs. 20,918.00 | Rs. 86,586.00 |
-| Avg turns/negotiation | 0.0 | 0.0 | 0.0 |
+| Trust-adj revenue (Rs.) | Rs. 126,420.00 | Rs. 20,918.00 | Rs. 86,586.00 |
 | p95 latency (ms) | 0.0 | 0.0 | 0.1 |
 
 ## Interpretation
 
-**Static arm** is the baseline: fixed catalog prices, no agent. It earns gross revenue but has zero injection resistance and zero recovery capability.
-
-**Ungated arm** simulates the naive 'just let the LLM decide' approach. Every injected price slips through, causing fraud loss equal to the catalog price minus the injected price. This is the cost of not having a gateway.
-
-**Gated arm** is SELLABLE. The gateway reads prices server-side (R3 price drift), so injections in the justification have NO effect on the transaction. Injection resistance is ~100% by construction. Recovery revenue from failed-then-link flows adds trust-adjusted revenue the other arms cannot match.
+**Static arm** is the baseline: fixed catalog prices, no agent.
+**Ungated arm** simulates the naive 'just let the LLM decide' approach.
+**Gated arm** is SELLABLE — the gateway reads prices server-side.
+**behavioral_ungated_llm** and **behavioral_gated_llm** track model-fooling vs money-loss separately.

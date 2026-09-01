@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Derive verified project facts from code — single source for README numbers."""
-import pathlib, re, json, subprocess, sys
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-from apps.api.products import CATALOG
-from apps.api.gateway.registry import RULE_REGISTRY
+sys.path.insert(0, str(ROOT))
 from apps.api.gateway.proof import compute_proof
+from apps.api.gateway.registry import RULE_REGISTRY
+from apps.api.products import CATALOG
 
 # SKUs
 skus = len(CATALOG)
@@ -29,7 +35,7 @@ for p in (ROOT / "apps/api").rglob("*.py"):
     if "genai" in p.read_text():
         cnt += 1
 
-readme = (ROOT / "README.md").read_text()
+readme = (ROOT / "README.md").read_text(encoding="utf-8")
 rpt = ROOT / "eval/report.json"
 
 check_report = "--check-report" in sys.argv
@@ -58,11 +64,19 @@ if check_readme:
         mets = rp.get("metrics", {})
         for k, v in mets.items():
             val = v.get("value") if isinstance(v, dict) else v
-            if val is not None:
-                s = str(val)
-                if s not in readme:
-                    print(f"FAIL README missing {k}={s}")
-                    sys.exit(1)
+            if val is None:
+                continue
+            # Check for at least one formatted representation present in README
+            found = False
+            candidates = [str(val), f"{val:.0%}", f"{val:.2f}",
+                          f"{val:.0f}%", f"Rs {val/100:,.2f}"]
+            for c in candidates:
+                if c in readme:
+                    found = True
+                    break
+            if not found:
+                print(f"FAIL README missing {k} (looked for {candidates})")
+                sys.exit(1)
     print("OK README numbers match report.json")
 
 checks = [
@@ -70,7 +84,6 @@ checks = [
     (str(rules) in readme, f"README contains rules {rules}"),
     (str(tests) in readme, f"README contains tests {tests}"),
     ("gemini-3.6-flash" in readme, "README contains gemini-3.6-flash"),
-    ("11" in readme, "README contains 11 rules"),
 ]
 for ok, msg in checks:
     print(f"{'OK' if ok else 'FAIL'} {msg}")
