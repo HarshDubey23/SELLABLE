@@ -35,8 +35,11 @@ router = APIRouter(tags=["demo-ui"])
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _DB_PATH = os.environ.get(
-    "SELLABLE_DB",
-    os.path.join(_REPO, "data", "sellable.db"),
+    "SELLABLE_DB_PATH",
+    os.environ.get(
+        "SELLABLE_DB",
+        os.path.join(_REPO, "data", "sellable.db"),
+    ),
 )
 _MISSION_FILE = os.path.join(_REPO, "missions", "happy_path.json")
 _API_KEY = os.environ.get("APP_API_KEY", "")
@@ -145,8 +148,23 @@ def attack_payloads() -> JSONResponse:
 def tamper_demo() -> JSONResponse:
     """Tamper with the stored hash of one audit entry in a TEMP COPY.
     The live database is only ever read — never written here."""
-    if not os.path.exists(_DB_PATH):
-        return JSONResponse({"ok": False, "error": f"db not found: {_DB_PATH}"})
+    # Resolve DB path dynamically so tests that set SELLABLE_DB_PATH via
+    # conftest (throwaway DB) are honoured even if module was imported earlier.
+    db_path = store.db_path()
+    # Fallback to legacy _DB_PATH if store path missing but legacy exists
+    if not os.path.exists(db_path) and os.path.exists(_DB_PATH):
+        db_path = _DB_PATH
+    if not os.path.exists(db_path):
+        before = bool(verify_chain())
+        return JSONResponse({
+            "ok": False,
+            "error": f"db not found: {db_path}",
+            "before_verified": before,
+            "after_verified": None,
+            "conclusion": "chain has no data entries to tamper — live DB empty or not initialized",
+            "note": "executed on a temp copy; live database untouched",
+            "captured_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        })
     tmp_dir = tempfile.mkdtemp(prefix="sellable-tamper-")
     tmp = os.path.join(tmp_dir, "tampered.db")
     after: object = None
@@ -155,10 +173,10 @@ def tamper_demo() -> JSONResponse:
     try:
         # Checkpoint the live DB so the main file is self-contained, then copy it.
         store._connect().execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        shutil.copyfile(_DB_PATH, tmp)
+        shutil.copyfile(db_path, tmp)
         # Also copy WAL/SHM side-files if they exist so the copy is complete.
         for suffix in ("-wal", "-shm"):
-            src = _DB_PATH + suffix
+            src = db_path + suffix
             if os.path.exists(src):
                 shutil.copyfile(src, tmp + suffix)
         conn = sqlite3.connect(tmp)
