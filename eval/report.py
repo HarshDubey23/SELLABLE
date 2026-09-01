@@ -1,8 +1,8 @@
-"""Generate a markdown report from eval results.
+"""Generate a markdown + JSON report from eval results.
 
 USAGE:
   python -m eval.run --out eval/results.json
-  python -m eval.report --in eval/results.json --out eval/report.md
+  python -m eval.report --in eval/results.json --md eval/report.md --json eval/report.json
 """
 from __future__ import annotations
 
@@ -11,10 +11,14 @@ import json
 from pathlib import Path
 
 
+def _metric_dict(value: object) -> dict:
+    return {"value": value} if value is not None else {}
+
+
 def render(results: dict) -> str:
     lines = ["# SELLABLE Eval Report\n"]
-    lines.append("## Headline\n")
     h = results["headline"]
+    lines.append("## Headline\n")
     lines.append(f"- **Gated vs Ungated revenue delta**: "
                  f"Rs. {h['gated_vs_ungated_revenue_delta_paise']/100:,.2f}")
     lines.append(f"- **Gated vs Static revenue delta**: "
@@ -26,27 +30,43 @@ def render(results: dict) -> str:
     lines.append(f"- **Fraud prevented (ungated loss)**: "
                  f"Rs. {h['fraud_prevented_paise']/100:,.2f}\n")
 
-    lines.append("## Per-Arm Metrics\n")
+    metrics = results.get("metrics", {})
+    lines.append("## V2 Metrics\n")
+    lines.append("| Metric | Value |")
+    lines.append("|---|---|")
+    labels = {
+        "acceptance_rate": "Acceptance rate",
+        "aov_uplift": "AOV uplift (%)",
+        "false_block_cost": "False block cost (₹)",
+        "llm_fooled_rate": "LLM fooled rate",
+        "money_loss_rate": "Money loss rate",
+        "negotiation_margin": "Negotiation margin (%)",
+        "p95_latency": "p95 latency (ms)",
+        "protocol_pass_rate": "Protocol pass rate",
+    }
+    for k, v in metrics.items():
+        val = v.get("value") if isinstance(v, dict) else v
+        if isinstance(val, float) and abs(val) < 1:
+            disp = f"{val:.1%}"
+        else:
+            disp = f"{val}"
+        lines.append(f"| {labels.get(k, k)} | {disp} |")
+
+    lines.append("\n## Per-Arm Metrics\n")
     lines.append("| Metric | Static | Ungated | Gated |")
     lines.append("|---|---|---|---|")
     arms = {a["arm"]: a for a in results["arms"]}
-    metrics = [
-        ("Missions run", "missions_run"),
-        ("Approved", "approved"),
-        ("Rejected", "rejected"),
-        ("Acceptance rate", "acceptance_rate"),
-        ("Injections attempted", "injections_attempted"),
-        ("Injections blocked", "injections_blocked"),
-        ("Injection resistance", "injection_resistance"),
-        ("Gross revenue (Rs.)", "gross_revenue_paise"),
-        ("Fraud loss (Rs.)", "fraud_loss_paise"),
-        ("Recovery revenue (Rs.)", "recovery_revenue_paise"),
-        ("Recovery cost (Rs.)", "recovery_cost_paise"),
-        ("Trust-adjusted revenue (Rs.)", "trust_adjusted_revenue_paise"),
-        ("Avg turns/negotiation", "avg_turns_per_negotiation"),
-        ("p95 latency (ms)", "p95_latency_ms"),
-    ]
-    for label, key in metrics:
+    for label, key in [("Missions run", "missions_run"),
+                        ("Approved", "approved"),
+                        ("Rejected", "rejected"),
+                        ("Acceptance rate", "acceptance_rate"),
+                        ("Injections attempted", "injections_attempted"),
+                        ("Injections blocked", "injections_blocked"),
+                        ("Injection resistance", "injection_resistance"),
+                        ("Gross revenue (Rs.)", "gross_revenue_paise"),
+                        ("Fraud loss (Rs.)", "fraud_loss_paise"),
+                        ("Trust-adj revenue (Rs.)", "trust_adjusted_revenue_paise"),
+                        ("p95 latency (ms)", "p95_latency_ms")]:
         row = f"| {label} "
         for arm in ("static", "ungated", "gated"):
             v = arms.get(arm, {}).get(key, 0)
@@ -60,20 +80,11 @@ def render(results: dict) -> str:
         lines.append(row)
 
     lines.append("\n## Interpretation\n")
-    lines.append("**Static arm** is the baseline: fixed catalog prices, no agent. "
-                 "It earns gross revenue but has zero injection resistance and "
-                 "zero recovery capability.")
-    lines.append("")
-    lines.append("**Ungated arm** simulates the naive 'just let the LLM decide' "
-                 "approach. Every injected price slips through, causing fraud "
-                 "loss equal to the catalog price minus the injected price. "
-                 "This is the cost of not having a gateway.")
-    lines.append("")
-    lines.append("**Gated arm** is SELLABLE. The gateway reads prices server-side "
-                 "(R3 price drift), so injections in the justification have NO "
-                 "effect on the transaction. Injection resistance is ~100% by "
-                 "construction. Recovery revenue from failed-then-link flows "
-                 "adds trust-adjusted revenue the other arms cannot match.")
+    lines.append("**Static arm** is the baseline: fixed catalog prices, no agent.")
+    lines.append("**Ungated arm** simulates the naive 'just let the LLM decide' approach.")
+    lines.append("**Gated arm** is SELLABLE — the gateway reads prices server-side.")
+    lines.append("**behavioral_ungated_llm** and **behavioral_gated_llm** track "
+                 "model-fooling vs money-loss separately.")
     return "\n".join(lines) + "\n"
 
 
@@ -81,10 +92,30 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="infile", default="eval/results.json")
     ap.add_argument("--out", default="eval/report.md")
+    ap.add_argument("--json", default="eval/report.json")
     args = ap.parse_args()
     results = json.loads(Path(args.infile).read_text())
-    Path(args.out).write_text(render(results))
-    print(f"[eval] report -> {args.out}")
+
+    md = render(results)
+    Path(args.out).write_text(md, encoding="utf-8")
+
+    # Build report.json with the exact required structure.
+    metrics = results.get("metrics", {})
+    report_metrics = {}
+    for k in ("acceptance_rate", "aov_uplift", "false_block_cost",
+              "llm_fooled_rate", "money_loss_rate", "negotiation_margin",
+              "p95_latency", "protocol_pass_rate"):
+        v = metrics.get(k)
+        report_metrics[k] = v if isinstance(v, dict) else _metric_dict(v)
+
+    report = {
+        "metrics": report_metrics,
+        "methodology": results.get("methodology", {}),
+    }
+    Path(args.json).write_text(json.dumps(report, indent=2),
+                                encoding="utf-8")
+    print(f"[report] {args.out}")
+    print(f"[report] {args.json}")
 
 
 if __name__ == "__main__":
