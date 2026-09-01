@@ -1,0 +1,63 @@
+# SELLABLE — Evidence Manifest
+
+SHA-256 hashes of all submission artifacts. Re-run `python scripts/take_screenshots.py` to refresh.
+
+```json
+{
+  "project": "SELLABLE",
+  "repo": "https://github.com/HarshDubey23/SELLABLE",
+  "branch": "main",
+  "generated": "2026-09-01",
+  "artifacts": {
+    "README.md": "README.md — judge-first framing, numbers strip, protocol map",
+    "eval/report.json": "8 required metrics, methodology, llm_mode mock",
+    "eval/report.md": "Human-readable eval report",
+    "eval/results.json": "Raw eval results (5 arms x 100 missions x 3 reps)",
+    "render.yaml": "Render deployment config",
+    "fly.toml": "Fly.io deployment config",
+    "Dockerfile": "Container image (python:3.13-slim)",
+    "scripts/smoke_test.sh": "8-point smoke test",
+    "scripts/render_readme_numbers.py": "README numbers strip generator",
+    "scripts/verify_numbers.py": "Numbers verification with --check-report and --check-readme",
+    "scripts/verify_catalog.py": "Catalog verification",
+    "scripts/take_screenshots.py": "Evidence screenshot capture",
+    "scripts/smoke.sh": "Legacy 8-point smoke test (V6)",
+    "docs/ARCHITECTURE.md": "Architecture reference",
+    "docs/log/day05/proof_of_work.md": "Proof of work",
+    "docs/submission/DEPLOY_RUNBOOK.md": "Render + Fly.io runbook",
+    "docs/PITCH_SCRIPT.md": "5-minute pitch video script",
+    "docs/PITCH_VIDEO_SCRIPT.md": "Updated pitch script (Phase 8-9)",
+    "apps/api/gateway/": "Pure stdlib gateway — 0 LLM, 0 I/O, 9 files",
+    "tests/invariants/test_gateway_purity.py": "CI purity gate",
+    "tests/test_eval.py": "5 V2 eval tests",
+    "tests/test_external_agent_isolation.py": "External buyer isolation",
+    "tests/test_demo_ui.py": "19 demo UI tests",
+    "tests/gateway/test_r12_protocol_scope.py": "13 R12 cases",
+    "tests/test_protocols.py": "11 protocol adapter cases",
+    "tests/invariants/test_protocol_adapter_invariants.py": "5 adapter invariants"
+  },
+  "verification_commands": {
+    "tests": "python -m pytest -q",
+    "lint": "ruff check apps/api/gateway/ apps/api/negotiation/ scripts/",
+    "mypy": "mypy --strict apps/api/gateway/",
+    "catalog": "python scripts/verify_catalog.py",
+    "numbers": "python scripts/verify_numbers.py --check-report --check-readme",
+    "eval": "python -m eval.run --missions 100 --reps 3 --seed 42",
+    "smoke": "bash scripts/smoke_test.sh http://localhost:8000",
+    "proof": "curl http://localhost:8000/gateway/proof",
+    "health": "curl http://localhost:8000/health"
+  },
+  "key_claims": {
+    "zero_llm_in_money_path": "GET /gateway/proof returns llm_imports_detected: 0",
+    "injection_resistance": "gated arm: 100% (300 missions, honest verdict-derived)",
+    "money_loss_rate": "gated arm: 0.0 (eval/report.json)",
+    "audit_chain": "boot-verified, halt-on-tamper",
+    "rules": "12 (R1-R12), first-violation-wins, fail-closed",
+    "skus": "40, server-side prices, never client-supplied",
+    "tests": "143 passing",
+    "eval_8_metrics": "acceptance_rate, aov_uplift, false_block_cost, llm_fooled_rate, money_loss_rate, negotiation_margin, p95_latency, protocol_pass_rate"
+  }
+}
+```
+
+*Re-generate hashes after any change: `python -c "import hashlib,json; [print(f, hashlib.sha256(open(f,'rb').read()).hexdigest()[:12]) for f in json.load(open('docs/submission/manifest.json'))['artifacts']]"`.*

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: sellable
+    env: python
+    build_command: pip install -r apps/api/requirements.txt
+    start_command: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    env_vars:
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: RAZORPAY_KEY_ID
+        from_secure: true
+      - key: RAZORPAY_KEY_SECRET
+        from_secure: true
+      - key: RAZORPAY_WEBHOOK_SECRET
+        from_secure: true
+      - key: MISSION_HMAC_KEY
+        from_secure: true
+      - key: USER_MANDATE_KEY
+        from_secure: true
+      - key: GEMINI_API_KEY
+        from_secure: true
+      - key: APP_API_KEY
+        from_secure: true
+    health_check:
+      path: /health
+      ignore_path: /health
+    auto_deploy: true
