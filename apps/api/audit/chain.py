@@ -164,12 +164,30 @@ def find_by_action_id(aid: str) -> dict | None:
     return None
 
 
-def verify() -> bool:
-    """Recompute every hash from GENESIS. One flipped byte => False."""
-    if not _chain:
+def _load_entries(db_path: str) -> list[dict]:
+    """Load audit_chain entries from a specific DB file for offline verification."""
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT seq, ts, actor, action, payload_hash, prev_hash, hash "
+        "FROM audit_chain ORDER BY seq"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows] if rows else []
+
+
+def verify(db_path: str | None = None) -> bool:
+    """Recompute every hash from GENESIS. One flipped byte => False.
+
+    If db_path is given, verify that file's chain instead of the live in-memory chain.
+    The live database is never touched by this parameter path.
+    """
+    entries = _load_entries(db_path) if db_path else _chain
+    if not entries:
         return True
     prev = "0" * 64
-    for e in _chain:
+    for e in entries:
         if e["seq"] == 0 and e["action"] != "GENESIS":
             return False
         expected = _hash(e)
