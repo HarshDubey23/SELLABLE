@@ -148,8 +148,6 @@ def _build_signed_mission(scenario: dict, sku: str = "BAT-001") -> tuple[Mission
 
 def _build_proposal(scenario: dict, mission: Mission) -> Proposal:
     """Build the attacker proposal for each scenario."""
-    cat = scenario["category"]
-
     if scenario["id"] == "A1_PROMPT_INJECTION":
         # LLM was tricked into proposing the over-budget KIT-001 (Rs 4,499)
         return Proposal(
@@ -284,9 +282,8 @@ def attack_run(scenario_id: str) -> dict[str, Any]:
         # an offer an hour later" — the binding's TTL has long passed.
         from .approval import register as _register
         from .approval import verify as _verify
-        from .approval import ApprovalBinding
         # Insert a binding with expired issued_at/expires_at.
-        bid = _register(
+        _register(
             seq,
             mission_id=mission.mission_id,
             proposal_hash=proposal_hash or "",

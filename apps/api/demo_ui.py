@@ -80,7 +80,6 @@ def _base_mission() -> dict:
 
 def _attack_payloads() -> dict:
     now = _dt.datetime.now(_dt.timezone.utc)
-    past = (now - _dt.timedelta(seconds=1)).isoformat()
 
     # 1 — forged signature: honest mission, one hex char of the HMAC flipped
     m1 = _sign_mission(_base_mission())

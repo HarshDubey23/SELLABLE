@@ -25,14 +25,11 @@ from .rules import VerifyFn
 from .rules_r11 import rule_r11_negotiation_bound
 from .rules_r12 import rule_r12_protocol_scope
 from .types import (
-    Decision,
     Mission,
     Proposal,
-    Verdict,
     canonical_json,
     sha256_hex,
 )
-
 
 RULE_INFO: list[dict[str, Any]] = [
     {"rule_id": "R9_SIGNATURE",            "label": "Signature",       "phase": 0},

@@ -8,12 +8,12 @@ chain is the security-relevant history.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any
 
 from .store import db as store
-
 
 _lock = threading.Lock()
 _missions: dict[str, dict[str, Any]] = {}
@@ -29,7 +29,6 @@ def _load_persisted() -> None:
             mid = row.get("mission_id")
             if not mid:
                 continue
-            import json as _json
             trace = row.get("trace_json") or "[]"
             try:
                 trace_list = json.loads(trace) if isinstance(trace, str) else trace
