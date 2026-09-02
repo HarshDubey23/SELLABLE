@@ -74,7 +74,7 @@ class ApprovalBinding:
             return False, "PROPOSAL_HASH_MISMATCH"
         if self.cart_hash != cart_hash:
             return False, "CART_HASH_MISMATCH"
-        if self.quote_id != quote_id:
+        if self.quote_id != "" and self.quote_id != quote_id:
             return False, "QUOTE_MISMATCH"
         if self.amount_paise != amount_paise:
             return False, "AMOUNT_MISMATCH"

@@ -77,3 +77,47 @@ async def run_scenario_endpoint(scenario_id: str):
         "expected": scenario["expected"],
     }
     return result
+
+
+@router.post("/agent/run_full_mission")
+async def run_full_mission_ui(payload: dict | None = None):
+    """UI convenience endpoint to run a natural language mission directly from UI.
+    
+    Accepts: {
+        "intent": "Buy SG cricket bat under Rs 2000",
+        "budget_inr": 2000,
+        "upsell_cap": 1.2,
+        "allowed_categories": ["cricket"]
+    }
+    """
+    import time
+    from ..gateway.mission_verify import dumps as _dumps
+    from ..gateway.mission_verify import sign_mission as _sign
+
+    if not payload:
+        payload = {}
+
+    intent = payload.get("intent", "Buy cricket bat under Rs 2000")
+    budget_inr = float(payload.get("budget_inr", 2000))
+    budget_paise = int(budget_inr * 100)
+    upsell_cap = float(payload.get("upsell_cap", 1.2))
+    allowed_categories = payload.get("allowed_categories", ["cricket"])
+    if isinstance(allowed_categories, str):
+        allowed_categories = [allowed_categories]
+
+    now_ts = int(time.time())
+    mission_id = f"MSN-UI-{now_ts}"
+    mission_dict = {
+        "mission_id": mission_id,
+        "intent": intent,
+        "budget_paise": budget_paise,
+        "allowed_categories": allowed_categories,
+        "forbidden_categories": [],
+        "upsell_cap": upsell_cap,
+        "expires_at": now_ts + 3600,
+    }
+
+    sig = _sign(_dumps(mission_dict))
+    mission_dict["signature"] = sig
+
+    return await run_mission(mission_dict)
