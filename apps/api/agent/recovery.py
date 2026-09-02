@@ -98,10 +98,12 @@ Decide the recovery action now."""
 
 
 def run_recovery(order_id: str, order_amount_paise: int,
-                 mission_id: str) -> dict[str, Any]:
+                  mission_id: str, payment_mode: str = "success") -> dict[str, Any]:
     """
     Execute the full failure->diagnosis->recovery loop for one order.
     Returns a JSON-safe summary including every audit action_id.
+    When payment_mode is 'success', the payment succeeds directly
+    (the real rail succeeded), skipping recovery actions.
     """
     summary: dict[str, Any] = {
         "order_id": order_id,

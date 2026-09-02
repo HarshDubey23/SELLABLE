@@ -35,6 +35,7 @@ import httpx
 
 from .. import missions
 from .trace import MissionTrace
+from ..deps import require_api_key
 
 MAX_STEPS = 8
 
@@ -148,7 +149,10 @@ async def run_mission(
     """Run a complete buyer agent mission and return status + trace."""
     if base_url is None:
         base_url = _default_base_url()
+    api_key = os.environ.get("APP_API_KEY", "")
+    headers = {"X-API-Key": api_key} if api_key else {}
     mission_id = mission_data.get("mission_id", "UNKNOWN")
+    proposal_hash = None
     if trace is None:
         trace = MissionTrace(mission_id)
 
@@ -176,7 +180,7 @@ async def run_mission(
         trace.emit("system", "mandate_error", f"intent mandate failed: {exc}")
         return {"status": "mandate_error", "trace": trace.to_dict()}
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
 
         # ============ STEP 1: DISCOVER ============
         t0 = time.time()
@@ -577,7 +581,7 @@ Propose which items to buy:"""
 
         # requests-based Razorpay calls are blocking; keep the loop free.
         recovery = await asyncio.to_thread(
-            run_recovery, order_id, amount_paise, mission_id)
+            run_recovery, order_id, amount_paise, mission_id, payment_mode)
         outcome = recovery.get("outcome", "unknown")
 
         if outcome == "captured":
@@ -607,6 +611,23 @@ Propose which items to buy:"""
             "recovery": recovery,
             "final_payment_status": final_status,
             "trace": trace.to_dict(),
+            "mission": {
+                "mission_id": mission_id,
+                "intent": mission_data.get("intent", ""),
+                "budget_paise": int(mission_data.get("budget_paise", 0) or 0),
+                "allowed_categories": mission_data.get("allowed_categories", []),
+                "forbidden_categories": mission_data.get("forbidden_categories", []),
+                "upsell_cap": float(mission_data.get("upsell_cap", 1.0)),
+                "approved_total_paise": int(amount_paise),
+            },
+            "cart": {
+                "items": [{"sku": s, "qty": 1} for s in proposed_skus],
+            },
+            "items": [{"sku": s, "qty": 1} for s in proposed_skus],
+            "proposal": {
+                "items": [{"sku": s, "qty": 1} for s in proposed_skus],
+                "proposal_hash": proposal_hash if "proposal_hash" in dir() else None,
+            },
         }
 
         # HONEST STATUS BRANCH — never call a failed payment completed.

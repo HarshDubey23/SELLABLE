@@ -444,18 +444,18 @@ var ICON={tool_call:'&#8594; tool',tool_result:'&#8592; result',llm_call:'thinki
  payment_link_issued:'payment link issued'};
 var REPLAY_MS=350,SKIP=false,BUSY=false;
 var isMoney=function(ev){return/^(tool_|verdict|audit|order|payment|webhook|create_|check_)/.test(ev.kind)};
-var isInjection=function(ev){return INJ.some(function(m){return JSON.stringify(ev.data).includes(m)})};
+var isInjection=function(ev){var s=JSON.stringify(ev.data)+' '+JSON.stringify(ev.detail||'');return INJ.some(function(m){return s.toLowerCase().includes(m.toLowerCase())})};
 
 function normalize(data){
- var raw=Array.isArray(data)?data:
-  (data&&(data.events||data.trace||(data.trace&&data.trace.events)||data.steps))||[];
- return raw.map(function(e,i){return{
-  i:i,seq:e.seq??e.step??i+1,
-  kind:String(e.kind??e.type??e.event??'event'),
-  actor:String(e.actor??e.source??'system'),
-  label:e.label??e.action??e.name??'',
-  detail:e.detail??e.summary??e.message??'',
-  data:e};});}
+  var raw=Array.isArray(data)?data:
+   (data&&(data.events||data.trace||(data.trace&&data.trace.events)||data.steps))||[];
+  return raw.map(function(e,i){return{
+   i:i,seq:e.seq??e.step??i+1,
+   kind:String(e.kind??e.action??e.type??e.event??'event'),
+   actor:String(e.actor??e.source??'system'),
+   label:e.label??e.action??e.name??'',
+   detail:e.detail??e.summary??e.message??'',
+   data:e};});}
 
 function setPill(cls,txt){var p=$('#pill');p.className='badge '+cls;p.innerHTML=txt;}
 
