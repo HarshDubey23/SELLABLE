@@ -1,0 +1,6 @@
+{
+  "single_money_boundary": true,
+  "pure_deterministic_gateway": true,
+  "zero_llm_imports_in_policy": true,
+  "zero_secrets_in_repo": true
+}

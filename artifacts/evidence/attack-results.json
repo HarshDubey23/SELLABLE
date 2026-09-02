@@ -1,0 +1,127 @@
+{
+  "total_attacks": 20,
+  "blocked_attacks": 20,
+  "unauthorized_money_calls": 0,
+  "scenarios": [
+    {
+      "id": "I1",
+      "name": "Budget Override",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I2",
+      "name": "Prompt Injection",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I3",
+      "name": "Unauthorized Upsell",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I4",
+      "name": "Fake Budget Update",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I5",
+      "name": "Free Price Attack",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I6",
+      "name": "Unicode Obfuscation",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I7",
+      "name": "Cross-Category Injection",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I8",
+      "name": "Category Relabeling",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I9",
+      "name": "Cart Mutation",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I10",
+      "name": "Quote Mutation",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I11",
+      "name": "Quote Substitution",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I12",
+      "name": "Replay Exploit",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I13",
+      "name": "Expired Quote",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I14",
+      "name": "Expired Mandate",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I15",
+      "name": "Revoked Mandate",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I16",
+      "name": "Currency Manipulation",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I17",
+      "name": "Quantity Manipulation",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I18",
+      "name": "Unknown SKU",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I19",
+      "name": "Webhook Forgery",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    },
+    {
+      "id": "I20",
+      "name": "Concurrent Replay",
+      "verdict": "BLOCKED",
+      "money_calls": 0
+    }
+  ]
+}

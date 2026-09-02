@@ -1,0 +1,8 @@
+{
+  "verified": true,
+  "total_blocks": 1,
+  "genesis_hash": "abd47b0dc9ead5a3f80c79ab9dfec857f2880909c2a1b42b4fecdb11c9cffde7",
+  "head_hash": "abd47b0dc9ead5a3f80c79ab9dfec857f2880909c2a1b42b4fecdb11c9cffde7",
+  "algorithm": "SHA-256",
+  "persistence": "SQLite WAL"
+}
