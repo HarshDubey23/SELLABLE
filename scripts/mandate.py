@@ -64,7 +64,8 @@ def main() -> int:
     else:
         blob = sign_cart(CartMandate(mission_id=args.mission, cart_hash=args.cart_hash,
                                      amount_paise=args.amount_paise,
-                                     signed_at=int(time.time())), key)
+                                     signed_at=int(time.time()),
+                                     expires_at=int(time.time()) + 3600), key)
         path = out_dir / f"{args.mission}_cart_mandate.json"
     path.write_text(json.dumps(blob, indent=2), encoding="utf-8")
     print(f"signed -> {path}")

@@ -98,12 +98,14 @@ class CartMandate:
     cart_hash: str           # the gateway-APPROVED proposal hash
     amount_paise: int
     signed_at: int
+    expires_at: int          # unix seconds
     version: int = MANDATE_VERSION
 
     def payload(self) -> dict[str, Any]:
         return {"type": "cart_mandate", "version": self.version,
                 "mission_id": self.mission_id, "cart_hash": self.cart_hash,
-                "amount_paise": self.amount_paise, "signed_at": self.signed_at}
+                "amount_paise": self.amount_paise, "signed_at": self.signed_at,
+                "expires_at": self.expires_at}
 
 
 def sign_intent(mandate: IntentMandate, key: str) -> dict[str, Any]:
@@ -156,6 +158,9 @@ def verify_cart(blob: Any, *, proposal_hash: str, amount_paise: int,
         raise MandateError("MANDATE_BAD_VERSION", f"version={version}")
     if not _verify(str(blob["sig"]), payload, _key()):
         raise MandateError("MANDATE_BAD_SIGNATURE")
+    now = int(time.time())
+    if int(payload.get("expires_at", 0)) <= now:
+        raise MandateError("MANDATE_EXPIRED")
     if payload.get("cart_hash") != proposal_hash:
         raise MandateError("MANDATE_CART_MISMATCH")
     if int(payload.get("amount_paise", -1)) != int(amount_paise):

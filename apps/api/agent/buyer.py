@@ -602,7 +602,7 @@ Propose which items to buy:"""
                     break
             except Exception as e:
                 trace.emit("executor", "status_check_failed", str(e))
-            time.sleep(1.0)
+            await asyncio.sleep(1.0)
 
         result_payload: dict[str, Any] = {
             "order_id": order_id,

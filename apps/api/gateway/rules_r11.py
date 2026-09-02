@@ -29,7 +29,11 @@ def rule_r11_negotiation_bound(proposal: Proposal,
         floor = product.get("floor_paise")
         ceiling = product.get("ceiling_paise")
         if floor is None or ceiling is None:
-            continue  # pre-Day-5 catalog; skip
+            return Violation(
+                rule_id="R11_NEGOTIATION_BOUND",
+                message=f"SKU {item.sku} lacks floor/ceiling bounds in catalog",
+                hint="missing bounds -> fail-closed",
+            )
         unit_price = item.price_paise
         if unit_price < floor:
             return Violation(

@@ -174,7 +174,7 @@ def capture_payment(payment_id: str, amount_paise: int,
     _validate_amount(amount_paise)
     money.record("capture_payment", payment_id=payment_id,
                  amount_paise=amount_paise)
-    url = f"{BASE_URL}/payments/{payment_id}/capture"
+    url = f"{BASE_URL}/v1/payments/{payment_id}/capture"
     resp = requests.post(url, auth=_auth(),
                          data={"amount": amount_paise, "currency": currency},
                          headers={"Content-Type": "application/x-www-form-urlencoded",

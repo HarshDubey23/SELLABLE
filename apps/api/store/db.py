@@ -53,7 +53,8 @@ def init_schema() -> None:
                     payload_hash TEXT NOT NULL,
                     prev_hash TEXT NOT NULL,
                     hash TEXT NOT NULL
-                );                CREATE TABLE IF NOT EXISTS webhook_events (
+                );
+                CREATE TABLE IF NOT EXISTS webhook_events (
                     event_id TEXT PRIMARY KEY,
                     event_type TEXT,
                     order_id TEXT,
@@ -61,6 +62,20 @@ def init_schema() -> None:
                     amount_paise INTEGER,
                     status TEXT,
                     received_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS bindings (
+                    seq INTEGER PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    proposal_hash TEXT NOT NULL,
+                    cart_hash TEXT NOT NULL,
+                    quote_id TEXT NOT NULL,
+                    amount_paise INTEGER NOT NULL,
+                    currency TEXT NOT NULL,
+                    skus TEXT NOT NULL,
+                    mandate_version TEXT NOT NULL,
+                    issued_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    consumed_at INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS orders (
                     order_id TEXT PRIMARY KEY,

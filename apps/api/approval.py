@@ -25,6 +25,7 @@ authoritative check goes through `verify_binding()`.
 """
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -84,46 +85,26 @@ class ApprovalBinding:
         return True, "OK"
 
 
-_BINDINGS: dict[int, ApprovalBinding] = {}
-_CONSUMED: set[int] = set()
 _DEFAULT_TTL_SECONDS = 30 * 60
 _POLICY_VERSION = "sellable-v1.0"
 
 
-def _load_persisted() -> None:
-    """Rebuild the binding map from the verdicts table at boot.
-
-    A binding exists where (decision='APPROVE' AND proposal_hash is set).
-    Older rows without the rich columns are loaded best-effort; missing
-    fields are filled with sentinel values that cause verify() to reject
-    until a fresh proposal re-issues the binding under the new schema.
-    """
-    global _BINDINGS
-    _BINDINGS = {}
-    for row in store.query(
-        "SELECT seq, decision, rule_id, reason, proposal_hash, mission_id "
-        "FROM verdicts WHERE decision='APPROVE' ORDER BY seq"
-    ):
-        # Legacy data may not have all fields; we still register a minimal
-        # binding so old APPROVE seqs remain visible (they will be
-        # rejected at order creation until re-issued).
-        _BINDINGS[row["seq"]] = ApprovalBinding(
-            seq=row["seq"],
-            mission_id=str(row["mission_id"] or ""),
-            proposal_hash=str(row["proposal_hash"] or ""),
-            cart_hash=str(row["proposal_hash"] or ""),
-            quote_id="",
-            amount_paise=0,
-            currency="INR",
-            sku_set=tuple(),
-            issued_at=0,
-            expires_at=0,
-            mandate_version=1,
-            policy_version=_POLICY_VERSION,
-        )
-
-
-_load_persisted()
+def _row_to_binding(row: dict[str, Any]) -> ApprovalBinding:
+    skus_list = json.loads(row["skus"]) if row["skus"] else []
+    return ApprovalBinding(
+        seq=row["seq"],
+        mission_id=row["mission_id"],
+        proposal_hash=row["proposal_hash"],
+        cart_hash=row["cart_hash"],
+        quote_id=row["quote_id"],
+        amount_paise=row["amount_paise"],
+        currency=row["currency"],
+        sku_set=tuple(sorted(tuple(x) for x in skus_list)),
+        issued_at=row["issued_at"],
+        expires_at=row["expires_at"],
+        mandate_version=int(row["mandate_version"]),
+        policy_version=_POLICY_VERSION,
+    )
 
 
 def register(seq: int, *, mission_id: str, proposal_hash: str,
@@ -132,9 +113,18 @@ def register(seq: int, *, mission_id: str, proposal_hash: str,
              ttl_seconds: int = _DEFAULT_TTL_SECONDS,
              mandate_version: int = 1,
              now_ts: int | None = None) -> ApprovalBinding:
-    """Persist a fresh binding. Called by tools.submit_proposal when APPROVE."""
+    """Persist a fresh binding in SQLite. Called by tools.submit_proposal when APPROVE."""
     now_ts = now_ts if now_ts is not None else int(time.time())
-    binding = ApprovalBinding(
+    expires_at = now_ts + ttl_seconds
+    skus_json = json.dumps(skus)
+    
+    store.execute(
+        "INSERT INTO bindings (seq, mission_id, proposal_hash, cart_hash, quote_id, amount_paise, currency, skus, mandate_version, issued_at, expires_at, consumed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        (seq, mission_id, proposal_hash, cart_hash, quote_id, amount_paise, currency, skus_json, str(mandate_version), now_ts, expires_at)
+    )
+
+    return ApprovalBinding(
         seq=seq,
         mission_id=mission_id,
         proposal_hash=proposal_hash,
@@ -144,21 +134,20 @@ def register(seq: int, *, mission_id: str, proposal_hash: str,
         currency=currency,
         sku_set=tuple(sorted(skus)),
         issued_at=now_ts,
-        expires_at=now_ts + ttl_seconds,
+        expires_at=expires_at,
         mandate_version=mandate_version,
         policy_version=_POLICY_VERSION,
     )
-    _BINDINGS[seq] = binding
-    return binding
 
 
 def get(seq: int) -> ApprovalBinding | None:
-    return _BINDINGS.get(seq)
+    row = store.query_one("SELECT * FROM bindings WHERE seq = ?", (seq,))
+    return _row_to_binding(row) if row else None
 
 
 def get_legacy_proposal_hash(seq: int) -> str | None:
     """Back-compat shim: returns seq -> proposal_hash for tools.create_order."""
-    b = _BINDINGS.get(seq)
+    b = get(seq)
     return b.proposal_hash if b else None
 
 
@@ -178,28 +167,36 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
     Money boundary invariant:
         rejected verify() => money.create_order MUST NOT be called.
     """
-    b = _BINDINGS.get(seq)
-    if b is None:
+    row = store.query_one("SELECT * FROM bindings WHERE seq = ?", (seq,))
+    if row is None:
         money_counter.record("binding_miss", seq=seq)
         return False, "BINDING_NOT_FOUND", None
-    if seq in _CONSUMED:
+    
+    b = _row_to_binding(row)
+    if row["consumed_at"] is not None:
         money_counter.record("binding_consumed", seq=seq)
         return False, "BINDING_CONSUMED", b
+        
     ok, reason = b.matches_money(
         mission_id=mission_id, proposal_hash=proposal_hash,
         cart_hash=cart_hash, quote_id=quote_id, amount_paise=amount_paise,
         currency=currency, skus=skus, now_ts=now_ts)
+        
     if not ok:
         money_counter.record(f"binding_{reason.lower()}", seq=seq)
         return False, reason, b
-    _CONSUMED.add(seq)
+        
+    # Mark as consumed
+    now_ts_consumed = now_ts if now_ts is not None else int(time.time())
+    store.execute("UPDATE bindings SET consumed_at = ? WHERE seq = ?", (now_ts_consumed, seq))
     return True, "OK", b
 
 
 def reset_consumed() -> None:
     """Clear the consumed set. Used by tests; never call from production."""
-    _CONSUMED.clear()
+    store.execute("UPDATE bindings SET consumed_at = NULL")
 
 
 def all_bindings() -> list[ApprovalBinding]:
-    return list(_BINDINGS.values())
+    rows = store.query("SELECT * FROM bindings")
+    return [_row_to_binding(r) for r in rows]

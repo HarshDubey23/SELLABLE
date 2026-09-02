@@ -42,6 +42,8 @@ from .mandates.mandates import (
     MANDATE_VERSION,
 )
 from .products import CATALOG
+# rp_create_order is imported here but never called, confirming the Attack
+# Lab does not bypass the money gates or touch Razorpay directly.
 from .razorpay_client import create_order as rp_create_order
 
 

@@ -197,6 +197,8 @@ async function jpost(u,body,headers){var r=await fetch(u,{method:'POST',headers:
   Object.assign({'Content-Type':'application/json'},headers||{}),body:typeof body==='string'?body:JSON.stringify(body||{})});
   return{status:r.status,data:await r.json().catch(function(){return null})}};
 function fmtTs(t){if(!t)return'';var d=new Date(t*1000);return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'})};
+async function pollHeader(){try{var r=await jget('/status');var s=r.data;if(s){var hs=document.getElementById('hdr-status');if(hs){var risk=s.system_risk;var au=s.audit_chain;hs.className='badge '+(au.healthy&&risk!=='HIGH'?'b-ok':risk==='MEDIUM'?'b-warn':'b-bad');hs.textContent=au.healthy&&risk!=='HIGH'?'OPERATIONAL':risk;}}}catch(e){}}
+pollHeader();setInterval(pollHeader,4000);
 function fmtMs(ms){if(ms<1000)return ms+' ms';if(ms<60000)return (ms/1000).toFixed(1)+' s';return (ms/60000).toFixed(1)+' min'};
 function pct(n,d){return d?(Math.round(n*1000/d)/10)+'%':'—'};
 function badge(cls,t){return '<span class="badge '+cls+'">'+esc(t)+'</span>'};
@@ -481,15 +483,15 @@ async function runMission(){
   CURRENT_MISSION=mid;
   $('#missionIdTag').textContent='mission: '+mid;
   $('#runStatus').innerHTML=infobox('Mission submitted. Agent is searching…');
-  $('#trace').innerHTML='';$('#verdict').innerHTML='<div class='muted'>pending…</div>';
-  $('#binding').innerHTML='<div class='muted'>pending…</div>';
-  $('#mandates').innerHTML='<div class='muted'>pending…</div>';
-  $('#payment').innerHTML='<div class='muted'>pending…</div>';
-  $('#searchResults').innerHTML='<div class='muted'>searching…</div>';
+  $('#trace').innerHTML='';$('#verdict').innerHTML='<div class="muted">pending…</div>';
+  $('#binding').innerHTML='<div class="muted">pending…</div>';
+  $('#mandates').innerHTML='<div class="muted">pending…</div>';
+  $('#payment').innerHTML='<div class="muted">pending…</div>';
+  $('#searchResults').innerHTML='<div class="muted">searching…</div>';
 
   // Step 1: Sign mission via /attack (cheat) or use the demo flow.
   // We use /agent/run-mission — that path signs its own mission.
-  var res=await jpost('/agent/run-mission',{
+  var res=await jpost('/demo/checkout/api/agent/run-mission',{
     mission_id:mid, intent:intent,
     budget_paise:budget*100, allowed_categories:[category],
     forbidden_categories:[], upsell_cap:cap,

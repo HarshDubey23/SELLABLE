@@ -90,7 +90,25 @@ def health():
 
 @app.get("/audit")
 def get_audit_chain():
-    return {"entries": audit_chain.entries(), "verified": audit_chain.verify()}
+    ok, reason = audit_chain.verify_strict()
+    return {
+        "entries": audit_chain.entries(),
+        "verified": ok,
+        "reason": reason,
+        "entry_count": len(audit_chain.entries()),
+    }
+
+
+@app.get("/audit/verify")
+def audit_verify():
+    """Machine-readable audit chain verification. Exit-0 equivalent: verified==true."""
+    ok, reason = audit_chain.verify_strict()
+    return {
+        "verified": ok,
+        "reason": reason,
+        "entry_count": len(audit_chain.entries()),
+        "genesis_action": audit_chain.entries()[0]["action"] if audit_chain.entries() else None,
+    }
 
 
 @app.get("/gateway/proof")

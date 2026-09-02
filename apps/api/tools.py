@@ -471,7 +471,8 @@ async def tool_create_order(req: CreateOrderReq,
                       expected_mission_id=q["mission_id"])
         verify_cart(cart_blob, proposal_hash=req.proposal_hash,
                     amount_paise=total_paise,
-                    expected_mission_id=q["mission_id"])
+                    expected_mission_id=q["mission_id"],
+                    approval_issued_at=_binding.issued_at if _binding else None)
     except MandateError as exc:
         chain.append("executor", "mandate_rejected",
                      {"mission_id": q["mission_id"], "code": exc.code},

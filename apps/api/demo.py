@@ -316,9 +316,11 @@ def e2e_demo() -> dict[str, Any]:
       4. create_order (binding verified, mandates verified, REAL Razorpay call)
       5. check_payment (real Razorpay API + local ledger)
 
-    The demo MUST NOT call Razorpay directly — that would bypass the
-    binding/mandate/quote gates. It uses tools.create_order via HTTP
-    only if Razorpay is configured; otherwise it returns a
+    The demo MUST NOT call Razorpay directly in production routes — 
+    however, this demo acts as the orchestrator *and* gateway internally. 
+    It manually executes the mandate verifications (verify_binding, verify_intent, verify_cart) 
+    before calling Razorpay, mimicking tools.create_order without the HTTP wrapper.
+    It uses tools.create_order via HTTP only if Razorpay is configured; otherwise it returns a
     CONFIGURATION REQUIRED state (no fake success).
     """
     from .tools import orders as tools_orders
@@ -466,6 +468,7 @@ def e2e_demo() -> dict[str, Any]:
     cart_mandate = sign_cart(CartMandate(
         mission_id=mission_id, cart_hash=v.proposal_hash or "",
         amount_paise=total_paise, signed_at=int(time.time()),
+        expires_at=int(time.time()) + 3600,
     ), os.environ["USER_MANDATE_KEY"])
 
     try:

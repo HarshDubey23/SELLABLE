@@ -11,10 +11,11 @@ from . import chain as audit_chain
 
 
 def main() -> int:
-    verified = audit_chain.verify()
-    print(json.dumps({"verified": verified,
+    ok, reason = audit_chain.verify_strict()
+    print(json.dumps({"verified": ok,
+                      "reason": reason,
                       "entries": len(audit_chain.entries())}))
-    return 0 if verified else 1
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

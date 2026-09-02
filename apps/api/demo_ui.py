@@ -591,7 +591,7 @@ _ALLOWED_PROXY_PATHS = {
     "/tools/explain_reject", "/ledger", "/agent/scenarios",
 }
 _ALLOWED_PROXY_POST = {
-    "/agent/run-scenario/", "/tools/submit_proposal", "/tools/create_order",
+    "/agent/run-scenario/", "/agent/run-mission", "/tools/submit_proposal", "/tools/create_order",
     "/tools/quote", "/tools/check_payment/", "/tools/upsell_offers",
     "/tools/crosssell_offers",
 }

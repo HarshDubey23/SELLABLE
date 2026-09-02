@@ -39,7 +39,12 @@ def rule_r8_abort(mission_id: str, aborted_ids: frozenset[str]) -> Violation | N
 
 
 def _total(catalog: Catalog, items: Iterable[ProposalItem]) -> int:
-    return sum(catalog[i.sku]["price_paise"] * i.qty for i in items)
+    total = 0
+    for i in items:
+        prod = catalog.get(i.sku)
+        if prod:
+            total += prod["price_paise"] * i.qty
+    return total
 
 
 def rule_r1_budget(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
@@ -71,7 +76,10 @@ def rule_r1_budget(proposal: Proposal, catalog: Catalog, mission: Mission) -> Vi
 
 def rule_r2_forbidden(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
     for i in proposal.items:
-        cat = catalog[i.sku]["category"]
+        prod = catalog.get(i.sku)
+        if not prod:
+            return Violation("R2_FORBIDDEN", f"{i.sku} unknown (fail-closed)")
+        cat = prod["category"]
         if cat in mission.forbidden_categories:
             return Violation(
                 "R2_FORBIDDEN",
@@ -83,7 +91,10 @@ def rule_r2_forbidden(proposal: Proposal, catalog: Catalog, mission: Mission) ->
 
 def rule_r5_scope(proposal: Proposal, catalog: Catalog, mission: Mission) -> Violation | None:
     for i in proposal.items:
-        cat = catalog[i.sku]["category"]
+        prod = catalog.get(i.sku)
+        if not prod:
+            return Violation("R5_SCOPE", f"{i.sku} unknown (fail-closed)")
+        cat = prod["category"]
         if mission.allowed_categories and cat not in mission.allowed_categories:
             return Violation(
                 "R5_SCOPE",
@@ -118,7 +129,10 @@ def rule_r4_upsell_cap(proposal: Proposal, catalog: Catalog, mission: Mission,
 
 def rule_r3_price_drift(proposal: Proposal, catalog: Catalog) -> Violation | None:
     for i in proposal.items:
-        truth = catalog[i.sku]["price_paise"]
+        prod = catalog.get(i.sku)
+        if not prod:
+            return Violation("R3_PRICE_DRIFT", f"{i.sku} unknown (fail-closed)")
+        truth = prod["price_paise"]
         if i.price_paise != truth:
             return Violation(
                 "R3_PRICE_DRIFT",

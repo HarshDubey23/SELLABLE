@@ -102,7 +102,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--mission", required=True)
-    ap.add_argument("--api-key", default=os.environ.get("SELLABLE_API_KEY"))
+    ap.add_argument("--api-key", default=os.environ.get("APP_API_KEY"))
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     c = BuyerClient(args.base, api_key=args.api_key)
@@ -121,9 +121,9 @@ def main() -> int:
     mission_path = _find_mission_file(args.mission)
     with open(mission_path, "r", encoding="utf-8") as f:
         mission = json.load(f)
-    key = os.environ.get("SELLABLE_MISSION_KEY", "").encode()
+    key = os.environ.get("MISSION_HMAC_KEY", "").encode()
     if not key:
-        log("buyer", "abort", "SELLABLE_MISSION_KEY not set — cannot sign mission")
+        log("buyer", "abort", "MISSION_HMAC_KEY not set — cannot sign mission")
         return 2
     mission = _sign(mission, key)
     log("buyer", "mission_loaded", f"budget {mission.get('budget_paise')}p")
@@ -141,7 +141,7 @@ def main() -> int:
             sku = it.get("sku", "")
             prod = it
             if not prod.get("price_paise"):
-                gr = c.get("/tools/get_product?sku=" + urllib.request.quote(sku))
+                gr = c.get("/tools/get_product/" + urllib.request.quote(sku))
                 prod = (gr.body or {}).get("product", gr.body) or {}
             truth[sku] = int(prod.get("price_paise", 0))
             log("merchant", "tool_result:get_product",
@@ -149,8 +149,8 @@ def main() -> int:
         items = [{"sku": s, "qty": 1} for s in truth]
     else:
         for it in items:
-            r = c.get("/tools/get_product?sku=" + str(it.get("sku", "")))
-            prod = (r.body or {}).get("product", r.body) or {}
+            gr = c.get("/tools/get_product/" + urllib.request.quote(str(it.get("sku", ""))))
+            prod = (gr.body or {}).get("product", gr.body) or {}
             truth[it["sku"]] = int(prod.get("price_paise", it.get("price_paise", 0)))
             log("merchant", "tool_result:get_product",
                 f"{it['sku']} truth {truth[it['sku']]}p")
@@ -224,7 +224,7 @@ def main() -> int:
     # 7. bounded payment poll
     if order_id:
         for _ in range(10):
-            pay = c.post("/tools/check_payment", {"order_id": order_id})
+            pay = c.get(f"/tools/check_payment/{order_id}")
             st = json.dumps(pay.body or {})
             log("wallet", "check_payment", st[:120])
             if "completed" in st or "payment_link" in st or "captured" in st:

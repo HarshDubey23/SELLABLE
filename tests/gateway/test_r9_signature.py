@@ -1,28 +1,74 @@
-"""T23, T25: R9 signature — valid passes, missing/invalid fails closed."""
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-os.environ.setdefault("MISSION_HMAC_KEY", "test-key-not-a-real-secret")
-
-from apps.api.gateway import mission_verify as mv
+﻿"""
+tests/gateway/test_r9_signature.py - R9 mission signature tests
+"""
+import hashlib, hmac, json, time, pytest
 from apps.api.gateway.rules import rule_r9_signature
-from apps.api.gateway.types import Mission
-
-MISSION = Mission(mission_id="m2", intent="test", budget_paise=100000,
-                  allowed_categories=(), forbidden_categories=(),
-                  upsell_cap=1.3, expires_at=9_999_999_999)
+from apps.api.gateway.types import Mission, Violation
 
 
-def test_T23_r9_valid_signature():
-    blob = {k: v for k, v in vars(MISSION).items() if k != "signature"}
-    sig = mv.sign_mission(mv.dumps(blob))
-    assert rule_r9_signature(
-        Mission(**{**vars(MISSION), "signature": sig}),
-        mv.verify_mission) is None
+def _make_mission(**overrides):
+    data = dict(
+        mission_id="m1", intent="buy stuff",
+        budget_paise=50000, upsell_cap=1.3,
+        allowed_categories=("electronics",), forbidden_categories=(),
+        expires_at=int(time.time()) + 3600,
+        signature="",
+    )
+    data.update(overrides)
+    return Mission(**data)
 
 
-def test_T25_r9_missing_signature_rejects_fail_closed():
-    v = rule_r9_signature(MISSION, mv.verify_mission)   # signature = ""
-    assert v is not None and v.rule_id == "R9_SIGNATURE"
+def _sign(mission: Mission, key: str) -> str:
+    blob = {k: v for k, v in vars(mission).items() if k != "signature"}
+    canon = json.dumps(_plain(blob), sort_keys=True, separators=(",", ":"))
+    return hmac.new(key.encode(), canon.encode(), hashlib.sha256).hexdigest()
+
+
+def _plain(obj):
+    if isinstance(obj, (list, tuple)):
+        return [_plain(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: _plain(v) for k, v in obj.items()}
+    return obj
+
+
+def _verify_fn(key: str):
+    def _verify(canon: str, sig: str) -> bool:
+        expected = hmac.new(key.encode(), canon.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, sig)
+    return _verify
+
+
+def test_r9_valid_signature():
+    key = "test_mission_hmac_key"
+    m = _make_mission()
+    sig = _sign(m, key)
+    signed = Mission(
+        mission_id=m.mission_id, intent=m.intent,
+        budget_paise=m.budget_paise, upsell_cap=m.upsell_cap,
+        allowed_categories=m.allowed_categories,
+        forbidden_categories=m.forbidden_categories,
+        expires_at=m.expires_at, signature=sig,
+    )
+    result = rule_r9_signature(signed, _verify_fn(key))
+    assert result is None
+
+
+def test_r9_missing_signature():
+    key = "test_mission_hmac_key"
+    m = _make_mission(signature="")
+    result = rule_r9_signature(m, _verify_fn(key))
+    assert isinstance(result, Violation)
+    assert result.rule_id == "R9_SIGNATURE"
+
+
+def test_r9_bad_signature():
+    key = "test_mission_hmac_key"
+    m = _make_mission(signature="bad" * 20)
+    result = rule_r9_signature(m, _verify_fn(key))
+    assert isinstance(result, Violation)
+
+
+def test_r9_none_mission():
+    result = rule_r9_signature(None, lambda c, s: True)
+    assert isinstance(result, Violation)

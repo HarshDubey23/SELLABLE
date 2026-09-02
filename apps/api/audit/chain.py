@@ -182,14 +182,32 @@ def verify(db_path: str | None = None) -> bool:
 
     If db_path is given, verify that file's chain instead of the live in-memory chain.
     The live database is never touched by this parameter path.
+
+    Strict genesis enforcement:
+    - seq 0 MUST exist
+    - action MUST be "GENESIS"
+    - prev_hash MUST be "0" * 64
+    - hash MUST match _hash(genesis_entry)
     """
-    entries = _load_entries(db_path) if db_path else _chain
-    if not entries:
+    entries_to_check = _load_entries(db_path) if db_path else _chain
+    if not entries_to_check:
         return True
-    prev = "0" * 64
-    for e in entries:
-        if e["seq"] == 0 and e["action"] != "GENESIS":
-            return False
+    # Genesis must be first entry
+    genesis = entries_to_check[0]
+    if genesis["seq"] != 0:
+        return False
+    if genesis["action"] != "GENESIS":
+        return False
+    if genesis["prev_hash"] != "0" * 64:
+        return False
+    expected_genesis_hash = _hash(genesis)
+    if genesis.get("hash") != expected_genesis_hash:
+        return False
+
+    prev = genesis["hash"]
+    for e in entries_to_check[1:]:
+        if e["seq"] == 0:
+            return False  # duplicate genesis — tampered
         expected = _hash(e)
         if e.get("hash") and e["hash"] != expected:
             return False
@@ -197,6 +215,31 @@ def verify(db_path: str | None = None) -> bool:
             return False
         prev = e.get("hash", expected)
     return True
+
+
+def verify_strict(db_path: str | None = None) -> tuple[bool, str]:
+    """Like verify(), but returns (ok, reason) for diagnostics."""
+    entries_to_check = _load_entries(db_path) if db_path else _chain
+    if not entries_to_check:
+        return True, "empty chain (ok)"
+    genesis = entries_to_check[0]
+    if genesis["seq"] != 0:
+        return False, f"first entry has seq={genesis['seq']}, expected 0"
+    if genesis["action"] != "GENESIS":
+        return False, f"first entry action={genesis['action']!r}, expected GENESIS"
+    if genesis["prev_hash"] != "0" * 64:
+        return False, "genesis prev_hash is not all-zeros"
+    if genesis.get("hash") != _hash(genesis):
+        return False, "genesis hash mismatch"
+    prev = genesis["hash"]
+    for e in entries_to_check[1:]:
+        expected = _hash(e)
+        if e.get("hash") != expected:
+            return False, f"seq {e['seq']}: hash mismatch"
+        if e["prev_hash"] != prev:
+            return False, f"seq {e['seq']}: prev_hash mismatch (chain broken)"
+        prev = e["hash"]
+    return True, "ok"
 
 
 def tail(n: int = 10) -> list[dict]:
