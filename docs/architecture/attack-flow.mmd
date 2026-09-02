@@ -1,0 +1,9 @@
+flowchart TD
+    Attacker["🎭 Adversary / Prompt Injection"] -->|Inject malicious text in product description| Agent["🤖 Buyer Agent"]
+    Agent -->|Fooled by injection: Proposes SKU P-999 Rs 4,499| Gateway["🛡️ Deterministic Policy Gateway"]
+    
+    Gateway --> Rule1{"R1: Budget Cap Check (Rs 4,499 > Rs 2,000)"}
+    Rule1 -->|VIOLATION| Reject["⛔ REJECTED: BUDGET_EXCEEDED"]
+    
+    Reject --> Audit["⛓️ Append Audit: proposal_rejected"]
+    Reject --> Money["🚫 Money Calls Executed: 0"]

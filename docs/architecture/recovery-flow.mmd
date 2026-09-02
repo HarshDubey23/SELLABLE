@@ -1,0 +1,8 @@
+flowchart TD
+    OrderCreated["1️⃣ Razorpay Order Created"] --> AttemptPayment["2️⃣ Attempt Initial Payment Rail"]
+    AttemptPayment -->|Failure Simulated/Encountered| FailEvent["3️⃣ Payment Failed Event"]
+    FailEvent --> CheckPolicy{"4️⃣ Bounded Recovery Policy"}
+    CheckPolicy -->|Within Budget & Cap| FallbackLink["5️⃣ Issue Safe Payment Link / Retry"]
+    CheckPolicy -->|Exceeds Bound| Terminate["⛔ Halt Transaction"]
+    FallbackLink --> AuditRecord["6️⃣ Append to Tamper-Evident Ledger"]
+    Terminate --> AuditRecord

@@ -1,0 +1,46 @@
+erDiagram
+    MISSION {
+        string mission_id PK
+        string intent
+        int budget_paise
+        string allowed_categories
+        float upsell_cap
+        int expires_at
+        string signature
+    }
+    APPROVAL_BINDING {
+        int seq PK
+        string mission_id FK
+        string proposal_hash
+        string cart_hash
+        string quote_id
+        int amount_paise
+        string currency
+        string skus_json
+        int issued_at
+        int expires_at
+        int consumed
+    }
+    ORDER {
+        string order_id PK
+        string idempotency_key
+        int amount_paise
+        string status
+        string quote_id
+        string mission_id FK
+        string proposal_hash
+        int approve_seq FK
+        int created_at
+    }
+    AUDIT_ENTRY {
+        int seq PK
+        int timestamp
+        string actor
+        string action
+        string payload_hash
+        string prev_hash
+        string curr_hash
+    }
+    MISSION ||--o{ APPROVAL_BINDING : authorizes
+    APPROVAL_BINDING ||--|| ORDER : binds
+    ORDER ||--o{ AUDIT_ENTRY : records

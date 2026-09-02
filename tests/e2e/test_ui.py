@@ -3,6 +3,8 @@ Playwright E2E tests for Phase 76.
 Run with: pytest tests/e2e/test_ui.py
 """
 import pytest
+
+playwright = pytest.importorskip("playwright")
 from playwright.sync_api import Page, expect
 
 @pytest.mark.skip(reason="Requires live server and playwright browsers installed")

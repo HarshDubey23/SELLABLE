@@ -174,5 +174,5 @@ def status_summary() -> dict:
         "llm_model": cfg.gemini_model if cfg.llm_configured else None,
         "policy_version": cfg.policy_version,
         "mandate_version": cfg.mandate_version,
-        "razorpay_mode": "test" if cfg.payment_configured else "unconfigured",
+        "razorpay_mode": "test" if cfg.payment_configured else "unconfigured", "razorpay_key_id": cfg.razorpay_key_id,
     }

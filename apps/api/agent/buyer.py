@@ -494,7 +494,7 @@ Propose which items to buy:"""
 
                 if verdict3.get("decision") == "APPROVE":
                     trace.emit("gateway", "verdict_received",
-                               "APPROVE (upsell accepted, new total approved)")
+                               "APPROVE (upsell accepted, new total approved)", {"decision": "APPROVE", "seq": v3.get("seq"), "proposal_hash": verdict3.get("proposal_hash")})
                     proposed_skus = new_skus
                     seq = v3.get("seq")
                     proposal_hash = verdict3.get("proposal_hash")
@@ -580,8 +580,12 @@ Propose which items to buy:"""
         from .recovery import run_recovery
 
         # requests-based Razorpay calls are blocking; keep the loop free.
-        recovery = await asyncio.to_thread(
-            run_recovery, order_id, amount_paise, mission_id, payment_mode)
+        try:
+            recovery = await asyncio.to_thread(
+                run_recovery, order_id, amount_paise, mission_id, payment_mode)
+        except Exception as e:
+            recovery = {"outcome": "error", "error": str(e)}
+            trace.emit("buyer_agent", "recovery_failed", f"Recovery/Payment failed: {e}")
         outcome = recovery.get("outcome", "unknown")
 
         if outcome == "captured":

@@ -236,7 +236,7 @@ def _shell(title: str, body_html: str, js: str, active_nav: str = "") -> str:
             f"<meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{_html_escape.escape(title)} · SELLABLE</title>"
-            f"<style>{_CSS}</style></head><body>"
+            f"<style>{_CSS}</style><script src='https://checkout.razorpay.com/v1/checkout.js'></script></head><body>"
             f"{nav}<main class='wrap'>{body_html}</main>"
             f"<div class='footer'>SELLABLE · LLM proposes · Deterministic policy disposes · "
             f"Cryptographic bindings authorize · Razorpay executes · Audit remembers</div>"
@@ -581,10 +581,35 @@ async function runMission(){
       '<table><tr><th>Field</th><th>Value</th></tr>'
       +'<tr><td>order_id</td><td class="mono">'+esc(res.data.order_id)+'</td></tr>'
       +'<tr><td>amount</td><td class="mono">'+INR(res.data.amount_paise)+'</td></tr>'
-      +'<tr><td>final_status</td><td>'+badge('b-info', esc(res.data.final_payment_status||'pending'))+'</td></tr>'
-      +'</table>';
+      +'<tr><td>final_status</td><td id="livePayStatus">'+badge('b-info', esc(res.data.final_payment_status||'pending'))+'</td></tr>'
+      +'</table>'
+      +'<div style="margin-top:14px"><button class="btn" id="checkoutBtn" style="background:#3399cc; width: 100%">Pay with Razorpay (Test)</button></div>';
+      
+    $('#checkoutBtn').onclick = function() {
+        var options = {
+            "key": "rzp_test_TSttLNvLt9yUPI",
+            "amount": res.data.amount_paise,
+            "currency": "INR",
+            "name": "SELLABLE AI Merchant",
+            "description": "Bounded and Gated AI Purchase",
+            "order_id": res.data.order_id,
+            "handler": function (response){
+                $('#checkoutBtn').style.display = 'none';
+                $('#livePayStatus').innerHTML = badge('b-ok', 'CAPTURED');
+                $('#payment').innerHTML += '<div class="okbox" style="margin-top:10px">Payment successful! ID: ' + esc(response.razorpay_payment_id) + '</div>';
+            },
+        };
+        var rzp1 = new Razorpay(options);
+        rzp1.open();
+    };
+    
+    // AUTO-OPEN Razorpay!
+    setTimeout(function() { $('#checkoutBtn').click(); }, 500);
+
   } else if(res.data&&res.data.status){
-    $('#payment').innerHTML='<div class="warnbox">Status: '+esc(res.data.status)+'</div>';
+      var extra = res.data.detail ? '<div class="mono" style="margin-top:8px;font-size:12px">' + esc(JSON.stringify(res.data.detail)) + '</div>' : '';
+      $('#payment').innerHTML='<div class="warnbox">Status: '+esc(res.data.status)+extra+'</div>';
+
   }
 
   if(res.data&&res.data.status==='completed'){

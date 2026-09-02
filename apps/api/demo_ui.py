@@ -613,7 +613,7 @@ async def demo_proxy(path: str, request: Request,
         return JSONResponse({"ok": False, "error": "API key not configured on server"}, status_code=503)
     if not _proxy_allowed(request.method, "/" + path):
         return JSONResponse({"ok": False, "error": "proxy path not allowed"}, status_code=403)
-    target = "http://localhost:" + os.environ.get("PORT", "8000") + "/" + path
+    target = "http://127.0.0.1:" + os.environ.get("PORT", "8000") + "/" + path
     import httpx  # local import; the server already depends on it
     headers = {"X-API-Key": _API_KEY}
     body = None
@@ -623,14 +623,14 @@ async def demo_proxy(path: str, request: Request,
         except Exception:
             body = None
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             if request.method == "POST":
                 resp = await client.post(target, json=body, headers=headers)
             else:
                 resp = await client.get(target, headers=headers)
         return JSONResponse(resp.json(), status_code=resp.status_code)
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
+        return JSONResponse({"ok": False, "error": f"PROXY_ERROR: {type(e).__name__} - {str(e)}"}, status_code=503)
 
 
 # ===========================================================================
