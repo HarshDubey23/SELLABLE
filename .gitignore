@@ -15,4 +15,11 @@ data/*
 !data/.gitkeep
 missions/*_mandate.json
 video_submission.txt
+*.err
+server.log
+server.err
+uvicorn*.log
+live_demo.py
+smoke_*.py
+dbg_*.py
 
