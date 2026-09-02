@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from typing import Any
 
 MANDATE_VERSION = 1
+SUPPORTED_VERSIONS = (MANDATE_VERSION,)
+SUPPORTED_CURRENCIES = ("INR",)
 
 
 class MandateError(Exception):
@@ -42,6 +44,10 @@ class MandateError(Exception):
         "MANDATE_CART_MISMATCH": "cart hash does not match the approved proposal",
         "MANDATE_AMOUNT_MISMATCH": "mandated amount differs from the order amount",
         "MANDATE_MALFORMED": "token is not a well-formed mandate",
+        "MANDATE_BAD_VERSION": "mandate version not supported",
+        "MANDATE_BAD_CURRENCY": "mandate currency not supported",
+        "MANDATE_MISSION_MISMATCH": "mandate mission_id differs from approved proposal",
+        "MANDATE_CART_STALE": "cart mandate signed_at is older than the approval",
     }
 
     def __init__(self, code: str, detail: str = "") -> None:
@@ -111,32 +117,53 @@ def sign_cart(mandate: CartMandate, key: str) -> dict[str, Any]:
 
 
 def verify_intent(blob: Any, *, now: int | None = None,
-                  order_total_paise: int | None = None) -> dict[str, Any]:
+                  order_total_paise: int | None = None,
+                  expected_mission_id: str | None = None) -> dict[str, Any]:
     if not isinstance(blob, dict) or "payload" not in blob or "sig" not in blob:
         raise MandateError("MANDATE_MALFORMED")
     payload = blob["payload"]
     if not isinstance(payload, dict) or payload.get("type") != "intent_mandate":
         raise MandateError("MANDATE_MALFORMED", "wrong mandate type")
+    version = int(payload.get("version", 0))
+    if version not in SUPPORTED_VERSIONS:
+        raise MandateError("MANDATE_BAD_VERSION", f"version={version}")
+    currency = str(payload.get("currency", ""))
+    if currency not in SUPPORTED_CURRENCIES:
+        raise MandateError("MANDATE_BAD_CURRENCY", f"currency={currency}")
     if not _verify(str(blob["sig"]), payload, _key()):
         raise MandateError("MANDATE_BAD_SIGNATURE")
     now = int(time.time()) if now is None else now
     if int(payload.get("expires_at", 0)) <= now:
         raise MandateError("MANDATE_EXPIRED")
+    if (expected_mission_id is not None
+            and str(payload.get("mission_id", "")) != expected_mission_id):
+        raise MandateError("MANDATE_MISSION_MISMATCH")
     if order_total_paise is not None and int(payload.get("ceiling_paise", 0)) < order_total_paise:
         raise MandateError("MANDATE_CEILING_EXCEEDED")
     return payload
 
 
-def verify_cart(blob: Any, *, proposal_hash: str, amount_paise: int) -> dict[str, Any]:
+def verify_cart(blob: Any, *, proposal_hash: str, amount_paise: int,
+                expected_mission_id: str | None = None,
+                approval_issued_at: int | None = None) -> dict[str, Any]:
     if not isinstance(blob, dict) or "payload" not in blob or "sig" not in blob:
         raise MandateError("MANDATE_MALFORMED")
     payload = blob["payload"]
     if not isinstance(payload, dict) or payload.get("type") != "cart_mandate":
         raise MandateError("MANDATE_MALFORMED", "wrong mandate type")
+    version = int(payload.get("version", 0))
+    if version not in SUPPORTED_VERSIONS:
+        raise MandateError("MANDATE_BAD_VERSION", f"version={version}")
     if not _verify(str(blob["sig"]), payload, _key()):
         raise MandateError("MANDATE_BAD_SIGNATURE")
     if payload.get("cart_hash") != proposal_hash:
         raise MandateError("MANDATE_CART_MISMATCH")
     if int(payload.get("amount_paise", -1)) != int(amount_paise):
         raise MandateError("MANDATE_AMOUNT_MISMATCH")
+    if (expected_mission_id is not None
+            and str(payload.get("mission_id", "")) != expected_mission_id):
+        raise MandateError("MANDATE_MISSION_MISMATCH")
+    if approval_issued_at is not None:
+        if int(payload.get("signed_at", 0)) < int(approval_issued_at) - 1:
+            raise MandateError("MANDATE_CART_STALE")
     return payload

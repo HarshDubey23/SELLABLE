@@ -629,9 +629,9 @@ async def demo_proxy(path: str, request: Request,
                 resp = await client.post(target, json=body, headers=headers)
             else:
                 resp = await client.get(target, headers=headers)
-        return JSONResponse(resp.json(), status=resp.status_code)
+        return JSONResponse(resp.json(), status_code=resp.status_code)
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status=502)
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
 
 
 # ===========================================================================

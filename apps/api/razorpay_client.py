@@ -11,6 +11,10 @@ header plus the same key mirrored into the request notes/payload, so a
 replay is visible both to Razorpay-style tooling and in our audit chain.
 Keys are derived deterministically from business identifiers
 (agent_run_id + intent_id + approve_seq), never from wall-clock time.
+
+Instrumentation: every public mutator calls apps.api.money to record the
+operation. The Attack Lab uses that counter to PROVE the central
+invariant: a rejected proposal => 0 Razorpay calls.
 """
 import hashlib
 import json
@@ -20,6 +24,8 @@ import time
 from typing import Any
 
 import requests
+
+from . import money
 
 BASE_URL = "https://api.razorpay.com"
 TIMEOUT_S = 30
@@ -81,6 +87,8 @@ def create_order(amount_paise: int, receipt: str, notes: dict,
                  idempotency_key: str | None = None) -> dict:
     """POST /v1/orders — a real test-mode order on api.razorpay.com."""
     _validate_amount(amount_paise)
+    money.record("create_order", amount_paise=amount_paise, receipt=receipt,
+                 idempotency_key=idempotency_key)
     body = {
         "amount": amount_paise,
         "currency": "INR",
@@ -93,11 +101,13 @@ def create_order(amount_paise: int, receipt: str, notes: dict,
 
 def fetch_order(order_id: str) -> dict:
     """GET /v1/orders/{id} — authoritative order status."""
+    money.record("fetch_order", order_id=order_id)
     return _get(f"/v1/orders/{order_id}")
 
 
 def fetch_payment(payment_id: str) -> dict:
     """GET /v1/payments/{id} — authoritative payment status."""
+    money.record("fetch_payment", payment_id=payment_id)
     return _get(f"/v1/payments/{payment_id}")
 
 
@@ -114,6 +124,8 @@ def create_upi_payment(order_id: str, amount_paise: int,
     REAL failure to recover from, no DOM automation involved.
     """
     _validate_amount(amount_paise)
+    money.record("create_upi_payment", order_id=order_id,
+                 amount_paise=amount_paise)
     body = {
         "amount": amount_paise,
         "currency": "INR",
@@ -135,6 +147,8 @@ def create_payment_link(amount_paise: int, description: str,
     a human can pay through; webhook payment.captured closes the loop.
     """
     _validate_amount(amount_paise)
+    money.record("create_payment_link", amount_paise=amount_paise,
+                 idempotency_key=idempotency_key)
     body = {
         "amount": amount_paise,
         "currency": "INR",
@@ -149,6 +163,7 @@ def create_payment_link(amount_paise: int, description: str,
 
 def list_order_payments(order_id: str) -> list[dict]:
     """GET /v1/orders/{id}/payments — authoritative payment list."""
+    money.record("list_order_payments", order_id=order_id)
     data = _get(f"/v1/orders/{order_id}/payments")
     return data.get("items", [])
 
@@ -157,6 +172,8 @@ def capture_payment(payment_id: str, amount_paise: int,
                     currency: str = "INR") -> dict:
     """POST /v1/payments/{id}/capture — capture an authorized payment."""
     _validate_amount(amount_paise)
+    money.record("capture_payment", payment_id=payment_id,
+                 amount_paise=amount_paise)
     url = f"{BASE_URL}/payments/{payment_id}/capture"
     resp = requests.post(url, auth=_auth(),
                          data={"amount": amount_paise, "currency": currency},
@@ -190,6 +207,8 @@ def attempt_checkout_payment(order_id: str, amount_paise: int,
     """
     _validate_amount(amount_paise)
     key_id = os.environ["RAZORPAY_KEY_ID"]
+    money.record("attempt_checkout_payment", order_id=order_id,
+                 amount_paise=amount_paise)
     body = {
         "amount": amount_paise,
         "currency": "INR",

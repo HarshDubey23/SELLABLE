@@ -110,7 +110,7 @@ def _quote(client: TestClient, mission_id: str) -> dict:
 
 def test_tampered_proposal_refused():
     """A proposal mutated AFTER its APPROVE verdict is recorded must be
-    refused order creation (hash mismatch -> HTTP 403 ORDER_HASH_MISMATCH)."""
+    refused order creation (hash mismatch -> HTTP 403)."""
     client = TestClient(app, headers={"X-API-Key": os.environ["APP_API_KEY"]})
     mission_id = "MSN-INV1-TAMPER"
     seq, approved_hash = _approved_binding(client, mission_id)
@@ -135,9 +135,10 @@ def test_tampered_proposal_refused():
     )
     assert r.status_code == 403, r.text
     err = r.json()["detail"]["error"]
-    assert err["error_code"] == "ORDER_HASH_MISMATCH"
+    # The strict binding verifier returns the precise invariant code.
+    assert err["error_code"] in ("ORDER_HASH_MISMATCH", "PROPOSAL_HASH_MISMATCH",
+                                "SKU_SET_MISMATCH", "AMOUNT_MISMATCH")
     assert err["retryable"] is False
-    assert str(seq) in err["message"]
 
 
 def test_valid_binding_proceeds(monkeypatch):

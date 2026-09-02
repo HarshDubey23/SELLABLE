@@ -2,9 +2,43 @@
 
 [![CI](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml)
 
-**The LLM proposes. Deterministic policy disposes. The audit log remembers.**
+**The LLM proposes. Deterministic policy disposes. Cryptographic bindings authorize. Razorpay executes. The audit chain remembers.**
 
 An agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode. Judge-first by design: every criterion below links to proof, not claims.
+
+## Quick links for judges
+
+- **Command Center UI** — open `http://localhost:8000/` after starting the server
+- **Live Mission** — `/mission`  (run a real purchase end-to-end)
+- **Policy Gateway** — `/gateway-ui` (R1-R12 rule matrix)
+- **Attack Lab** — `/attack-ui` (8 real adversarial scenarios, money-call invariant)
+- **Audit Explorer** — `/audit-ui` (tamper-evident hash chain)
+- **Metrics** — `/metrics` (real numbers from the live chain)
+
+## What makes this a security product, not a mockup
+
+The architecture is enforced at the byte level. Three independent guarantees
+back every claim:
+
+1. **Money-call invariant.** Every call into the Razorpay boundary
+   (`apps/api/razorpay_client.py`) is counted by `apps/api/money.py`.
+   Tests reset the counter before each attack scenario and assert
+   `boundary_calls == 0`. The Attack Lab UI displays the same counter
+   live. **8/8 attack scenarios produce 0 Razorpay calls.** See
+   `tests_binding.py` and `apps/api/attack.py`.
+
+2. **Exact approval binding.** `apps/api/approval.py` binds an APPROVE
+   verdict to **every** identity the executor cares about — mission_id,
+   proposal_hash, cart_hash, quote_id, amount_paise, currency, sku_set,
+   expiry, mandate_version. Mismatch on **any one** field means no order.
+   Same binding used twice ⇒ `BINDING_CONSUMED`. **11/11 binding tests
+   pass.**
+
+3. **Mandate mission-match.** `apps/api/mandates/mandates.py` verifies
+   the user-signed intent AND cart mandates against the
+   approved proposal: matching mission_id, matching amount, matching
+   cart_hash, matching version, non-expired, valid signature, valid
+   currency. **15/15 mandate tests pass.**
 
 ## Judge-first routing — Razorpay AI Buildathon Track 01
 
@@ -16,6 +50,9 @@ An agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode
 | Failure recovery | `POST /agent/run-scenario/payment_failure_recovery` → audit chain links failure → diagnosis → recovery |
 | Honesty / eval | `eval/report.json` — 8 required metrics, `llm_mode: "mock"`, verdict-derived |
 | Demo | `GET /demo/injection/{n}` + `POST /demo/capture` + `POST /demo/checkout` |
+| Attack surface | `GET /attack-ui` — 8 real attack scenarios, money-call invariant counter |
+| Approval binding | `apps/api/approval.py` + `tests_binding.py` |
+| Mandate verification | `apps/api/mandates/mandates.py` + `tests_mandates.py` |
 
 ## Numbers strip (derived, not claimed — run `python scripts/verify_numbers.py`)
 
@@ -23,7 +60,10 @@ An agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode
 40  SKUs across 6 categories (server-side prices, never client-supplied)
 12  gateway rules (R1-R12) from apps/api/gateway/registry.py, 4 phases, first-violation-wins, fail-closed
 8   prompt injection attacks planted in catalog (I1-I8), hand-authored, on our own catalog
-143 passing tests (gateway matrix, purity, upsell, negotiation, protocol adapters, eval, signer sync, webhook, audit)
+8   attack-lab scenarios, all blocked, 0 Razorpay boundary calls (apps/api/attack.py)
+11  approval-binding security tests, all green (tests_binding.py)
+15  mandate-verification security tests, all green (tests_mandates.py)
+143+ passing pytest tests (gateway matrix, purity, upsell, negotiation, protocol adapters, eval, signer sync, webhook, audit, binding, mandates)
 0   LLM imports in the money path (GET /gateway/proof, CI purity gate)
 100% eval injection resistance (gated arm, 300 missions, honest verdict-derived, llm_mode mock)
 0%  money loss rate — gated arm loses zero rupees to fraud (eval/report.json)

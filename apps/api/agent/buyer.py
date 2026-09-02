@@ -17,18 +17,23 @@ external buyer agent would be. It:
 11. Attempts payment completion via the Razorpay payments API
 12. Returns the full trace
 
+Every step also pushes to apps.api.missions (the Live Mission UI tracker)
+so the UI can poll real progress — no fake timeline.
+
 If the model is unavailable or errors out, a deterministic fallback
 proposer keeps missions observable end-to-end; every fallback is marked
 in the trace so nothing is silently faked.
 """
 import asyncio
 import json
+import os
 import re
 import time
 from typing import Any
 
 import httpx
 
+from .. import missions
 from .trace import MissionTrace
 
 MAX_STEPS = 8
@@ -147,6 +152,12 @@ async def run_mission(
     if trace is None:
         trace = MissionTrace(mission_id)
 
+    # Register mission in the UI tracker BEFORE doing anything else so
+    # the live timeline can poll real progress from step 1.
+    missions.start(mission_id, intent=mission_data.get("intent", ""),
+                   budget_paise=int(mission_data.get("budget_paise", 0) or 0))
+    missions.step(mission_id, actor="system", action="mission_started",
+                  detail=f"Mission {mission_id} started")
     trace.emit("system", "mission_started", f"Mission {mission_id} started")
 
     # INV-3: simulated user pre-authorizes via separate wallet process
@@ -168,6 +179,7 @@ async def run_mission(
     async with httpx.AsyncClient(timeout=30.0) as client:
 
         # ============ STEP 1: DISCOVER ============
+        t0 = time.time()
         trace.emit("buyer_agent", "tool_call",
                    "GET /.well-known/agent-manifest.json")
         try:
@@ -177,11 +189,18 @@ async def run_mission(
             trace.emit("buyer_agent", "tool_result",
                        f"manifest: {len(tools)} tools discovered",
                        {"manifest": manifest})
+            missions.step(mission_id, actor="buyer_agent",
+                          action="manifest_discovered",
+                          detail=f"{len(tools)} tools",
+                          duration_ms=int((time.time() - t0) * 1000))
         except Exception as e:
             trace.emit("buyer_agent", "error", f"manifest fetch failed: {e}")
+            missions.step(mission_id, actor="buyer_agent",
+                          action="manifest_failed", detail=str(e))
             return {"status": "error", "trace": trace.to_dict()}
 
         # ============ STEP 2: SEARCH (tokenized intent) ============
+        t0 = time.time()
         intent = mission_data.get("intent", "")
         tokens = [t for t in re.split(r"\W+", intent) if len(t) > 2] or [intent]
         merged: dict[str, dict] = {}
@@ -195,8 +214,15 @@ async def run_mission(
                     merged[r["sku"]] = r
             except Exception as e:
                 trace.emit("buyer_agent", "error", f"search failed: {e}")
+                missions.step(mission_id, actor="buyer_agent",
+                              action="search_failed", detail=str(e))
                 return {"status": "error", "trace": trace.to_dict()}
         products = list(merged.values())
+        missions.step(mission_id, actor="buyer_agent",
+                      action="search_products",
+                      detail=f"found {len(products)} products for '{intent}'",
+                      data={"tokens": tokens, "result_count": len(products)},
+                      duration_ms=int((time.time() - t0) * 1000))
 
         # Rank by intent-token overlap in the product name/category so
         # the agent actually inspects what the mission is about
@@ -293,6 +319,14 @@ Propose which items to buy:"""
                             "model": llm_result.get("model"),
                             "latency_ms": llm_result.get("latency_ms"),
                             "raw_response": llm_result["text"][:500]})
+        missions.step(mission_id, actor="buyer_agent",
+                      action="llm_reasoning",
+                      detail=f"proposed {proposed_skus}",
+                      data={"skus": proposed_skus,
+                            "model": llm_result.get("model"),
+                            "reason": _parse_reason(llm_result["text"]),
+                            "fallback": False},
+                      duration_ms=llm_result.get("latency_ms", 0))
 
         if not proposed_skus:
             trace.emit("buyer_agent", "no_proposal",
@@ -327,11 +361,21 @@ Propose which items to buy:"""
                        "APPROVE (all rules passed)",
                        {"decision": decision, "seq": seq,
                         "proposal_hash": proposal_hash})
+            missions.step(mission_id, actor="gateway",
+                          action="verdict_received",
+                          detail="APPROVE",
+                          data={"seq": seq,
+                                "proposal_hash": proposal_hash})
         else:
             trace.emit("gateway", "verdict_received",
                        f"REJECT {rule_id}: {verdict.get('reason', '')}",
                        {"decision": decision, "rule_id": rule_id,
                         "reason": verdict.get("reason"), "seq": seq})
+            missions.step(mission_id, actor="gateway",
+                          action="verdict_received",
+                          detail=f"REJECT {rule_id}",
+                          data={"seq": seq, "rule_id": rule_id,
+                                "reason": verdict.get("reason")})
 
             # ============ STEP 5b: ONE BOUNDED REVISION ATTEMPT ============
             trace.emit("buyer_agent", "revising",
@@ -503,6 +547,9 @@ Propose which items to buy:"""
         if not order_id:
             trace.emit("executor", "order_failed",
                        f"order creation refused: {json.dumps(order)[:200]}")
+            missions.step(mission_id, actor="executor",
+                          action="order_failed",
+                          detail=json.dumps(order)[:200])
             return {"status": "order_failed", "detail": order,
                     "trace": trace.to_dict()}
 
@@ -511,6 +558,12 @@ Propose which items to buy:"""
                    f"(backed by APPROVE seq={seq})",
                    {"order_id": order_id, "amount_paise": amount_paise,
                     "checkout_url": order.get("checkout_url")})
+        missions.step(mission_id, actor="executor",
+                      action="order_created",
+                      detail=f"Rs {amount_paise/100:,.0f} order {order_id}",
+                      data={"order_id": order_id,
+                            "amount_paise": amount_paise,
+                            "approve_seq": seq})
 
         # ============ STEP 8: PAYMENT ATTEMPT (real Razorpay API) ======
         # Deterministic, API-driven: attempt the UPI rail the way
@@ -561,6 +614,7 @@ Propose which items to buy:"""
             trace.emit("system", "mission_completed",
                        f"Mission {mission_id} completed: "
                        f"payment {final_status}")
+            missions.finish(mission_id, "completed")
             result_payload["status"] = "completed"
             return result_payload
 
@@ -568,6 +622,7 @@ Propose which items to buy:"""
             # API said captured; ledger may still be catching up.
             trace.emit("system", "mission_completed",
                        f"Mission {mission_id} completed: captured per API")
+            missions.finish(mission_id, "completed")
             result_payload["status"] = "completed"
             return result_payload
 
@@ -587,6 +642,7 @@ Propose which items to buy:"""
                 "payment_failed_then_link_issued"
                 if outcome == "payment_failed_then_link_issued"
                 else "payment_failed")
+            missions.finish(mission_id, result_payload["status"])
             return result_payload
 
         if outcome == "authorized":
@@ -594,10 +650,12 @@ Propose which items to buy:"""
                        f"Mission {mission_id}: payment authorized, "
                        f"capture pending")
             result_payload["status"] = "payment_authorized_capture_pending"
+            missions.finish(mission_id, result_payload["status"])
             return result_payload
 
         trace.emit("system", "mission_pending",
                    f"Mission {mission_id}: order created, payment pending")
         result_payload["status"] = "order_created_payment_pending"
+        missions.finish(mission_id, result_payload["status"])
         return result_payload
 

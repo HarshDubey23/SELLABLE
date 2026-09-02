@@ -21,11 +21,20 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from . import razorpay_client as rp_client
+from .approval import register as register_binding
+from .approval import get_legacy_proposal_hash as verify_legacy
 from .audit import chain
 from .deps import require_api_key
 from .gateway import mission_verify
 from .gateway.engine import evaluate
+from .gateway.structured import evaluate_full
 from .gateway.types import Decision, Mission, Proposal, ProposalItem, Verdict
+from .mandates.mandates import (
+    MANDATE_VERSION,
+    MandateError,
+    verify_cart,
+    verify_intent,
+)
 from .products import CATALOG
 from .products import search as catalog_search
 from .store import db as store
@@ -271,18 +280,40 @@ async def tool_submit_proposal(req: ProposalReq):
         "signature": mission.signature,
     }
 
-    verdict = evaluate(mission=mission, proposal=proposal, catalog=CATALOG,
-                       verify_fn=mission_verify.verify_mission,
-                       state=state, now_ts=int(time.time()),
-                       chain_ok=chain.verify(),
-                       protocol_scope=req.protocol_scope)
+    structured = evaluate_full(
+        mission=mission, proposal=proposal, catalog=CATALOG,
+        verify_fn=mission_verify.verify_mission,
+        state=state, now_ts=int(time.time()),
+        chain_ok=chain.verify(),
+        protocol_scope=req.protocol_scope,
+    )
 
-    seq = chain.append("gateway", "verdict_emitted",
-                       {"decision": verdict.decision.value,
-                        "rule_id": verdict.rule_id,
-                        "proposal_hash": verdict.proposal_hash,
-                        "mission_id": mission.mission_id})
-    bound = VerdictSeq(seq, verdict)
+    decision_str = structured["decision"]
+    first_failure = structured["first_failure"]
+    proposal_hash = structured["proposal_hash"]
+
+    seq = chain.append(
+        "gateway",
+        "verdict_emitted",
+        {
+            "decision": decision_str,
+            "rule_id": first_failure["rule_id"] if first_failure else None,
+            "proposal_hash": proposal_hash,
+            "mission_id": mission.mission_id,
+            "rule_matrix": [
+                {"rule_id": r["rule_id"], "status": r["status"],
+                 "reason": r["reason"]}
+                for r in structured["rules"]
+            ],
+        },
+    )
+    bound = VerdictSeq(seq, Verdict(
+        decision=Decision(decision_str),
+        rule_id=first_failure["rule_id"] if first_failure else None,
+        reason=structured["verdict_reason"],
+        proposal_hash=proposal_hash,
+        seq=seq,
+    ))
     verdicts[seq] = bound
 
     # PERSIST: verdicts and bindings must outlive the process.
@@ -290,18 +321,41 @@ async def tool_submit_proposal(req: ProposalReq):
         "INSERT OR REPLACE INTO verdicts "
         "(seq, decision, rule_id, reason, proposal_hash, mission_id, "
         " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (seq, verdict.decision.value, verdict.rule_id, verdict.reason,
-         verdict.proposal_hash, mission.mission_id, int(time.time()))
+        (seq, decision_str,
+         first_failure["rule_id"] if first_failure else None,
+         structured["verdict_reason"],
+         proposal_hash or "", mission.mission_id, int(time.time()))
     )
 
-    if verdict.decision.value == "APPROVE":
-        approved_bindings[seq] = verdict.proposal_hash
+    # REGISTER APPROVAL BINDING (exact, multi-field) on APPROVE.
+    if decision_str == "APPROVE":
+        register_binding(
+            seq,
+            mission_id=mission.mission_id,
+            proposal_hash=proposal_hash or "",
+            cart_hash=proposal_hash or "",
+            quote_id="",
+            amount_paise=sum(i.price_paise * i.qty for i in items),
+            currency="INR",
+            skus=[(i.sku, i.qty) for i in items],
+            mandate_version=MANDATE_VERSION,
+        )
+        approved_bindings[seq] = proposal_hash or ""
 
-    return {"ok": True, "seq": seq,
-            "data": {"decision": verdict.decision.value,
-                     "rule_id": verdict.rule_id,
-                     "reason": verdict.reason,
-                     "proposal_hash": verdict.proposal_hash}}
+    return {
+        "ok": True,
+        "seq": seq,
+        "data": {
+            "decision": decision_str,
+            "rule_id": first_failure["rule_id"] if first_failure else None,
+            "reason": structured["verdict_reason"],
+            "proposal_hash": proposal_hash,
+            "rule_matrix": structured["rules"],
+            "effective_budget_paise": structured.get("effective_budget_paise"),
+            "merchant_id": structured.get("merchant_id"),
+            "policy_version": "sellable-v1.0",
+        },
+    }
 
 
 @router.get("/tools/explain_reject")
@@ -331,10 +385,12 @@ async def tool_create_order(req: CreateOrderReq,
                             x_idempotency_key: str = Header(default="")):
     """Create a REAL Razorpay order (test mode).
 
-    G1 INVARIANT: requires approve_seq + matching proposal_hash from a
-    stored APPROVE verdict. No APPROVE = no order = no money. This is
-    the single enforcement point of INV-1 at the executor boundary.
+    G1 INVARIANT (strict): requires approve_seq AND proposal_hash match
+    AND every field of the ApprovalBinding matches (mission_id, amount,
+    currency, sku set). No binding match = no order = no money.
     """
+    from .approval import verify as verify_binding
+
     idem = (x_idempotency_key or "").strip()
     if not idem:
         raise HTTPException(400, detail="X-Idempotency-Key header required")
@@ -355,25 +411,50 @@ async def tool_create_order(req: CreateOrderReq,
                       "retryable": True,
                       "hint": "request a fresh quote"}})
 
-    # G1 GATE: No APPROVE binding, no money. EVER.
-    # This is INV-1 enforcement — the only path to order creation.
-    if approved_bindings.get(req.approve_seq) != req.proposal_hash:
+    # Build the sku set from the quote so the binding can compare exactly.
+    quote_skus = [(item["sku"], int(item["qty"])) for item in q["items"]]
+
+    # G1 GATE (strict): every binding field must match. ONE failure = no order.
+    ok, code, _binding = verify_binding(
+        seq=req.approve_seq,
+        mission_id=q["mission_id"],
+        proposal_hash=req.proposal_hash,
+        cart_hash=req.proposal_hash,
+        quote_id=req.quote_id,
+        amount_paise=q["total_paise"],
+        currency="INR",
+        skus=quote_skus,
+    )
+    if not ok:
+        chain.append(
+            "executor", "binding_rejected",
+            {"mission_id": q["mission_id"],
+             "approve_seq": req.approve_seq,
+             "proposal_hash_prefix": req.proposal_hash[:16] if req.proposal_hash else "",
+             "code": code},
+            error_code=code,
+            review_state="blocked_binding",
+        )
         raise HTTPException(403, detail={
             "ok": False,
             "error": {
-                "error_code": "ORDER_HASH_MISMATCH",
+                "error_code": code,
                 "rule_id": None,
-                "message": f"No APPROVE binding at seq {req.approve_seq} "
-                           f"matches proposal_hash "
-                           f"{req.proposal_hash[:16]}...",
+                "message": f"approval binding failed: {code}",
                 "retryable": False,
-                "hint": "submit_proposal first, get APPROVE, then use its "
-                        "seq + proposal_hash here"
+                "hint": "binding has expired or changed; re-submit proposal",
             }})
 
-    # INV-3: user-signed intent + cart mandates required before any order.
-    from .mandates.mandates import MandateError, verify_cart, verify_intent
+    # Legacy fallback: if the binding verifier passed but the legacy
+    # seq->hash table disagrees (shouldn't happen but defensive), refuse.
+    legacy = verify_legacy(req.approve_seq)
+    if legacy != req.proposal_hash:
+        raise HTTPException(403, detail={
+            "ok": False,
+            "error": {"error_code": "ORDER_HASH_MISMATCH",
+                      "message": "legacy binding mismatch"}})
 
+    # INV-3: user-signed intent + cart mandates required before any order.
     intent_blob = req.intent_mandate
     cart_blob = req.cart_mandate
     total_paise = q["total_paise"]
@@ -386,9 +467,11 @@ async def tool_create_order(req: CreateOrderReq,
             "error": "MANDATE_REQUIRED", "code": "MANDATE_MISSING",
             "detail": "INV-3: user-signed intent + cart mandates required"})
     try:
-        verify_intent(intent_blob, order_total_paise=total_paise)
+        verify_intent(intent_blob, order_total_paise=total_paise,
+                      expected_mission_id=q["mission_id"])
         verify_cart(cart_blob, proposal_hash=req.proposal_hash,
-                    amount_paise=total_paise)
+                    amount_paise=total_paise,
+                    expected_mission_id=q["mission_id"])
     except MandateError as exc:
         chain.append("executor", "mandate_rejected",
                      {"mission_id": q["mission_id"], "code": exc.code},
@@ -409,7 +492,7 @@ async def tool_create_order(req: CreateOrderReq,
 
     try:
         rp = rp_client.create_order(
-            amount_paise=q["total_paise"],   # integer paise
+            amount_paise=q["total_paise"],
             receipt=f"rcpt_{q['quote_id'][:12]}",
             notes={"quote_id": q["quote_id"],
                    "mission_id": q["mission_id"],
@@ -450,7 +533,7 @@ async def tool_create_order(req: CreateOrderReq,
     return {"order_id": rp["id"], "amount_paise": q["total_paise"],
             "amount_display": f"Rs {q['total_paise']/100:,.0f}",
             "currency": "INR", "status": "created",
-            "razorpay_key_id": os.environ["RAZORPAY_KEY_ID"],
+            "razorpay_key_id": os.environ.get("RAZORPAY_KEY_ID", ""),
             "checkout_url": f"/checkout/{rp['id']}"}
 
 

@@ -39,7 +39,8 @@ def render(results: dict) -> str:
         "aov_uplift": "AOV uplift (%)",
         "false_block_cost": "False block cost (₹)",
         "llm_fooled_rate": "LLM fooled rate",
-        "money_loss_rate": "Money loss rate",
+        "money_loss_rate": "Ungated hypothetical money loss rate",
+        "gated_actual_money_loss_rate": "Gated actual money loss rate",
         "negotiation_margin": "Negotiation margin (%)",
         "p95_latency": "p95 latency (ms)",
         "protocol_pass_rate": "Protocol pass rate",
@@ -66,7 +67,10 @@ def render(results: dict) -> str:
                         ("Gross revenue (Rs.)", "gross_revenue_paise"),
                         ("Fraud loss (Rs.)", "fraud_loss_paise"),
                         ("Trust-adj revenue (Rs.)", "trust_adjusted_revenue_paise"),
-                        ("p95 latency (ms)", "p95_latency_ms")]:
+                        ("p95 latency (ms)", "p95_latency_ms"),
+                        ("Llm fooled count", "llm_fooled_count"),
+                        ("Llm fooled rate", "llm_fooled_rate"),
+                        ("Gated actual money loss rate", "gated_actual_money_loss_rate")]:
         row = f"| {label} "
         for arm in ("static", "ungated", "gated"):
             v = arms.get(arm, {}).get(key, 0)

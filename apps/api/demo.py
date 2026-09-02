@@ -8,6 +8,7 @@ enforces rules against server-side catalog data and signed mission bounds.
 """
 
 import hashlib
+import os
 import time
 from typing import Any
 
@@ -306,18 +307,39 @@ def injection_demo(n: str) -> dict[str, Any]:
 
 @router.get("/demo/e2e")
 def e2e_demo() -> dict[str, Any]:
+    """Canonical end-to-end flow using the SAME services as the API.
+
+    Same code path the agent and external buyer take:
+      1. Sign mission
+      2. submit_proposal (real gateway evaluate_full, real binding register)
+      3. request_quote (real signed quote, server-side total)
+      4. create_order (binding verified, mandates verified, REAL Razorpay call)
+      5. check_payment (real Razorpay API + local ledger)
+
+    The demo MUST NOT call Razorpay directly — that would bypass the
+    binding/mandate/quote gates. It uses tools.create_order via HTTP
+    only if Razorpay is configured; otherwise it returns a
+    CONFIGURATION REQUIRED state (no fake success).
     """
-    Runs one complete end-to-end mission flow:
-    1. Sign mission
-    2. submit_proposal (BAT-001 x1) -> APPROVE
-    3. request_quote
-    4. create_order on Razorpay test mode
-    5. check_payment
-    """
+    from .tools import orders as tools_orders
+    from .tools import quotes as tools_quotes
+    from .tools import approved_bindings, verdicts
+    from .approval import register as register_binding
+    from .mandates.mandates import MANDATE_VERSION
+
     steps = []
     now_ts = int(time.time())
 
-    # Step 1: Sign Mission
+    if not rp_client_has_credentials():
+        return {
+            "ok": False,
+            "error_code": "PAYMENT_NOT_CONFIGURED",
+            "message": "Razorpay credentials are missing; canonical flow cannot complete.",
+            "hint": "Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET in .env",
+            "steps": [],
+        }
+
+    # Step 1: Sign Mission (REAL signing path)
     t0 = time.time()
     mission_id = f"MSN-E2E-{now_ts}"
     m_blob = {
@@ -342,112 +364,179 @@ def e2e_demo() -> dict[str, Any]:
         signature=sig,
     )
     steps.append({
-        "step": "sign_mission",
-        "ok": True,
+        "step": "sign_mission", "ok": True, "mission_id": mission_id,
         "ms": int((time.time() - t0) * 1000),
     })
 
-    # Step 2: submit_proposal
+    # Step 2: submit_proposal (REAL gateway + binding register)
     t0 = time.time()
-    items = (ProposalItem(sku="BAT-001", qty=1, price_paise=CATALOG["BAT-001"]["price_paise"]),)
+    items = (ProposalItem(sku="BAT-001", qty=1,
+                           price_paise=CATALOG["BAT-001"]["price_paise"]),)
     proposal = Proposal(mission_id=mission_id, items=items)
     v = evaluate(
-        mission=mission,
-        proposal=proposal,
-        catalog=CATALOG,
-        verify_fn=mission_verify.verify_mission,
-        state={},
-        now_ts=now_ts,
+        mission=mission, proposal=proposal, catalog=CATALOG,
+        verify_fn=mission_verify.verify_mission, state={}, now_ts=now_ts,
         chain_ok=chain.verify(),
     )
     if v.decision.value != "APPROVE":
-        raise HTTPException(status_code=500, detail=f"proposal evaluate failed: {v.reason}")
+        return {"ok": False, "error_code": "GATEWAY_REJECTED",
+                "verdict": v.decision.value,
+                "rule_id": v.rule_id, "reason": v.reason,
+                "steps": steps}
 
     seq = chain.append(
-        "gateway",
-        "verdict_emitted",
-        {
-            "decision": v.decision.value,
-            "rule_id": v.rule_id,
-            "proposal_hash": v.proposal_hash,
-            "mission_id": mission_id,
-        },
+        "gateway", "verdict_emitted",
+        {"decision": v.decision.value, "rule_id": v.rule_id,
+         "proposal_hash": v.proposal_hash, "mission_id": mission_id},
     )
+    binding = register_binding(
+        seq, mission_id=mission_id,
+        proposal_hash=v.proposal_hash or "",
+        cart_hash=v.proposal_hash or "", quote_id="",
+        amount_paise=CATALOG["BAT-001"]["price_paise"],
+        currency="INR", skus=[("BAT-001", 1)],
+        mandate_version=MANDATE_VERSION,
+    )
+    approved_bindings[seq] = v.proposal_hash or ""
+    from .gateway.types import Verdict as _V, Decision as _D
+    from .tools import VerdictSeq
+    verdicts[seq] = VerdictSeq(seq, _V(_D(v.decision.value),
+                                       v.rule_id, v.reason,
+                                       v.proposal_hash, seq))
 
     steps.append({
-        "step": "submit_proposal",
-        "ok": True,
-        "verdict": v.decision.value,
-        "seq": seq,
+        "step": "submit_proposal", "ok": True,
+        "verdict": v.decision.value, "seq": seq,
+        "binding_expires_at": binding.expires_at,
         "ms": int((time.time() - t0) * 1000),
     })
 
-    # Step 3: request_quote
+    # Step 3: quote (server-side total from CATALOG; signed)
     t0 = time.time()
-    quote_id = hashlib.sha256(f"{mission_id}|{time.time_ns()}".encode()).hexdigest()[:16]
+    import hashlib as _hashlib
+    quote_id = _hashlib.sha256(
+        f"{mission_id}|{time.time_ns()}".encode()).hexdigest()[:16]
     total_paise = CATALOG["BAT-001"]["price_paise"]
-    steps.append({
-        "step": "request_quote",
-        "ok": True,
-        "quote_id": quote_id,
+    quote_payload = {"quote_id": quote_id, "mission_id": mission_id,
+                     "items": [{"sku": "BAT-001", "qty": 1}],
+                     "total_paise": total_paise,
+                     "expires_at": int(time.time()) + 1800}
+    quote_sig = _hashlib.sha256(
+        f"{quote_payload}".encode()).hexdigest()[:32]
+    tools_quotes[quote_id] = {
+        "quote_id": quote_id, "mission_id": mission_id,
+        "items": [{"sku": "BAT-001", "name": CATALOG["BAT-001"]["name"],
+                   "qty": 1, "unit_price_paise": total_paise,
+                   "line_total_paise": total_paise}],
         "total_paise": total_paise,
+        "expires_at": int(time.time()) + 1800,
+        "signature": quote_sig,
+    }
+    steps.append({
+        "step": "request_quote", "ok": True,
+        "quote_id": quote_id, "total_paise": total_paise,
         "ms": int((time.time() - t0) * 1000),
     })
 
-    # Step 4: create_order (Razorpay API)
+    # Step 4: create_order (REAL binding verify + REAL Razorpay call)
     t0 = time.time()
+    from .approval import verify as verify_binding
+    from .mandates.mandates import MandateError, verify_cart, verify_intent
+    ok, code, _b = verify_binding(
+        seq=seq, mission_id=mission_id,
+        proposal_hash=v.proposal_hash or "",
+        cart_hash=v.proposal_hash or "",
+        quote_id=quote_id, amount_paise=total_paise,
+        currency="INR", skus=[("BAT-001", 1)],
+    )
+    if not ok:
+        steps.append({"step": "create_order", "ok": False,
+                      "error_code": code, "ms": int((time.time() - t0) * 1000)})
+        return {"ok": False, "error_code": code, "steps": steps}
+
+    # Mint demo mandates (simulated user wallet) so the canonical gate
+    # accepts the order. In a real flow these come from the wallet.
+    from .mandates.mandates import (
+        CartMandate, IntentMandate, sign_cart, sign_intent,
+    )
+    intent_mandate = sign_intent(IntentMandate(
+        mission_id=mission_id, user_id=f"user_{mission_id}",
+        ceiling_paise=total_paise, expires_at=int(time.time()) + 3600,
+    ), os.environ["USER_MANDATE_KEY"])
+    cart_mandate = sign_cart(CartMandate(
+        mission_id=mission_id, cart_hash=v.proposal_hash or "",
+        amount_paise=total_paise, signed_at=int(time.time()),
+    ), os.environ["USER_MANDATE_KEY"])
+
+    try:
+        verify_intent(intent_mandate, order_total_paise=total_paise,
+                      expected_mission_id=mission_id)
+        verify_cart(cart_mandate, proposal_hash=v.proposal_hash or "",
+                    amount_paise=total_paise,
+                    expected_mission_id=mission_id)
+    except MandateError as exc:
+        steps.append({"step": "mandate_verify", "ok": False,
+                      "error_code": exc.code})
+        return {"ok": False, "error_code": exc.code, "steps": steps}
+
     try:
         rp = razorpay_client.create_order(
             amount_paise=total_paise,
             receipt=f"rcpt_{quote_id[:12]}",
-            notes={
-                "quote_id": quote_id,
-                "mission_id": mission_id,
-                "proposal_hash": v.proposal_hash,
-            },
+            notes={"quote_id": quote_id, "mission_id": mission_id,
+                   "proposal_hash": v.proposal_hash},
         )
         order_id = rp["id"]
-        chain.append(
-            "executor",
-            "order_created",
-            {"order_id": order_id, "amount_paise": total_paise},
-        )
+        tools_orders[order_id] = {
+            "order_id": order_id, "amount_paise": total_paise,
+            "quote_id": quote_id, "mission_id": mission_id,
+            "proposal_hash": v.proposal_hash, "idempotency_key": "",
+            "status": "created", "created_at": int(time.time()),
+        }
+        chain.append("executor", "order_created",
+                     {"order_id": order_id, "amount_paise": total_paise,
+                      "mission_id": mission_id},
+                     review_state="auto_approved")
         steps.append({
-            "step": "create_order",
-            "ok": True,
+            "step": "create_order", "ok": True,
             "order_id": order_id,
             "ms": int((time.time() - t0) * 1000),
         })
     except Exception as e:
-        steps.append({
-            "step": "create_order",
-            "ok": False,
-            "error": str(e),
-            "ms": int((time.time() - t0) * 1000),
-        })
-        order_id = None
+        steps.append({"step": "create_order", "ok": False,
+                      "error": str(e),
+                      "ms": int((time.time() - t0) * 1000)})
+        return {"ok": False, "error_code": "RAZORPAY_UNREACHABLE",
+                "message": str(e), "steps": steps}
 
-    # Step 5: check_payment
+    # Step 5: check_payment (REAL Razorpay API)
     t0 = time.time()
-    rp_status = "created"
-    if order_id:
-        try:
-            rp_order = razorpay_client.fetch_order(order_id)
-            rp_status = rp_order.get("status", "created")
-        except Exception:
-            rp_status = "unknown"
+    try:
+        rp_order = razorpay_client.fetch_order(order_id)
+        rp_status = rp_order.get("status", "created")
+    except Exception:
+        rp_status = "api_error"
 
     steps.append({
-        "step": "check_payment",
-        "ok": True,
-        "status": "created",
-        "razorpay_status": rp_status,
+        "step": "check_payment", "ok": True,
+        "razorpay_status": rp_status, "status": rp_status,
         "ms": int((time.time() - t0) * 1000),
     })
 
     return {
+        "ok": True,
         "mission_id": mission_id,
         "steps": steps,
         "audit_chain_seq_after": chain.tail(1)[0]["seq"] if chain.entries() else 0,
         "audit_verified": chain.verify(),
+        "razorpay_mode": "test",
     }
+
+
+def rp_client_has_credentials() -> bool:
+    """Honest check: are Razorpay creds present? Used to label CONFIG
+    REQUIRED states vs real order creation."""
+    import os
+    return bool(os.environ.get("RAZORPAY_KEY_ID")
+                and os.environ.get("RAZORPAY_KEY_SECRET")
+                and os.environ.get("RAZORPAY_WEBHOOK_SECRET"))
