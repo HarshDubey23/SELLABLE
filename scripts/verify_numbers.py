@@ -12,6 +12,11 @@ from apps.api.gateway.proof import compute_proof
 from apps.api.gateway.registry import RULE_REGISTRY
 from apps.api.products import CATALOG
 
+
+def read_text(path: pathlib.Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 # SKUs
 skus = len(CATALOG)
 # Rules
@@ -19,9 +24,10 @@ rules = len(RULE_REGISTRY)
 # Gateway files
 proof = compute_proof()
 files = proof["files"]
-# Endpoints: count routes in main.py + tools etc.
-main_src = (ROOT / "apps/api/main.py").read_text()
-endpoint_cnt = main_src.count("include_router") + 24
+# Endpoints: derive from FastAPI's OpenAPI map, not a hard-coded guess.
+from apps.api.main import app  # noqa: E402
+
+endpoint_cnt = len(app.openapi()["paths"])
 # Tests
 r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--collect-only"],
                     capture_output=True, text=True, cwd=ROOT)
@@ -32,7 +38,7 @@ tests = m.group(1) if m else "?"
 # LLM sites
 cnt = 0
 for p in (ROOT / "apps/api").rglob("*.py"):
-    if "genai" in p.read_text():
+    if "genai" in read_text(p):
         cnt += 1
 
 readme = (ROOT / "README.md").read_text(encoding="utf-8")

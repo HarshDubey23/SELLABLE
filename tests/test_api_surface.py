@@ -1,7 +1,7 @@
 """
 tests/test_api_surface.py - Key API endpoint smoke tests.
 """
-import os, pytest
+import pytest
 from fastapi.testclient import TestClient
 
 

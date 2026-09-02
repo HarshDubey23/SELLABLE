@@ -1,6 +1,8 @@
 ﻿"""Shared pytest fixtures for the SELLABLE test suite."""
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):

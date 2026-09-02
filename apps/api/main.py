@@ -15,8 +15,8 @@ from .checkout_route import router as checkout_router
 from .config import status_summary
 from .dashboard.mission_explain import router as mission_dashboard_router
 from .demo import router as demo_router
-from .demo_ui import router as demo_ui_router
 from .demo_capture import router as capture_router
+from .demo_ui import router as demo_ui_router
 from .gateway.proof import compute_proof
 from .manifest import router as manifest_router
 from .metrics.api import router as metrics_router
@@ -121,10 +121,10 @@ def gateway_proof():
 @app.get("/diagnostics")
 def diagnostics():
     """Phase 97 FINAL DEMO CHECKLIST ENDPOINT"""
-    from apps.api.config import status_summary
     from apps.api.audit import chain as audit_chain
+    from apps.api.config import status_summary
     from apps.api.store import db as store
-    
+
     st = status_summary()
     return {
         "CORE_SYSTEM": {

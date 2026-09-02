@@ -1,7 +1,6 @@
 ﻿"""
 tests/gateway/test_chain_tamper.py — Audit chain tamper detection
 """
-import pytest
 from apps.api.audit import chain as audit_chain
 
 

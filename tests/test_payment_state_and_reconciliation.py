@@ -1,6 +1,12 @@
-﻿# -*- coding: utf-8 -*-
-import pytest
-from apps.api.payment_state import PaymentState, PaymentStateMachine, IllegalStateTransitionError, reconcile_order
+﻿import pytest
+
+from apps.api.payment_state import (
+    IllegalStateTransitionError,
+    PaymentState,
+    PaymentStateMachine,
+    reconcile_order,
+)
+
 
 def test_valid_state_transitions():
     sm = PaymentStateMachine(PaymentState.DRAFT)

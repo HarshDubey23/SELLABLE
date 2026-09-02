@@ -15,14 +15,14 @@ def _key() -> str | None:
 
 
 def _model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 def _fallback_models() -> list[str]:
     """Ordered degradation when the primary model's quota is exhausted."""
     raw = os.environ.get(
         "GEMINI_FALLBACK_MODELS",
-        "gemini-2.5-flash,gemini-1.5-flash")
+        "gemini-3.5-flash,gemini-flash-latest,gemini-3-flash-preview")
     return [m.strip() for m in raw.split(",") if m.strip()
             and m.strip() != _model_name()]
 

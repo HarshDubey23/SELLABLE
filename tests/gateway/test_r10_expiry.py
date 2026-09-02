@@ -1,7 +1,8 @@
 ﻿"""
 tests/gateway/test_r10_expiry.py - R10 mission expiry tests
 """
-import time, pytest
+import time
+
 from apps.api.gateway.rules import rule_r10_expiry
 from apps.api.gateway.types import Mission, Violation
 

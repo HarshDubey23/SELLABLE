@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 tests/security/test_all_20_attacks.py — Complete 20-Attack Adversarial Verification Suite
 
@@ -24,17 +23,17 @@ I18 Unknown SKU
 I19 Webhook Forgery
 I20 Concurrent Replay
 """
-import time
-import pytest
-import hmac
-import hashlib
 import concurrent.futures
+import hashlib
+import hmac
+import time
 
+from apps.api.approval import register as reg
+from apps.api.approval import verify as ver
 from apps.api.gateway import engine
-from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
+from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
 from apps.api.products import CATALOG
-from apps.api.approval import register as reg, verify as ver
-import apps.api.money as money
+
 
 def test_i1_budget_override():
     m = Mission(mission_id="MSN-I1", intent="bat < 1000", budget_paise=100000, allowed_categories=("cricket",), forbidden_categories=(), upsell_cap=1.0, expires_at=2000000000, signature="sig")

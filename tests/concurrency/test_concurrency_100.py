@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 tests/concurrency/test_concurrency_100.py — Extreme Concurrency & Idempotency Stress Tests
 
 Sections 8, 9, 20, 23:
@@ -7,13 +6,14 @@ Sections 8, 9, 20, 23:
 - 100 concurrent idempotent order creations with same idempotency key -> exactly 1 created.
 - 10 duplicate webhook deliveries concurrently -> exactly 1 state transition.
 """
-import time
 import concurrent.futures
-import pytest
-from apps.api import approval
-from apps.api.approval import register as reg, verify as ver
+import time
+
 from apps.api import razorpay_client
+from apps.api.approval import register as reg
+from apps.api.approval import verify as ver
 from apps.api.webhook import receiver
+
 
 def test_100_concurrent_binding_consumption():
     """100 simultaneous threads attempting to consume 1 single-use binding."""
@@ -56,8 +56,7 @@ def test_100_concurrent_binding_consumption():
 
 def test_100_concurrent_idempotent_order_creation():
     """100 simultaneous order attempts using the exact same deterministic idempotency key."""
-    idem_key = "idem_concur_test_key_100"
-    
+
     def create_attempt(idx):
         return razorpay_client.derive_idempotency_key("concur", "mission_100", "seq_100")
 

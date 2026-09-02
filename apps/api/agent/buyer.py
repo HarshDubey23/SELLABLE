@@ -35,7 +35,6 @@ import httpx
 
 from .. import missions
 from .trace import MissionTrace
-from ..deps import require_api_key
 
 MAX_STEPS = 8
 

@@ -1,25 +1,23 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 scripts/clean_start.py — Safe Clean-Room Reset Script
 
 Resets development/evaluation SQLite state and initializes fresh genesis block.
 Does NOT touch sensitive configuration or test credentials.
 """
 import sys
-import os
-import shutil
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from apps.api.store import db as store
 from apps.api.audit import chain as audit_chain
+from apps.api.store import db as store
+
 
 def clean_start():
     print("[Clean-Start] Resetting local evaluation database...")
     db_p = Path(store.db_path())
-    
+
     # Remove db files
     for suffix in ["", "-wal", "-shm"]:
         f = Path(str(db_p) + suffix)
@@ -33,7 +31,7 @@ def clean_start():
     # Re-init schema and chain
     store.init_schema()
     audit_chain._load_from_db()
-    
+
     entries = audit_chain.entries()
     chain_ok = audit_chain.verify()
     print("[Clean-Start] Verification:")

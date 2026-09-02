@@ -137,7 +137,6 @@ async def webhook(
         return {"status": "ok", "duplicate": True, "event_id": event_id}
 
     # Do NOT mark as seen before persistence — if DB fails, retry must be allowed
-    is_new_event = True
 
     # ---- PHASE 2: Parse payload ----
     try:

@@ -5,12 +5,12 @@
 ### 1. Tests pass
 ```bash
 $ python -m pytest -q
-# Expected: 143 passed, 1 skipped
+# Expected: 115 passed, 4 skipped
 ```
 
 ### 2. Lint and typecheck
 ```bash
-$ ruff check apps/api/gateway/ apps/api/negotiation/
+$ ruff check .
 # Expected: All checks passed!
 
 $ mypy --strict apps/api/gateway/
@@ -26,7 +26,7 @@ $ python scripts/verify_catalog.py
 ### 4. Numbers verification
 ```bash
 $ python scripts/verify_numbers.py
-# Expected: OK README contains SKUs 40, rules 12, tests 143...
+# Expected: OK README contains SKUs 40, rules 12, tests 115...
 
 $ python scripts/verify_numbers.py --check-report
 # Expected: OK report.json has all 8 metrics

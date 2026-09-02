@@ -18,9 +18,7 @@ OPTIONAL (degrades gracefully when missing).
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import Optional
-
+from dataclasses import dataclass
 
 REQUIRED_TO_BOOT = (
     "MISSION_HMAC_KEY",
@@ -48,8 +46,10 @@ OPTIONAL_DEMO = (
     "SELLABLE_DB_PATH",
 )
 
-_CANONICAL_GEMINI_MODEL = "gemini-2.0-flash"
-_CANONICAL_GEMINI_FALLBACKS = "gemini-1.5-flash,gemini-flash-latest"
+_CANONICAL_GEMINI_MODEL = "gemini-3.6-flash"
+_CANONICAL_GEMINI_FALLBACKS = (
+    "gemini-3.5-flash,gemini-flash-latest,gemini-3-flash-preview"
+)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -145,7 +145,7 @@ def _resolve() -> Config:
     )
 
 
-_CONFIG: Optional[Config] = None
+_CONFIG: Config | None = None
 
 
 def get() -> Config:
@@ -174,5 +174,6 @@ def status_summary() -> dict:
         "llm_model": cfg.gemini_model if cfg.llm_configured else None,
         "policy_version": cfg.policy_version,
         "mandate_version": cfg.mandate_version,
-        "razorpay_mode": "test" if cfg.payment_configured else "unconfigured", "razorpay_key_id": cfg.razorpay_key_id,
+        "razorpay_mode": "test" if cfg.payment_configured else "unconfigured",
+        "razorpay_key_id": cfg.razorpay_key_id,
     }

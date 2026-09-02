@@ -5,6 +5,7 @@ INV-1: No approval binding -> no money flow.
 """
 import os
 import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,6 +19,7 @@ def app_client():
 def test_create_order_requires_valid_approve_seq(app_client):
     """tool_create_order must reject any request with an invalid approve_seq."""
     import time as _time
+
     from apps.api.mandates.mandates import CartMandate, IntentMandate, sign_cart, sign_intent
 
     key = os.environ["USER_MANDATE_KEY"]
@@ -65,7 +67,7 @@ def test_double_spend_binding_rejected(tmp_path, monkeypatch):
     from apps.api import approval
 
     now = int(time.time())
-    binding = approval.register(
+    approval.register(
         seq=1001,
         mission_id="m1",
         proposal_hash="h" * 64,

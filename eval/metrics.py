@@ -167,12 +167,12 @@ def gated_actual_money_loss_rate(arms: list[ArmResult]) -> float:
 
 def negotiation_margin(arms: list[ArmResult]) -> float:
     """Margin captured by the bounded negotiation strategy as % of ceiling.
-    
-    Bounded formula: (actual_capture - baseline_capture) / 
+
+    Bounded formula: (actual_capture - baseline_capture) /
     (maximum_capturable - baseline_capture) * 100
-    
+
     Guarantees: 0 <= negotiation_margin <= 100
-    
+
     Where:
     - actual_capture = gated arm's trust-adjusted revenue through negotiation
     - baseline_capture = static arm's trust-adjusted revenue (no agent)
@@ -182,16 +182,16 @@ def negotiation_margin(arms: list[ArmResult]) -> float:
     static = next((a for a in arms if a.arm == "static"), None)
     if not gated or not static or gated.missions_run == 0:
         return 0.0
-    
+
     gated_capture = gated.trust_adjusted_revenue()
     static_capture = static.trust_adjusted_revenue()
-    
+
     # Compute maximum capturable: sum of budget * upsell_cap across all missions
     # We need to access mission data; use missions_run as proxy with average budget
     # For now, use a ratio based on available metrics
     if gated_capture <= static_capture:
         return 0.0
-    
+
     # Use gross_revenue_paise as proxy for capturable, with bounded ratio
     # The margin is the percentage by which gated exceeds static, relative to potential
     # maximum capture above static
@@ -208,16 +208,16 @@ def p95_latency(arms: list[ArmResult]) -> float:
 
 def protocol_pass_rate(arms: list[ArmResult]) -> float:
     """Protocol pass rate based on actual protocol adapter scenarios.
-    
+
     successful valid ACP/AP2 protocol flows / total protocol protocol-flow attempts.
-    
+
     Includes:
     - ACP valid flow
     - AP2 valid mandate
     - AP2 tampered scope
     - expired mandate
     - x402 partial/stub separately
-    
+
     Does not treat x402's 501 stub as a successful full protocol.
     """
     gated = next((a for a in arms if a.arm == "gated"), None)

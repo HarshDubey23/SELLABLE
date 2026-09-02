@@ -10,18 +10,26 @@ Critical security tests for INV-3:
   - wrong amount -> MANDATE_AMOUNT_MISMATCH
   - wrong cart hash -> MANDATE_CART_MISMATCH
 """
-import sys, time
+import sys
+import time
+
 sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, r'C:\Users\Lenovo\Downloads\SELLABLE')
 import os
+
 os.environ.setdefault('MISSION_HMAC_KEY', 'test-hmac')
 os.environ.setdefault('USER_MANDATE_KEY', 'test-mandate-key')
 
 from apps.api.mandates.mandates import (
-    IntentMandate, CartMandate, sign_intent, sign_cart,
-    verify_intent, verify_cart, MandateError, MANDATE_VERSION,
+    MANDATE_VERSION,
+    CartMandate,
+    IntentMandate,
+    MandateError,
+    sign_cart,
+    sign_intent,
+    verify_cart,
+    verify_intent,
 )
-
 
 PASS_COUNT = 0
 FAIL_COUNT = 0
@@ -75,7 +83,7 @@ def _run_all():
         payload = verify_intent(intent, order_total_paise=100000,
                                 expected_mission_id="MSN-1")
         check("1. happy intent verifies", payload["mission_id"] == "MSN-1")
-    except MandateError as e:
+    except MandateError:
         check("1. happy intent verifies", False)
 
     # 2. Bad signature
@@ -127,7 +135,7 @@ def _run_all():
         payload = verify_cart(cart, proposal_hash="h", amount_paise=100000,
                               expected_mission_id="MSN-1")
         check("8. happy cart verifies", payload["cart_hash"] == "h")
-    except MandateError as e:
+    except MandateError:
         check("8. happy cart verifies", False)
 
     # 9. Cart wrong mission

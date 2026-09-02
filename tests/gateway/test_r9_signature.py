@@ -1,7 +1,11 @@
 ﻿"""
 tests/gateway/test_r9_signature.py - R9 mission signature tests
 """
-import hashlib, hmac, json, time, pytest
+import hashlib
+import hmac
+import json
+import time
+
 from apps.api.gateway.rules import rule_r9_signature
 from apps.api.gateway.types import Mission, Violation
 

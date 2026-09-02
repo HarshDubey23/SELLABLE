@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SELLABLE Release Verification Gate.
 
@@ -8,12 +7,13 @@ Implements Sections 27, 28, 29:
 - Zero component-existence passes (all stages test behavior)
 - Dynamic pytest parsing and exit code propagation
 """
-import sys
-import subprocess
 import os
-import time
 import re
+import subprocess
+import sys
+import time
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -25,14 +25,14 @@ def main():
     print("=" * 65)
     print("       SELLABLE ZERO-EXCUSE RELEASE VERIFICATION GATE")
     print("=" * 65)
-    
+
     live_rp = "--live-razorpay" in sys.argv or "--strict" in sys.argv
     results = {}
 
     # Stage 1: Environment & Config
     print("\n[Stage 1/10] Verifying System Configuration...")
     try:
-        from apps.api.config import status_summary, refresh
+        from apps.api.config import refresh, status_summary
         refresh()
         cfg = status_summary()
         assert cfg.get("boot_ok") is True
@@ -45,7 +45,6 @@ def main():
     # Stage 2: Database & Audit Ledger Genesis
     print("\n[Stage 2/10] Verifying Database & Tamper-Evident Audit Ledger...")
     try:
-        from apps.api.store import db as store
         from apps.api.audit import chain as audit_chain
         assert audit_chain.verify() is True
         print(f"  -> Audit Ledger: PASS (Hash chain verified, total blocks: {len(audit_chain.entries())})")
@@ -58,9 +57,9 @@ def main():
     print("\n[Stage 3/10] Verifying Deterministic Policy Engine (R1-R12)...")
     try:
         from apps.api.gateway import engine
-        from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
+        from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
         from apps.api.products import CATALOG
-        
+
         # Approved case
         m = Mission(mission_id="MSN-VFY", intent="cricket bat", budget_paise=200000, allowed_categories=("cricket",), forbidden_categories=(), upsell_cap=1.2, expires_at=2000000000, signature="sig")
         p = Proposal(mission_id="MSN-VFY", items=(ProposalItem(sku="BAT-001", qty=1, price_paise=149900),))
@@ -82,10 +81,11 @@ def main():
     # Stage 4: Approval Binding & Atomic Single-Use Consumption
     print("\n[Stage 4/10] Verifying Exact Cryptographic Approval Binding...")
     try:
-        from apps.api.approval import register as reg, verify as ver
+        from apps.api.approval import register as reg
+        from apps.api.approval import verify as ver
         now = int(time.time())
         seq = int(time.time() * 1000) % 1000000
-        b = reg(
+        reg(
             seq=seq,
             mission_id="MSN-BIND-VFY",
             proposal_hash="hash_p",
@@ -95,7 +95,7 @@ def main():
             currency="INR",
             skus=[("BAT-001", 1)]
         )
-        
+
         # Verify 1: PASS
         ok1, _, _ = ver(
             seq=seq,
@@ -132,7 +132,8 @@ def main():
     # Stage 5: Webhook HMAC Signature & Idempotency
     print("\n[Stage 5/10] Verifying Webhook Security & Idempotency...")
     try:
-        import hmac, hashlib
+        import hashlib
+        import hmac
         secret = "test_webhook_sec"
         raw_body = b'{"event":"payment.captured"}'
         valid_hmac = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
@@ -147,12 +148,12 @@ def main():
     # Stage 6: Payment State Machine & Reconciliation
     print("\n[Stage 6/10] Verifying Payment State Machine & Bounded Reconciliation...")
     try:
-        from apps.api.payment_state import PaymentStateMachine, PaymentState, reconcile_order
+        from apps.api.payment_state import PaymentState, PaymentStateMachine, reconcile_order
         sm = PaymentStateMachine(PaymentState.DRAFT)
         sm.transition(PaymentState.AWAITING_APPROVAL)
         sm.transition(PaymentState.PAYMENT_PENDING)
         sm.transition(PaymentState.PAID)
-        
+
         state, _ = reconcile_order("order_test", 149900, [{"id": "pay_test", "status": "captured", "amount": 149900}])
         assert state == PaymentState.PAID
         print("  -> State Machine & Reconciliation: PASS")
@@ -171,7 +172,7 @@ def main():
             rp_order = razorpay_client.create_order(149900, f"rcpt_vfy_{now}", {"purpose": "gate_vfy"}, idempotency_key=idem)
             order_id = rp_order.get("id")
             assert order_id and order_id.startswith("order_")
-            print(f"  -> Razorpay Mode: TEST")
+            print("  -> Razorpay Mode: TEST")
             print(f"  -> Real Test Order Created: {order_id} (Amount: Rs {rp_order.get('amount')/100:,.0f})")
             results["7. Money Boundary (Live Razorpay)"] = "PASS"
         except Exception as e:
@@ -184,7 +185,11 @@ def main():
     # Stage 8: Architecture Guard
     print("\n[Stage 8/10] Verifying Architectural Boundaries & Guardrails...")
     try:
-        from tests.test_architecture_guard import test_single_money_boundary_architecture, test_no_hardcoded_live_secrets_in_source, test_deterministic_gateway_has_no_llm_imports
+        from tests.test_architecture_guard import (
+            test_deterministic_gateway_has_no_llm_imports,
+            test_no_hardcoded_live_secrets_in_source,
+            test_single_money_boundary_architecture,
+        )
         test_single_money_boundary_architecture()
         test_no_hardcoded_live_secrets_in_source()
         test_deterministic_gateway_has_no_llm_imports()

@@ -3,10 +3,17 @@ test_mandates.py - Mandate signature and expiry tests.
 """
 import os
 import time
+
 import pytest
+
 from apps.api.mandates.mandates import (
-    CartMandate, IntentMandate, MandateError,
-    sign_cart, sign_intent, verify_cart, verify_intent
+    CartMandate,
+    IntentMandate,
+    MandateError,
+    sign_cart,
+    sign_intent,
+    verify_cart,
+    verify_intent,
 )
 
 

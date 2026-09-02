@@ -9,8 +9,15 @@ Usage:
 
 Exit 0 if all PASS, 1 if any FAIL.
 """
-import argparse, hashlib, hmac, json, os, time, sys
+import argparse
+import hmac
+import json
+import os
+import sys
+import time
+import traceback
 from pathlib import Path
+
 import httpx
 
 BASE_DEFAULT = os.getenv("SELLABLE_BASE_URL") or os.getenv("BASE") or "http://localhost:8000"
@@ -19,7 +26,8 @@ def _load_dotenv():
     try:
         from dotenv import load_dotenv
         load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-    except: pass
+    except Exception:
+        pass
 _load_dotenv()
 # Ensure apps is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -70,7 +78,7 @@ def check(name, fn):
         return ok
     except Exception as e:
         print(f"FAIL {name:30} exception {e}")
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return False
 
 def main():
@@ -139,9 +147,9 @@ def main():
         http_ok = data.get("decision")=="APPROVE"
         # Direct gateway with fake price should REJECT R3
         from apps.api.gateway.engine import evaluate
+        from apps.api.gateway.mission_verify import verify_mission
         from apps.api.gateway.types import Mission, Proposal, ProposalItem
         from apps.api.products import CATALOG
-        from apps.api.gateway.mission_verify import verify_mission
         mission_obj = Mission(mission_id=m["mission_id"], intent=m["intent"], budget_paise=m["budget_paise"], allowed_categories=tuple(m["allowed_categories"]), forbidden_categories=tuple(m["forbidden_categories"]), upsell_cap=m["upsell_cap"], expires_at=m["expires_at"], signature=m["signature"])
         prop = Proposal(mission_id=m["mission_id"], items=(ProposalItem(sku="BAT-001", qty=1, price_paise=100),))
         v = evaluate(mission=mission_obj, proposal=prop, catalog=CATALOG, verify_fn=verify_mission, state={}, chain_ok=True)
@@ -215,11 +223,10 @@ def main():
             return False, "no approve"
         q=httpx.post(f"{base}/tools/quote", json={"items":[{"sku":"BAT-001","qty":1}],"mission_id":m["mission_id"]}, timeout=10, headers=DEFAULT_HEADERS).json()
         # Need mandates — generate via wallet
-        from apps.api.gateway.mission_verify import verify_mission
         # Create dummy mandates via scripts/mandate.py is heavy; we test idempotency without mandates first (should 422 mandate missing, but idempotency still checked)
         # Instead test that same idempotency key returns duplicate
         # First, get a valid order via demo/e2e which doesn't need mandates
-        e2e=httpx.get(f"{base}/demo/e2e", timeout=15).json()
+        httpx.get(f"{base}/demo/e2e", timeout=15).json()
         # Check duplicate via same idempotency key on create_order would need full flow; simplify: just ensure endpoint requires key
         r2=httpx.post(f"{base}/tools/create_order", json={"quote_id":q["quote_id"],"proposal_hash":data.get("proposal_hash"),"approve_seq":seq}, timeout=10, headers=DEFAULT_HEADERS)
         ok=r2.status_code==400 and "Idempotency" in r2.text
@@ -249,14 +256,14 @@ def main():
     # 16 missing webhook secret (simulate by not sending secret — server should fail closed if env empty, but we can't unset env live; just ensure endpoint exists)
     def t16():
         r=httpx.get(f"{base}/health", timeout=5)
-        ok=r.json().get("audit_chain_ok")==True
+        ok=r.json().get("audit_chain_ok")
         return ok, "health ok"
     check("16 webhook secret config (health)", t16)
 
     # 17 audit tampering (verify endpoint)
     def t17():
         r=httpx.get(f"{base}/audit", timeout=10).json()
-        ok=r.get("verified")==True and len(r.get("entries",[]))>0
+        ok=r.get("verified") and len(r.get("entries",[]))>0
         return ok, f"verified {r.get('verified')} entries {len(r.get('entries',[]))}"
     check("17 audit chain verified", t17)
 

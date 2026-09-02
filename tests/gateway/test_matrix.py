@@ -1,16 +1,17 @@
 ﻿"""
 tests/gateway/test_matrix.py - R1-R12 gateway rule matrix
 """
-import time, pytest
+import time
+
 from apps.api.gateway.rules import (
-    rule_r1_budget, rule_r2_forbidden, rule_r3_price_drift,
-    rule_r4_upsell_cap, rule_r5_scope, rule_r6_rate_limit,
-    rule_r7_allowlist, rule_r8_abort, rule_r9_signature, rule_r10_expiry,
+    rule_r1_budget,
+    rule_r2_forbidden,
+    rule_r3_price_drift,
+    rule_r5_scope,
 )
 from apps.api.gateway.rules_r11 import rule_r11_negotiation_bound
 from apps.api.gateway.rules_r12 import rule_r12_protocol_scope
 from apps.api.gateway.types import Mission, Proposal, ProposalItem, Violation
-
 
 CATALOG = {
     "SKU-1": {"price_paise": 10000, "category": "electronics",

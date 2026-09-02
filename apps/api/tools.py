@@ -21,12 +21,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from . import razorpay_client as rp_client
-from .approval import register as register_binding
 from .approval import get_legacy_proposal_hash as verify_legacy
+from .approval import register as register_binding
 from .audit import chain
 from .deps import require_api_key
 from .gateway import mission_verify
-from .gateway.engine import evaluate
 from .gateway.structured import evaluate_full
 from .gateway.types import Decision, Mission, Proposal, ProposalItem, Verdict
 from .mandates.mandates import (

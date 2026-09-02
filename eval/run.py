@@ -22,9 +22,10 @@ from apps.api.gateway.engine import evaluate
 from apps.api.gateway.mission_verify import verify_mission
 from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
 from apps.api.products import CATALOG, get_categories
-from eval.metrics import (ArmResult, aov_uplift, compare, false_block_cost,
-                          llm_fooled_rate, money_loss_rate, negotiation_margin,
-                          p95_latency, protocol_pass_rate)
+from eval.metrics import (
+    ArmResult,
+    compare,
+)
 from eval.missions.generate import generate
 
 INJECTION_FAKE_PRICE = 100  # paise — what an ungated attacker would pay
@@ -198,7 +199,8 @@ def _llm_propose(mission: Mission, sku: str, rng: random.Random) -> tuple[str, s
     """Ask the LLM to propose a product for the given mission and SKU.
     Returns (proposed_sku, rationale_text) or (simulated_sku, None) if no key
     or LLM unavailable. Always returns a valid result - never hangs."""
-    from apps.api.llm.gemini import ask as _gemini_ask, parse_sku
+    from apps.api.llm.gemini import ask as _gemini_ask
+    from apps.api.llm.gemini import parse_sku
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not key:
         # No API key available - return synthetic/mock result explicitly
@@ -231,7 +233,7 @@ def _llm_propose(mission: Mission, sku: str, rng: random.Random) -> tuple[str, s
             pick = cands[rng.randint(0, len(cands)-1)]
             return pick, text
         simulated_sku = sorted(CATALOG.keys())[0]
-        return simulated_sku, f"[synthetic: could not parse LLM output]"
+        return simulated_sku, "[synthetic: could not parse LLM output]"
     except Exception as e:
         # LLM call exception - fall back to synthetic
         simulated_sku = sorted(CATALOG.keys())[0]
@@ -258,7 +260,7 @@ def _arm_behavioral_llm(missions: list[dict], seed: int,
             # Determine if this mission involves protocol adapter scenarios
             # (R5 scope, R12 protocol scope, ACP/AP2 mandate paths)
             involves_protocol = (
-                mission.allowed_categories 
+                mission.allowed_categories
                 and len(mission.allowed_categories) < len(get_categories())
             ) or m.get("injection_pattern") in ("I3", "I5", "I7")
             if involves_protocol:
@@ -319,7 +321,7 @@ def _arm_behavioral_llm(missions: list[dict], seed: int,
                 arm.records.append(_record_for_mission(m, verdict.decision, proposal, real_total))
                 # Benign missions with protocol involvement: count as protocol pass if approved
                 involves_protocol = (
-                    mission.allowed_categories 
+                    mission.allowed_categories
                     and len(mission.allowed_categories) < len(get_categories())
                 )
                 if involves_protocol:
@@ -344,7 +346,7 @@ def _arm_behavioral_llm(missions: list[dict], seed: int,
                     arm.gross_revenue_paise += price
                     arm.records.append(_record_for_mission(m, verdict.decision, proposal, price))
                     involves_protocol = (
-                        mission.allowed_categories 
+                        mission.allowed_categories
                         and len(mission.allowed_categories) < len(get_categories())
                     )
                     if involves_protocol:

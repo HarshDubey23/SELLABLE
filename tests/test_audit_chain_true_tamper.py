@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 tests/test_audit_chain_true_tamper.py — True SQLite Persisted Ledger Tamper Detection
 
 Section 18:
@@ -11,10 +10,11 @@ Section 18:
 from apps.api.audit import chain as audit_chain
 from apps.api.store import db as store
 
+
 def test_true_sqlite_tamper_detection():
     # 1. Ensure clean initial verification
     assert audit_chain.verify() is True
-    
+
     # 2. Append a known event
     seq = audit_chain.append(
         actor="test_tamper_actor",
@@ -31,7 +31,7 @@ def test_true_sqlite_tamper_detection():
     try:
         # 4. Tamper with historical persisted event in SQLite
         store.execute("UPDATE audit_chain SET payload_hash = ? WHERE seq = ?", ("forged_tampered_payload_hash", seq))
-        
+
         # 5. verify() MUST fail on the tampered ledger
         tampered_ok = audit_chain.verify()
         assert tampered_ok is False, "Audit chain verification MUST fail after historical row mutation!"

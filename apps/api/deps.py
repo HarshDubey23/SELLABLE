@@ -11,12 +11,11 @@ Design:
 """
 import hmac
 import os
-from typing import Optional
 
 from fastapi import Header, HTTPException
 
 
-def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> str:
+def require_api_key(x_api_key: str | None = Header(default=None)) -> str:
     expected = os.environ.get("APP_API_KEY")
     if not expected:
         raise HTTPException(

@@ -7,7 +7,6 @@ cannot manipulate decision making because the policy gateway deterministically
 enforces rules against server-side catalog data and signed mission bounds.
 """
 
-import hashlib
 import os
 import time
 from typing import Any
@@ -316,18 +315,18 @@ def e2e_demo() -> dict[str, Any]:
       4. create_order (binding verified, mandates verified, REAL Razorpay call)
       5. check_payment (real Razorpay API + local ledger)
 
-    The demo MUST NOT call Razorpay directly in production routes — 
-    however, this demo acts as the orchestrator *and* gateway internally. 
-    It manually executes the mandate verifications (verify_binding, verify_intent, verify_cart) 
+    The demo MUST NOT call Razorpay directly in production routes —
+    however, this demo acts as the orchestrator *and* gateway internally.
+    It manually executes the mandate verifications (verify_binding, verify_intent, verify_cart)
     before calling Razorpay, mimicking tools.create_order without the HTTP wrapper.
     It uses tools.create_order via HTTP only if Razorpay is configured; otherwise it returns a
     CONFIGURATION REQUIRED state (no fake success).
     """
-    from .tools import orders as tools_orders
-    from .tools import quotes as tools_quotes
-    from .tools import approved_bindings, verdicts
     from .approval import register as register_binding
     from .mandates.mandates import MANDATE_VERSION
+    from .tools import approved_bindings, verdicts
+    from .tools import orders as tools_orders
+    from .tools import quotes as tools_quotes
 
     steps = []
     now_ts = int(time.time())
@@ -400,7 +399,8 @@ def e2e_demo() -> dict[str, Any]:
         mandate_version=MANDATE_VERSION,
     )
     approved_bindings[seq] = v.proposal_hash or ""
-    from .gateway.types import Verdict as _V, Decision as _D
+    from .gateway.types import Decision as _D
+    from .gateway.types import Verdict as _V
     from .tools import VerdictSeq
     verdicts[seq] = VerdictSeq(seq, _V(_D(v.decision.value),
                                        v.rule_id, v.reason,
@@ -459,7 +459,10 @@ def e2e_demo() -> dict[str, Any]:
     # Mint demo mandates (simulated user wallet) so the canonical gate
     # accepts the order. In a real flow these come from the wallet.
     from .mandates.mandates import (
-        CartMandate, IntentMandate, sign_cart, sign_intent,
+        CartMandate,
+        IntentMandate,
+        sign_cart,
+        sign_intent,
     )
     intent_mandate = sign_intent(IntentMandate(
         mission_id=mission_id, user_id=f"user_{mission_id}",

@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException
 
 from . import missions
 
-
 router = APIRouter()
 
 

@@ -9,20 +9,16 @@ None of these endpoints mutate state.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter
 
 from . import config, money
 from .audit import chain as audit_chain
-from .audit import timeline as audit_timeline
 from .gateway.registry import RULE_REGISTRY
 from .products import CATALOG
-from .webhook.receiver import payment_ledger, processed_event_ids
-
 from .tools import orders, quotes
-
+from .webhook.receiver import payment_ledger, processed_event_ids
 
 router = APIRouter()
 

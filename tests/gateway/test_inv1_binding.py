@@ -1,7 +1,8 @@
 """
 tests/gateway/test_inv1_binding.py — INV-1 binding persistence
 """
-import time, pytest
+import time
+
 from apps.api import approval
 
 

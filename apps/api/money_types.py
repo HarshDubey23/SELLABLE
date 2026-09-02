@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 Strict Money Type abstraction for SELLABLE.
 
 Rules:
@@ -11,6 +10,7 @@ Rules:
 """
 from dataclasses import dataclass
 from typing import Any
+
 
 class MoneyError(ValueError):
     pass

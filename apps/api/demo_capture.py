@@ -14,29 +14,33 @@ from __future__ import annotations
 import os
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .audit import chain as audit
 from .deps import require_api_key
-from .products import CATALOG
-from .tools import (
-    QuoteReq,
-    ProposalReq,
-    CreateOrderReq,
-    tool_submit_proposal,
-    tool_quote,
-    tool_create_order,
-)
-from .gateway.mission_verify import dumps as _dumps, sign_mission as _sign
+from .gateway.mission_verify import dumps as _dumps
+from .gateway.mission_verify import sign_mission as _sign
 from .mandates.mandates import (
-    CartMandate, IntentMandate, sign_cart, sign_intent, MANDATE_VERSION,
+    CartMandate,
+    IntentMandate,
+    sign_cart,
+    sign_intent,
 )
+from .products import CATALOG
 from .razorpay_client import (
     RazorpayAPIError,
     attempt_checkout_payment,
     capture_payment,
     list_order_payments,
+)
+from .tools import (
+    CreateOrderReq,
+    ProposalReq,
+    QuoteReq,
+    tool_create_order,
+    tool_quote,
+    tool_submit_proposal,
 )
 
 router = APIRouter(prefix="/demo", tags=["demo-capture"])
@@ -56,7 +60,7 @@ async def demo_capture(req: CaptureReq):
     """
     if req.sku not in CATALOG:
         raise HTTPException(400, f"Unknown SKU: {req.sku}")
-    
+
     # Use real catalog price; ignore requested amount to preserve invariants.
     real_amount = CATALOG[req.sku]["price_paise"]
 
@@ -89,7 +93,7 @@ async def demo_capture(req: CaptureReq):
     verdict_resp = await tool_submit_proposal(proposal_req)
     if not verdict_resp["ok"] or verdict_resp["data"]["decision"] != "APPROVE":
         raise HTTPException(403, f"Gateway rejected: {verdict_resp.get('data')}")
-    
+
     approve_seq = verdict_resp["seq"]
     proposal_hash = verdict_resp["data"]["proposal_hash"]
 
@@ -97,13 +101,13 @@ async def demo_capture(req: CaptureReq):
     quote_req = QuoteReq(items=[{"sku": req.sku, "qty": 1}], mission_id=req.mission_id)
     quote_resp = await tool_quote(quote_req)
     quote_id = quote_resp["quote_id"]
-    
+
     # 4. Sign Mandates
     intent_mandate = sign_intent(IntentMandate(
         mission_id=req.mission_id, user_id=f"user_{req.mission_id}",
         ceiling_paise=real_amount, expires_at=int(time.time()) + 3600,
     ), os.environ["USER_MANDATE_KEY"])
-    
+
     cart_mandate = sign_cart(CartMandate(
         mission_id=req.mission_id, cart_hash=proposal_hash or "",
         amount_paise=real_amount, signed_at=int(time.time()),
@@ -119,7 +123,7 @@ async def demo_capture(req: CaptureReq):
         cart_mandate=cart_mandate,
     )
     idem_key = f"idem_{req.mission_id}_{time.time_ns()}"
-    
+
     try:
         order_resp = await tool_create_order(order_req, x_idempotency_key=idem_key)
         order_id = order_resp["order_id"]

@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 Architecture Guard Tests for SELLABLE.
 
 Enforces:
@@ -8,7 +7,6 @@ Enforces:
 3. No committed secret credentials in python source files.
 """
 from pathlib import Path
-import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APPS_API = PROJECT_ROOT / "apps" / "api"

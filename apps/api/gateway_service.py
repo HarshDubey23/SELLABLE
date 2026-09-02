@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 Canonical Payment Gateway Service & Abstraction for SELLABLE.
 
 Implements Section 3 & 4:
@@ -7,13 +6,13 @@ Implements Section 3 & 4:
 - RazorpayTestGateway: Real Razorpay Test Mode API integration
 - SimulatorGateway: Deterministic Fault-Injection harness with explicit simulation modes
 """
-from typing import Protocol, Any
-from enum import StrEnum
-import time
 import hashlib
+import time
+from enum import StrEnum
+from typing import Any, Protocol
 
-from . import money
-from . import razorpay_client
+from . import money, razorpay_client
+
 
 class GatewayMode(StrEnum):
     NORMAL = "NORMAL"
@@ -68,7 +67,7 @@ class SimulatorGateway:
 
     def create_order(self, amount_paise: int, receipt: str, notes: dict[str, Any], idempotency_key: str | None = None) -> dict[str, Any]:
         money.record("simulator_create_order", amount_paise=amount_paise, mode=self.mode)
-        
+
         if self.mode == GatewayMode.CREATE_ORDER_TIMEOUT:
             raise GatewayException("GATEWAY_TIMEOUT", "Simulated gateway read timeout (30s exceeded)", 504)
         if self.mode == GatewayMode.CREATE_ORDER_TRANSIENT_FAILURE:

@@ -10,17 +10,20 @@ Critical security tests:
   - wrong cart hash -> CART_HASH_MISMATCH
   - wrong currency -> CURRENCY_MISMATCH
 """
-import sys, time
+import sys
+
 sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, r'C:\Users\Lenovo\Downloads\SELLABLE')
 import os
+
 os.environ.setdefault('MISSION_HMAC_KEY', 'test-hmac')
 os.environ.setdefault('USER_MANDATE_KEY', 'test-mandate-key')
 
 from apps.api.approval import (
-    register, verify, reset_consumed,
+    register,
+    reset_consumed,
+    verify,
 )
-
 
 PASS_COUNT = 0
 FAIL_COUNT = 0

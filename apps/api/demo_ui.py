@@ -14,11 +14,11 @@ Deliberately OUTSIDE apps/api/gateway/ — purity unaffected.
 """
 from __future__ import annotations
 
-import html as _html
 import copy
 import datetime as _dt
 import hashlib
 import hmac as _hmac
+import html as _html
 import json
 import os
 import shutil
@@ -26,10 +26,8 @@ import sqlite3
 import tempfile
 import traceback
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-
-from .deps import require_api_key
 
 router = APIRouter(tags=["demo-ui"])
 
@@ -51,12 +49,14 @@ _API_KEY = os.environ.get("APP_API_KEY", "")
 # the mission dict so _attack_payloads can return body dicts with a
 # "signature" key exactly like the browser expects.
 # ===========================================================================
+from apps.api.audit.chain import verify as verify_chain
 from apps.api.gateway.mission_verify import (
     dumps as _mv_dumps,
+)
+from apps.api.gateway.mission_verify import (
     sign_mission as _mv_sign_mission,
 )
-from apps.api.audit.chain import verify as verify_chain
-import apps.api.audit.chain as chain
+
 from .store import db as store
 
 
@@ -74,12 +74,12 @@ def _sign_mission(mission: dict) -> dict:
 # Chaos fixtures (server-built so the browser never sees a signing key)
 # ---------------------------------------------------------------------------
 def _base_mission() -> dict:
-    with open(_MISSION_FILE, "r", encoding="utf-8") as f:
+    with open(_MISSION_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 
 def _attack_payloads() -> dict:
-    now = _dt.datetime.now(_dt.timezone.utc)
+    now = _dt.datetime.now(_dt.UTC)
 
     # 1 — forged signature: honest mission, one hex char of the HMAC flipped
     m1 = _sign_mission(_base_mission())
@@ -162,7 +162,7 @@ def tamper_demo() -> JSONResponse:
             "after_verified": None,
             "conclusion": "chain has no data entries to tamper — live DB empty or not initialized",
             "note": "executed on a temp copy; live database untouched",
-            "captured_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "captured_at_utc": _dt.datetime.now(_dt.UTC).isoformat(),
         })
     tmp_dir = tempfile.mkdtemp(prefix="sellable-tamper-")
     tmp = os.path.join(tmp_dir, "tampered.db")
@@ -191,7 +191,7 @@ def tamper_demo() -> JSONResponse:
                                  "after_verified": None,
                                  "conclusion": "chain has no data entries to tamper",
                                  "note": "executed on a temp copy; live database untouched",
-                                 "captured_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat()})
+                                 "captured_at_utc": _dt.datetime.now(_dt.UTC).isoformat()})
         orig = row[0]
         tampered = orig[:10] + chr(ord(orig[10]) ^ 0xFF) + orig[11:]
         conn.execute("UPDATE audit_chain SET hash=? WHERE seq=1", (tampered,))
@@ -214,7 +214,7 @@ def tamper_demo() -> JSONResponse:
                        "verifier did not flag the copy — investigate before demo"),
         "note": "executed on a temp copy; live database untouched",
         "error": err,
-        "captured_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "captured_at_utc": _dt.datetime.now(_dt.UTC).isoformat(),
     })
 
 

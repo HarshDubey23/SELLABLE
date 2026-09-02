@@ -26,26 +26,16 @@ from fastapi import APIRouter
 from . import money
 from .audit import chain as audit_chain
 from .gateway import mission_verify
-from .gateway.engine import evaluate
 from .gateway.structured import evaluate_full
 from .gateway.types import (
-    Decision,
     Mission,
     Proposal,
     ProposalItem,
 )
-from .mandates.mandates import (
-    CartMandate,
-    IntentMandate,
-    sign_cart,
-    sign_intent,
-    MANDATE_VERSION,
-)
 from .products import CATALOG
+
 # rp_create_order is imported here but never called, confirming the Attack
 # Lab does not bypass the money gates or touch Razorpay directly.
-from .razorpay_client import create_order as rp_create_order
-
 
 router = APIRouter(prefix="/attack", tags=["attack"])
 

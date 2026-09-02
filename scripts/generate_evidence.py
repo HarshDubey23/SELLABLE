@@ -1,34 +1,30 @@
-﻿# -*- coding: utf-8 -*-
-"""
+﻿"""
 scripts/generate_evidence.py — Automated Cryptographic & Test Evidence Pack Generator
 
 Executes real security, architecture, and invariant suites, emitting structured JSON
 evidence artifacts into artifacts/evidence/ and generating docs/final/EVIDENCE_REPORT.md.
 """
-import sys
-import os
 import json
+import sys
 import time
-import subprocess
 from pathlib import Path
 
 # Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from apps.api import money as money_mod
 from apps.api.audit import chain as audit_chain
 from apps.api.gateway.registry import RULE_REGISTRY
-from apps.api import money as money_mod
-from apps.api.approval import all_bindings
-from apps.api.payment_state import PaymentStateMachine, PaymentState, reconcile_order
-from apps.api.gateway_service import SimulatorGateway, GatewayMode, RazorpayTestGateway
+from apps.api.payment_state import PaymentState
+
 
 def generate_evidence_pack():
     evidence_dir = ROOT / "artifacts" / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print("[Evidence] Generating complete runtime evidence pack...")
-    
+
     # 1. Audit Verification Evidence
     chain_ok = audit_chain.verify()
     entries = audit_chain.entries()
@@ -142,9 +138,9 @@ def generate_evidence_pack():
     # 9. Human-readable EVIDENCE_REPORT.md
     report_md = f"""# SELLABLE — Comprehensive Cryptographic & Runtime Evidence Report
 
-**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}  
-**Repository:** `https://github.com/HarshDubey23/SELLABLE`  
-**Security Posture:** 9 / 9 Active Controls Verified  
+**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}
+**Repository:** `https://github.com/HarshDubey23/SELLABLE`
+**Security Posture:** 9 / 9 Active Controls Verified
 
 ---
 

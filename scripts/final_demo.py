@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SELLABLE Final Master Demo Orchestrator.
 
@@ -19,12 +18,13 @@ Implements all 15 required scenarios with actual runtime assertions:
 14. audit-tamper
 15. concurrency-replay
 """
-import sys
-import os
-import time
 import argparse
 import concurrent.futures
+import os
+import sys
+import time
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,12 +34,12 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 def run_happy_path():
     print("\n--- [SCENARIO 1/15: HAPPY PATH] End-to-End Autonomous Purchase & Razorpay Order ---")
-    from apps.api.products import CATALOG
-    from apps.api.gateway import engine
-    from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
-    from apps.api.approval import register as register_binding, verify as verify_binding
-    import apps.api.money as money
     from apps.api import razorpay_client
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
+    from apps.api.gateway import engine
+    from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
+    from apps.api.products import CATALOG
 
     now = int(time.time())
     m = Mission(
@@ -53,7 +53,7 @@ def run_happy_path():
         signature="demo_sig"
     )
     p = Proposal(mission_id=m.mission_id, items=(ProposalItem(sku="BAT-001", qty=1, price_paise=149900),))
-    
+
     verd = engine.evaluate(mission=m, proposal=p, catalog=CATALOG, verify_fn=lambda *a: True)
     assert verd.decision == Decision.APPROVE
 
@@ -93,7 +93,7 @@ def run_happy_path():
         order_id = rp_order.get("id")
         assert order_id and order_id.startswith("order_")
         print(f"   -> Real Razorpay Order Created: {order_id} (Amount: Rs {rp_order.get('amount')/100:,.0f})")
-    except Exception as e:
+    except Exception:
         from apps.api.gateway_service import SimulatorGateway
         sim = SimulatorGateway()
         rp_order = sim.create_order(
@@ -108,9 +108,9 @@ def run_happy_path():
 
 def run_prompt_injection():
     print("\n--- [SCENARIO 2/15: PROMPT INJECTION] Defense Against Rogue Product Prose ---")
-    from apps.api.products import CATALOG
     from apps.api.gateway import engine
-    from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
+    from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
+    from apps.api.products import CATALOG
 
     m = Mission(
         mission_id=f"MSN-ATK-INJ-{int(time.time())}",
@@ -123,7 +123,7 @@ def run_prompt_injection():
         signature="demo_sig"
     )
     p = Proposal(mission_id=m.mission_id, items=(ProposalItem(sku="BAT-002", qty=2, price_paise=499800),))
-    
+
     verd = engine.evaluate(mission=m, proposal=p, catalog=CATALOG, verify_fn=lambda *a: True)
     assert verd.decision == Decision.REJECT
     assert verd.rule_id == "R1_BUDGET"
@@ -132,9 +132,9 @@ def run_prompt_injection():
 
 def run_budget_attack():
     print("\n--- [SCENARIO 3/15: BUDGET OVERRIDE] Hard Budget Cap Enforcement ---")
-    from apps.api.products import CATALOG
     from apps.api.gateway import engine
-    from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
+    from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
+    from apps.api.products import CATALOG
 
     m = Mission(mission_id="MSN-BUDGET-ATK", intent="Buy bat under Rs 1,000", budget_paise=100000, allowed_categories=("cricket",), forbidden_categories=(), upsell_cap=1.0, expires_at=int(time.time()) + 3600, signature="sig")
     p = Proposal(mission_id=m.mission_id, items=(ProposalItem(sku="BAT-001", qty=1, price_paise=149900),))
@@ -146,7 +146,8 @@ def run_budget_attack():
 
 def run_cart_mutation():
     print("\n--- [SCENARIO 4/15: CART MUTATION] Post-Approval Tampering Defense ---")
-    from apps.api.approval import register as register_binding, verify as verify_binding
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
 
     seq_id = int(time.time() * 1000 + 1) % 1000000
     binding = register_binding(
@@ -178,7 +179,8 @@ def run_cart_mutation():
 
 def run_quote_tamper():
     print("\n--- [SCENARIO 5/15: QUOTE TAMPERING] Quote Substitution Defense ---")
-    from apps.api.approval import register as register_binding, verify as verify_binding
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
 
     seq_id = int(time.time() * 1000 + 11) % 1000000
     binding = register_binding(
@@ -210,7 +212,8 @@ def run_quote_tamper():
 
 def run_replay():
     print("\n--- [SCENARIO 6/15: REPLAY ATTACK] Single-Use Token Consumption ---")
-    from apps.api.approval import register as register_binding, verify as verify_binding
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
 
     seq_id = int(time.time() * 1000 + 2) % 1000000
     binding = register_binding(
@@ -236,7 +239,8 @@ def run_replay():
 
 def run_expired_quote():
     print("\n--- [SCENARIO 7/15: EXPIRED QUOTE] Temporal Expiry Defense ---")
-    from apps.api.approval import register as register_binding, verify as verify_binding
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
 
     seq_id = int(time.time() * 1000 + 3) % 1000000
     now = int(time.time())
@@ -262,7 +266,7 @@ def run_expired_quote():
 def run_expired_mandate():
     print("\n--- [SCENARIO 8/15: EXPIRED MANDATE] User Mandate Expiry ---")
     from apps.api.gateway import engine
-    from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
+    from apps.api.gateway.types import Decision, Mission, Proposal, ProposalItem
     from apps.api.products import CATALOG
 
     now = int(time.time())
@@ -276,12 +280,13 @@ def run_expired_mandate():
 
 def run_webhook_forgery():
     print("\n--- [SCENARIO 9/15: WEBHOOK FORGERY] HMAC Signature Validation ---")
-    import hmac, hashlib
+    import hashlib
+    import hmac
     secret = "test_webhook_secret"
     payload = b'{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_fake"}}}}'
     tampered_sig = "invalid_forged_hmac_signature"
     expected_sig = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
-    
+
     is_valid = hmac.compare_digest(tampered_sig, expected_sig)
     assert is_valid is False
     print("   -> Signature Match: False (Forged payload rejected)")
@@ -293,19 +298,19 @@ def run_webhook_duplicate():
 
     event_id = f"evt_demo_dup_{int(time.time())}"
     receiver.processed_event_ids.add(event_id)
-    
+
     duplicates_ignored = 0
     for _ in range(9):
         if event_id in receiver.processed_event_ids:
             duplicates_ignored += 1
-            
+
     assert duplicates_ignored == 9
     print(f"   -> 1st delivery recorded, {duplicates_ignored} duplicate deliveries safely ignored.")
     print("RESULT: PASS\n")
 
 def run_payment_failure():
     print("\n--- [SCENARIO 11/15: PAYMENT FAILURE] Bounded Recovery ---")
-    from apps.api.gateway_service import SimulatorGateway, GatewayMode
+    from apps.api.gateway_service import GatewayMode, SimulatorGateway
     sim = SimulatorGateway(GatewayMode.PAYMENT_FAILED)
     order = sim.create_order(149900, "rcpt_fail", {})
     payments = sim.list_order_payments(order["id"])
@@ -316,11 +321,11 @@ def run_payment_failure():
 
 def run_gateway_timeout():
     print("\n--- [SCENARIO 12/15: GATEWAY TIMEOUT] Safe Timeout Handling ---")
-    from apps.api.gateway_service import SimulatorGateway, GatewayMode, GatewayException
+    from apps.api.gateway_service import GatewayException, GatewayMode, SimulatorGateway
     sim = SimulatorGateway(GatewayMode.CREATE_ORDER_TIMEOUT)
     try:
         sim.create_order(149900, "rcpt_timeout", {})
-        assert False, "Should have timed out"
+        raise AssertionError("Should have timed out")
     except GatewayException as e:
         assert e.code == "GATEWAY_TIMEOUT"
         print(f"   -> Handled Gateway Timeout: code={e.code}, status={e.status_code}")
@@ -328,7 +333,7 @@ def run_gateway_timeout():
 
 def run_reconciliation():
     print("\n--- [SCENARIO 13/15: RECONCILIATION] Authoritative Gateway State Sync ---")
-    from apps.api.payment_state import reconcile_order, PaymentState
+    from apps.api.payment_state import PaymentState, reconcile_order
     state, reason = reconcile_order("order_rec_1", 149900, [{"id": "pay_rec_1", "status": "captured", "amount": 149900}])
     assert state == PaymentState.PAID
     print(f"   -> Reconciled State: {state} ({reason})")
@@ -345,11 +350,12 @@ def run_audit_tamper():
 
 def run_concurrency_replay():
     print("\n--- [SCENARIO 15/15: CONCURRENT REPLAY] 20 Simultaneous Replay Attempts ---")
-    from apps.api.approval import register as register_binding, verify as verify_binding
+    from apps.api.approval import register as register_binding
+    from apps.api.approval import verify as verify_binding
 
     seq_id = int(time.time() * 1000 + 42) % 1000000
     now = int(time.time())
-    binding = register_binding(
+    register_binding(
         seq_id,
         mission_id="MSN-CONCUR-DEMO",
         proposal_hash="hash_concur",

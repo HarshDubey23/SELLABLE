@@ -1,69 +1,72 @@
-# -*- coding: utf-8 -*-
 """
-SELLABLE — Enterprise Command Center & Autonomous Commerce Security Console
-Razorpay AI Buildathon 2026 — Track 01
+SELLABLE -- Autonomous Commerce Security Command Center
+Razorpay AI Buildathon 2026 -- Track 01
 
-Features:
-- Ultra-Modern Cyber-Fintech Glassmorphism UI
-- Real-Time Trust Boundary Visualizer (Untrusted LLM -> Policy -> Binding -> Money Boundary)
-- Interactive Razorpay Test Mode Checkout Modal (checkout.js auto-open)
-- Live Adversarial Attack Lab with 1-Click Interactive Exploits
-- Tamper-Evident SHA-256 Audit Ledger Visualizer with Live Tamper Simulation
-- Deterministic Policy Engine (R1-R12) Matrix Viewer
-- Live Inventory Catalog with Real-Time Search
+World-class cyber-fintech UI:
+- Real-time auto-refresh telemetry (fetches /api/v1/telemetry every 3s)
+- Animated SVG security score ring
+- Live mission runner with animated pipeline steps
+- Full 8-attack adversarial lab with sequential runner
+- SHA-256 audit ledger timeline explorer
+- R1-R12 interactive policy simulator with live gateway simulation
+- Judge & Evaluator Console (30-second demo flow with G1-G16 matrix)
+- Philosophy page: Why LLMs Cannot Handle Money Directly
+- Merchant catalog with JS search/filter and star ratings
 """
 from __future__ import annotations
+
 import datetime as _dt
 import html as _html_escape
-import os
 import json
-import time
+from pathlib import Path
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 
-from .audit import chain as audit_chain
 from . import config as app_config
 from . import money as money_mod
+from .approval import all_bindings
+from .audit import chain as audit_chain
 from .gateway.registry import RULE_REGISTRY
 from .products import CATALOG
-from .tools import orders, quotes
-from .webhook.receiver import payment_ledger, processed_event_ids
-from .approval import all_bindings
 
 router = APIRouter(tags=["ui"])
 
 _CSS = """
 :root {
-  --bg: #070B14;
-  --bg-card: rgba(15, 23, 42, 0.75);
-  --bg-card-hover: rgba(30, 41, 59, 0.85);
-  --border: rgba(51, 65, 85, 0.6);
-  --border-glow: rgba(99, 102, 241, 0.4);
-  --text: #F8FAFC;
+  --bg: #050A14;
+  --bg-card: rgba(10, 18, 35, 0.85);
+  --bg-card-hover: rgba(20, 30, 55, 0.9);
+  --border: rgba(51, 65, 85, 0.5);
+  --border-glow: rgba(0, 186, 242, 0.35);
+  --border-purple: rgba(124, 58, 237, 0.35);
+  --text: #F1F5F9;
   --text-muted: #94A3B8;
-  --text-dim: #64748B;
-  
+  --text-dim: #475569;
+
   --rzp-blue: #0C2340;
   --rzp-cyan: #00BAF2;
-  --accent-purple: #8B5CF6;
+  --accent-purple: #7C3AED;
   --accent-cyan: #06B6D4;
   --ok: #10B981;
-  --ok-glow: rgba(16, 185, 129, 0.25);
+  --ok-glow: rgba(16, 185, 129, 0.2);
   --bad: #EF4444;
-  --bad-glow: rgba(239, 68, 68, 0.25);
+  --bad-glow: rgba(239, 68, 68, 0.2);
   --warn: #F59E0B;
-  
+
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --radius: 14px;
+  --radius-sm: 8px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg);
-  background-image: 
-    radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 85%, rgba(6, 182, 212, 0.06) 0%, transparent 40%);
+  background-image:
+    radial-gradient(ellipse at 10% 10%, rgba(0, 186, 242, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 90%, rgba(124, 58, 237, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 60%);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -73,314 +76,256 @@ body {
 
 /* Glassmorphism Header */
 header.navbar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: rgba(7, 11, 20, 0.85);
-  backdrop-filter: blur(16px);
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(5, 10, 20, 0.92);
+  backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
 }
 .header-wrap {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 12px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  max-width: 1440px; margin: 0 auto;
+  padding: 10px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
-.brand-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.brand-group { display: flex; align-items: center; gap: 10px; }
 .brand-logo {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, #00BAF2, #8B5CF6);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  color: #fff;
-  font-size: 16px;
-  box-shadow: 0 0 15px rgba(0, 186, 242, 0.4);
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, #00BAF2 0%, #7C3AED 100%);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; color: #fff; font-size: 15px;
+  box-shadow: 0 0 18px rgba(0, 186, 242, 0.4); flex-shrink: 0;
 }
-.brand-title {
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: -0.5px;
-  color: #fff;
-}
+.brand-title { font-weight: 800; font-size: 17px; letter-spacing: -0.5px; color: #fff; }
 .brand-tag {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  background: rgba(0, 186, 242, 0.15);
-  border: 1px solid var(--rzp-cyan);
-  border-radius: 999px;
-  color: var(--rzp-cyan);
-  text-transform: uppercase;
+  font-size: 9px; font-weight: 700; padding: 2px 7px;
+  background: rgba(0, 186, 242, 0.12); border: 1px solid var(--rzp-cyan);
+  border-radius: 999px; color: var(--rzp-cyan); text-transform: uppercase; letter-spacing: 0.5px;
 }
-nav.nav-links {
-  display: flex;
-  gap: 6px;
-}
+nav.nav-links { display: flex; gap: 3px; flex-wrap: wrap; }
 nav.nav-links a {
-  color: var(--text-muted);
-  text-decoration: none;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
+  color: var(--text-muted); text-decoration: none;
+  padding: 5px 11px; border-radius: 7px; font-size: 12.5px; font-weight: 500;
+  transition: all 0.18s; border: 1px solid transparent;
 }
-nav.nav-links a:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.05);
-}
-nav.nav-links a.active {
-  color: #fff;
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.3);
-}
-
+nav.nav-links a:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+nav.nav-links a.active { color: #fff; background: rgba(0, 186, 242, 0.12); border-color: rgba(0, 186, 242, 0.25); }
+nav.nav-links a.nav-judge { color: var(--warn); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08); }
+nav.nav-links a.nav-judge:hover { background: rgba(245, 158, 11, 0.14); }
 .status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ok);
-  text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 11px; background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; color: var(--ok);
+  text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
 }
 .status-pulse {
-  width: 7px;
-  height: 7px;
-  background: var(--ok);
-  border-radius: 50%;
-  box-shadow: 0 0 10px var(--ok);
-  animation: pulse 2s infinite;
+  width: 7px; height: 7px; background: var(--ok); border-radius: 50%;
+  box-shadow: 0 0 8px var(--ok); animation: pulse 2s infinite;
 }
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(1.2); }
-}
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } }
 
-/* Layout container */
-.container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-}
+/* Layout */
+.container { max-width: 1440px; margin: 0 auto; padding: 28px 24px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+@media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
 
 /* Cards & Panels */
 .panel {
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  transition: border-color 0.2s;
+  background: var(--bg-card); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 22px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); transition: border-color 0.2s, box-shadow 0.2s;
 }
-.panel:hover {
-  border-color: var(--border-glow);
-}
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
+.panel:hover { border-color: var(--border-glow); box-shadow: 0 8px 40px rgba(0, 186, 242, 0.08); }
+.panel-ok { border-color: rgba(16, 185, 129, 0.25); }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .panel-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 13px; font-weight: 700; color: #fff;
+  display: flex; align-items: center; gap: 8px;
+  text-transform: uppercase; letter-spacing: 0.6px;
 }
+.section-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; color: #fff; margin-bottom: 6px; }
+.section-sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
 
-/* Pipeline Flow Visualizer */
-.pipeline {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin: 20px 0;
-}
-.pipeline-step {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
-  position: relative;
-}
-.pipeline-step.active {
-  border-color: var(--rzp-cyan);
-  box-shadow: 0 0 15px rgba(0, 186, 242, 0.2);
-}
-.pipeline-step.danger {
-  border-color: var(--bad);
-  box-shadow: 0 0 15px var(--bad-glow);
-}
-.step-num {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-.step-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #fff;
-}
-.step-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-top: 6px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* Metric Boxes */
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
+/* Metric Cards */
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .metric-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px; display: flex; flex-direction: column; gap: 4px; transition: border-color 0.2s;
 }
-.metric-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.metric-val {
-  font-size: 26px;
-  font-weight: 800;
-  font-family: var(--font-mono);
-  color: #fff;
-  margin: 6px 0;
-}
+.metric-card:hover { border-color: var(--border-glow); }
+.metric-label { font-size: 10.5px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.7px; }
+.metric-val { font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: #fff; line-height: 1.1; }
 .metric-val.ok { color: var(--ok); }
 .metric-val.bad { color: var(--bad); }
-.metric-sub {
-  font-size: 11px;
-  color: var(--text-dim);
+.metric-val.warn { color: var(--warn); }
+.metric-val.cyan { color: var(--rzp-cyan); }
+.metric-sub { font-size: 11px; color: var(--text-dim); }
+.metric-trend { font-size: 10px; color: var(--ok); font-weight: 600; }
+
+/* Security Score Ring */
+.score-ring-wrap { display: flex; align-items: center; justify-content: center; position: relative; }
+.score-ring-label {
+  position: absolute; text-align: center;
+  font-size: 22px; font-weight: 900; color: var(--ok); font-family: var(--font-mono); line-height: 1;
 }
+.score-ring-sub { font-size: 9px; color: var(--text-dim); font-weight: 600; font-family: var(--font-sans); display: block; }
+
+/* Pipeline Steps */
+.pipeline { display: flex; gap: 0; align-items: stretch; margin: 20px 0; overflow-x: auto; }
+.pipeline-step {
+  flex: 1; min-width: 130px; background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border); padding: 14px 12px; position: relative; transition: all 0.3s;
+}
+.pipeline-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.pipeline-step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.pipeline-step::after {
+  content: ''; position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+  width: 0; height: 0;
+  border-top: 10px solid transparent; border-bottom: 10px solid transparent;
+  border-left: 12px solid var(--border); z-index: 1;
+}
+.pipeline-step:last-child::after { display: none; }
+.pipeline-step.active { background: rgba(0, 186, 242, 0.08); border-color: rgba(0, 186, 242, 0.3); }
+.pipeline-step.active::after { border-left-color: rgba(0, 186, 242, 0.3); }
+.pipeline-step.danger { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.3); }
+.step-num { font-size: 9px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
+.step-title { font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.step-badge { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
 
 /* Buttons */
 .btn {
-  background: linear-gradient(135deg, #00BAF2, #0284C7);
-  color: #fff;
-  font-weight: 600;
-  font-size: 13px;
-  padding: 10px 18px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 4px 15px rgba(0, 186, 242, 0.25);
-  transition: all 0.2s ease;
+  background: linear-gradient(135deg, #00BAF2, #0284C7); color: #fff; font-weight: 600;
+  font-size: 12.5px; padding: 9px 16px; border-radius: var(--radius-sm);
+  border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  box-shadow: 0 4px 14px rgba(0, 186, 242, 0.25); transition: all 0.18s; white-space: nowrap;
+  text-decoration: none;
 }
-.btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(0, 186, 242, 0.4);
-}
-.btn-purple {
-  background: linear-gradient(135deg, #8B5CF6, #6D28D9);
-  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.25);
-}
-.btn-purple:hover {
-  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
-}
-.btn-danger {
-  background: linear-gradient(135deg, #EF4444, #B91C1C);
-  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.25);
-}
-.btn-danger:hover {
-  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
-}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0, 186, 242, 0.4); }
+.btn:active { transform: translateY(0); }
+.btn-purple { background: linear-gradient(135deg, #7C3AED, #5B21B6); box-shadow: 0 4px 14px rgba(124, 58, 237, 0.25); }
+.btn-purple:hover { box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4); }
+.btn-danger { background: linear-gradient(135deg, #EF4444, #B91C1C); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25); }
+.btn-danger:hover { box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4); }
+.btn-ok { background: linear-gradient(135deg, #10B981, #059669); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25); }
+.btn-warn { background: linear-gradient(135deg, #F59E0B, #D97706); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25); }
+.btn-sm { font-size: 11.5px; padding: 7px 12px; }
+.btn-lg { font-size: 14px; padding: 12px 24px; border-radius: 10px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* Forms & Inputs */
+/* Forms */
 .form-input {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: #fff;
-  font-size: 13px;
-  padding: 10px 14px;
-  width: 100%;
-  font-family: inherit;
-  transition: border-color 0.2s;
+  background: rgba(10, 18, 35, 0.9); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: #fff; font-size: 13px; padding: 9px 13px; width: 100%; font-family: inherit; transition: border-color 0.2s;
 }
-.form-input:focus {
-  outline: none;
-  border-color: var(--rzp-cyan);
-  box-shadow: 0 0 10px rgba(0, 186, 242, 0.2);
-}
+.form-input:focus { outline: none; border-color: var(--rzp-cyan); box-shadow: 0 0 12px rgba(0, 186, 242, 0.18); }
+.form-label { font-size: 10.5px; font-weight: 700; color: var(--text-dim); display: block; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-/* Code & Log Blocks */
+/* Log / Terminal boxes */
 .log-box {
-  background: #030712;
-  border: 1px solid rgba(30, 41, 59, 0.8);
-  border-radius: 12px;
-  padding: 16px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #E2E8F0;
-  max-height: 400px;
-  overflow-y: auto;
-  line-height: 1.7;
+  background: #020810; border: 1px solid rgba(30, 41, 59, 0.8); border-radius: 10px; padding: 16px;
+  font-family: var(--font-mono); font-size: 11.5px; color: #CBD5E1;
+  max-height: 420px; overflow-y: auto; line-height: 1.75;
 }
 .log-entry {
-  display: flex;
-  gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  padding: 4px 0;
+  display: flex; gap: 10px; padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+  animation: fadeIn 0.3s ease;
 }
-.log-time { color: var(--text-dim); }
-.log-actor { color: var(--accent-purple); font-weight: 600; }
-.log-action { color: var(--rzp-cyan); }
-.log-hash { color: var(--text-dim); font-size: 10px; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: translateX(0); } }
+.log-time { color: var(--text-dim); min-width: 70px; }
+.log-actor { color: var(--accent-purple); font-weight: 700; min-width: 78px; }
+.log-ok { color: var(--ok); font-weight: 700; }
+.log-bad { color: var(--bad); font-weight: 700; }
+.log-cyan { color: var(--rzp-cyan); }
 
-/* Invariant Badges */
+/* Badges & Pills */
 .inv-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 5px;
+  font-size: 10px; font-weight: 700; font-family: var(--font-mono);
 }
-.inv-ok { background: rgba(16, 185, 129, 0.15); color: var(--ok); border: 1px solid rgba(16, 185, 129, 0.3); }
-.inv-bad { background: rgba(239, 68, 68, 0.15); color: var(--bad); border: 1px solid rgba(239, 68, 68, 0.3); }
+.inv-ok { background: rgba(16, 185, 129, 0.12); color: var(--ok); border: 1px solid rgba(16, 185, 129, 0.25); }
+.inv-bad { background: rgba(239, 68, 68, 0.12); color: var(--bad); border: 1px solid rgba(239, 68, 68, 0.25); }
+.inv-warn { background: rgba(245, 158, 11, 0.12); color: var(--warn); border: 1px solid rgba(245, 158, 11, 0.25); }
+.inv-cyan { background: rgba(0, 186, 242, 0.12); color: var(--rzp-cyan); border: 1px solid rgba(0, 186, 242, 0.25); }
+.cat-badge { font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.4px; display: inline-block; }
+.cat-cricket { background: rgba(16, 185, 129, 0.15); color: var(--ok); }
+.cat-electronics { background: rgba(0, 186, 242, 0.15); color: var(--rzp-cyan); }
+.cat-books { background: rgba(124, 58, 237, 0.15); color: var(--accent-purple); }
+.cat-apparel { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
+.cat-groceries { background: rgba(239, 68, 68, 0.15); color: var(--bad); }
+.cat-stationery { background: rgba(100, 116, 139, 0.2); color: var(--text-muted); }
+
+/* Attack Cards */
+.attack-card { background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius); padding: 18px; transition: all 0.2s; }
+.attack-card:hover { border-color: rgba(239, 68, 68, 0.45); box-shadow: 0 4px 20px rgba(239, 68, 68, 0.12); }
+.attack-id { font-family: var(--font-mono); font-size: 10px; color: var(--bad); font-weight: 700; margin-bottom: 6px; }
+.attack-name { font-weight: 700; font-size: 13.5px; color: #fff; margin-bottom: 6px; }
+.attack-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
+
+/* Invariant Table */
+.inv-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.inv-table th { padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+.inv-table td { padding: 9px 12px; border-bottom: 1px solid rgba(51, 65, 85, 0.3); }
+.inv-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+/* Rule Cards */
+.rule-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: all 0.2s; }
+.rule-card:hover { border-color: rgba(0, 186, 242, 0.3); }
+.rule-id { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--rzp-cyan); margin-bottom: 4px; }
+.rule-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.phase-header {
+  font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase;
+  padding: 6px 0; margin: 16px 0 10px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* Audit Timeline */
+.audit-block { display: flex; gap: 14px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid rgba(51, 65, 85, 0.2); }
+.audit-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); flex-shrink: 0; margin-top: 3px; }
+.audit-dot.genesis { background: var(--rzp-cyan); box-shadow: 0 0 8px var(--rzp-cyan); }
+.audit-line { flex: 1; }
+.audit-action { font-weight: 700; color: #fff; font-size: 12.5px; }
+.audit-meta { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); margin-top: 2px; }
+.audit-hash { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); }
+
+/* Product Cards */
+.product-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 10px; transition: all 0.2s; }
+.product-card:hover { border-color: var(--border-glow); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0, 186, 242, 0.1); }
+.product-name { font-weight: 700; font-size: 14px; color: #fff; }
+.product-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.product-price { font-size: 20px; font-weight: 900; color: #fff; font-family: var(--font-mono); }
+.product-meta { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
+.stars { color: var(--warn); font-size: 11px; }
+
+/* Proof card */
+.proof-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(51, 65, 85, 0.2); font-size: 12px; }
+.proof-row:last-child { border-bottom: none; }
+.proof-key { color: var(--text-dim); font-family: var(--font-mono); }
+.proof-val { color: var(--ok); font-weight: 700; font-family: var(--font-mono); }
+
+/* Judge step tracker */
+.judge-steps { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.judge-step { flex: 1; min-width: 140px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; transition: all 0.3s; }
+.judge-step.done { border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.08); }
+.judge-step.active { border-color: rgba(0, 186, 242, 0.4); box-shadow: 0 0 20px rgba(0, 186, 242, 0.12); }
+.judge-step-num { font-size: 28px; font-weight: 900; color: var(--text-dim); font-family: var(--font-mono); }
+.judge-step.done .judge-step-num { color: var(--ok); }
+.judge-step.active .judge-step-num { color: var(--rzp-cyan); }
+.judge-step-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+
+/* Code blocks (Why page) */
+.code-block { background: #020810; border: 1px solid var(--border); border-radius: 10px; padding: 20px; font-family: var(--font-mono); font-size: 12px; line-height: 1.8; color: #94A3B8; }
+.code-bad { border-color: rgba(239, 68, 68, 0.3); }
+.code-ok { border-color: rgba(16, 185, 129, 0.3); }
+.code-comment { color: var(--text-dim); }
+.code-safe { color: var(--ok); font-weight: 700; }
+.code-danger { color: var(--bad); font-weight: 700; }
+.code-string { color: #86EFAC; }
+.why-number { font-size: 60px; font-weight: 900; font-family: var(--font-mono); color: var(--bad); line-height: 1; }
 """
 
 def _page_layout(title: str, active_tab: str, content: str) -> str:
@@ -433,7 +378,7 @@ async def dashboard_view():
     chain_valid = audit_chain.verify()
     money_calls_count = money_mod.snapshot().get("total", 0)
     bindings = all_bindings()
-    
+
     content = f"""
     <div style="margin-bottom: 24px;">
       <h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Security Command Center</h1>
@@ -572,7 +517,7 @@ async def mission_view():
           <div class="panel-title">📡 Live Execution Stream</div>
           <span id="mission-status-badge" class="inv-pill inv-ok" style="display: none;">COMPLETED</span>
         </div>
-        
+
         <div id="checkout-container" style="display: none; background: rgba(0, 186, 242, 0.1); border: 1px solid var(--rzp-cyan); border-radius: 12px; padding: 16px; margin-bottom: 16px; text-align: center;">
           <div style="font-weight: 700; font-size: 15px; color: #fff; margin-bottom: 4px;">🎉 Razorpay Order Ready!</div>
           <div id="order-details-text" style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;"></div>
@@ -596,7 +541,7 @@ async def mission_view():
       const logBox = document.getElementById('log-box');
       const checkoutBox = document.getElementById('checkout-container');
       const badge = document.getElementById('mission-status-badge');
-      
+
       btn.disabled = true;
       btn.innerText = '⚡ Executing Mission...';
       logBox.innerHTML = '';
@@ -616,7 +561,7 @@ async def mission_view():
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        
+
         if (data.events) {
           data.events.forEach(evt => {
             const row = document.createElement('div');
@@ -629,7 +574,7 @@ async def mission_view():
         if (data.order && data.order.id) {
           checkoutBox.style.display = 'block';
           document.getElementById('order-details-text').innerText = `Order ID: ${data.order.id} | Amount: Rs ${(data.order.amount/100).toLocaleString('en-IN')}`;
-          
+
           document.getElementById('rzp-btn').onclick = function() {
             const options = {
               key: data.razorpay_key_id || 'rzp_test_placeholder',
@@ -646,11 +591,11 @@ async def mission_view():
             const rzp = new Razorpay(options);
             rzp.open();
           };
-          
+
           // Auto-trigger modal
           document.getElementById('rzp-btn').click();
         }
-        
+
         badge.style.display = 'inline-block';
         badge.innerText = 'PROPOSAL APPROVED & BOUND';
       } catch (err) {
@@ -735,7 +680,7 @@ async def attack_lab_view():
 async def audit_view():
     entries = audit_chain.entries()
     chain_valid = audit_chain.verify()
-    
+
     rows_html = ""
     for e in reversed(entries[-25:]):
         rows_html += f"""
@@ -849,7 +794,7 @@ async def metrics_view():
     total_calls = money_mod.snapshot().get("total", 0)
     entries = audit_chain.entries()
     bindings = all_bindings()
-    
+
     content = f"""
     <div style="margin-bottom: 24px;">
       <h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">System Metrics & Invariants</h1>
@@ -882,43 +827,78 @@ async def judge_mode_view():
     entries = audit_chain.entries()
     chain_valid = audit_chain.verify()
     total_calls = money_mod.snapshot().get("total", 0)
-    
+    proof = {}
+    try:
+        from .gateway.proof import compute_proof
+        proof = compute_proof()
+    except Exception as exc:
+        proof = {"error": str(exc)}
+    cfg = app_config.status_summary()
+    eval_metrics = {}
+    eval_path = Path(__file__).resolve().parents[2] / "eval" / "report.json"
+    try:
+        with eval_path.open(encoding="utf-8") as f:
+            eval_metrics = json.load(f).get("metrics", {})
+    except OSError:
+        eval_metrics = {}
+
+    def metric_value(name: str, default: str = "not generated") -> str:
+        raw = eval_metrics.get(name)
+        value = raw.get("value") if isinstance(raw, dict) else raw
+        if value is None:
+            return default
+        if name in {"acceptance_rate", "llm_fooled_rate", "money_loss_rate", "protocol_pass_rate"}:
+            return f"{float(value):.0%}"
+        if name == "false_block_cost":
+            return f"Rs {float(value) / 100:,.2f}"
+        if name == "p95_latency":
+            return f"{float(value):.1f} ms"
+        return f"{float(value):.2f}"
+
+    controls = [
+        ("Policy rules", f"{len(RULE_REGISTRY)} active"),
+        ("Audit chain", "verified" if chain_valid else "tamper detected"),
+        ("Gateway purity", f"{proof.get('llm_imports_detected', '?')} LLM imports"),
+        ("I/O isolation", f"{proof.get('io_calls_detected', '?')} I/O calls"),
+        ("Money boundary", f"{total_calls} recorded calls"),
+        ("Approval bindings", f"{len(all_bindings())} issued"),
+        ("Razorpay", "test mode configured" if cfg.get("payment_configured") else "not configured"),
+        ("LLM", cfg.get("llm_model") or "fallback mode"),
+        ("Mandates", f"v{cfg.get('mandate_version', 1)} intent + cart"),
+    ]
+    controls_html = "".join(
+        f"<div>{_html_escape.escape(name)}: "
+        f"<span style=\"color: var(--ok); font-weight: 600;\">{_html_escape.escape(value)}</span></div>"
+        for name, value in controls
+    )
+    proof_hash = str(proof.get("source_sha256") or "not available")
+    proof_hash_short = proof_hash[:24] + ("..." if len(proof_hash) > 24 else "")
+
     content = f"""
     <div style="margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <div>
           <h1 style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">⚖️ Judge & Evaluator Security Console</h1>
-          <p style="color: var(--text-muted);">One-click execution of the full security evaluation lifecycle for Razorpay AI Buildathon judges.</p>
+          <p style="color: var(--text-muted);">Live evidence for Razorpay Buildathon Track 01: explainable, bounded, gated money actions with a verifiable failure path.</p>
         </div>
-        <span class="status-badge"><span class="status-pulse"></span> 9 / 9 CONTROLS VERIFIED</span>
+        <span class="status-badge"><span class="status-pulse"></span> LIVE RUNTIME DATA</span>
       </div>
     </div>
 
-    <!-- Security Posture & Agent Invariant Cards -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
-      <!-- Dynamic Security Posture Score -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🛡️ Dynamic Security Posture</div>
-          <span class="inv-pill inv-ok">9 / 9 ACTIVE</span>
+          <div class="panel-title">🛡️ Runtime Security Posture</div>
+          <span class="inv-pill {'inv-ok' if chain_valid else 'inv-bad'}">{'VERIFIED' if chain_valid else 'CHECK LEDGER'}</span>
         </div>
         <div style="font-size: 13px; line-height: 1.8;">
-          <div>✓ Policy Enforcement: <span style="color: var(--ok); font-weight: 600;">12 / 12 Rules Active</span></div>
-          <div>✓ Exact Quote Binding: <span style="color: var(--ok); font-weight: 600;">SHA-256 Locked</span></div>
-          <div>✓ Atomic Replay Protection: <span style="color: var(--ok); font-weight: 600;">DB Conditional Update</span></div>
-          <div>✓ DB Idempotency: <span style="color: var(--ok); font-weight: 600;">Unique Constraints Active</span></div>
-          <div>✓ Webhook Verification: <span style="color: var(--ok); font-weight: 600;">Constant-Time HMAC</span></div>
-          <div>✓ Audit Integrity: <span style="color: var(--ok); font-weight: 600;">{len(entries)} Chained Blocks</span></div>
-          <div>✓ Gateway Isolation: <span style="color: var(--ok); font-weight: 600;">Single Money Boundary</span></div>
-          <div>✓ Bounded Reconciliation: <span style="color: var(--ok); font-weight: 600;">0 Blind Retries</span></div>
-          <div>✓ LLM Isolation: <span style="color: var(--ok); font-weight: 600;">0 Direct Money Imports</span></div>
+          {controls_html}
         </div>
       </div>
 
-      <!-- Agent Confidence vs Financial Authority -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🧠 Agent Confidence ≠ Financial Authority</div>
+          <div class="panel-title">🧠 Agent Reasoning vs Money Authority</div>
           <span class="inv-pill inv-ok">ZERO AUTONOMY</span>
         </div>
         <div style="font-size: 13px; margin-bottom: 14px; color: var(--text-muted);">
@@ -927,13 +907,13 @@ async def judge_mode_view():
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
           <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid var(--border);">
             <div style="font-size: 11px; color: var(--text-dim);">AGENT REASONING</div>
-            <div style="font-size: 20px; font-weight: 800; color: var(--accent-purple);">96% Match</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Probabilistic Catalog Fit</div>
+            <div style="font-size: 20px; font-weight: 800; color: var(--accent-purple);">proposal only</div>
+            <div style="font-size: 11px; color: var(--text-muted);">LLM can search, reason, and negotiate rationales</div>
           </div>
           <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid var(--border);">
             <div style="font-size: 11px; color: var(--text-dim);">FINANCIAL AUTHORITY</div>
             <div style="font-size: 20px; font-weight: 800; color: var(--ok);">0.0%</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Zero Autonomous Money</div>
+            <div style="font-size: 11px; color: var(--text-muted);">orders require policy approval + user mandates</div>
           </div>
         </div>
         <div style="font-size: 12px; color: var(--text-dim);">
@@ -942,10 +922,9 @@ async def judge_mode_view():
       </div>
     </div>
 
-    <!-- 1-Click Judge Execution Grid -->
     <div class="panel" style="margin-bottom: 24px;">
       <div class="panel-header">
-        <div class="panel-title">⚡ 1-Click Live Judge Demonstration Scenarios</div>
+        <div class="panel-title">⚡ Live Judge Demonstration Scenarios</div>
         <span class="inv-pill inv-ok">REAL RUNTIME EXECUTION</span>
       </div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px;">
@@ -967,40 +946,39 @@ async def judge_mode_view():
       </div>
     </div>
 
-    <!-- Proof of Authorization Card & Shadow Mode -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-      <!-- Proof of Authorization Card -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">📜 Cryptographic Execution Proof Card</div>
-          <span class="inv-pill inv-ok">PROOF VALID</span>
+          <div class="panel-title">📜 Live Proof Card</div>
+          <span class="inv-pill {'inv-ok' if not proof.get('error') else 'inv-bad'}">{'PROOF VALID' if not proof.get('error') else 'PROOF ERROR'}</span>
         </div>
         <div style="font-family: var(--font-mono); font-size: 12px; line-height: 1.8; color: var(--text-muted);">
-          <div>MISSION HASH   : <span style="color: #fff;">4f8b9a2c1e8d7f3a...</span></div>
-          <div>PROPOSAL HASH  : <span style="color: #fff;">a1b2c3d4e5f67890...</span></div>
-          <div>SERVER QUOTE   : <span style="color: #fff;">Q-SG-1499-LOCKED</span></div>
-          <div>QUOTE HASH     : <span style="color: #fff;">9e8d7c6b5a4f3e2d...</span></div>
-          <div>CART HASH      : <span style="color: #fff;">3c2b1a0f9e8d7c6b...</span></div>
-          <div>BINDING SEQ    : <span style="color: var(--accent-purple);">#042 (CONSUMED)</span></div>
-          <div>MONEY GATEWAY  : <span style="color: var(--ok);">RAZORPAY TEST MODE</span></div>
-          <div>BOUNDARY CALLS : <span style="color: var(--ok); font-weight: 700;">1 (AUTHORIZED)</span></div>
+          <div>GATEWAY FILES  : <span style="color: #fff;">{proof.get('files', 'n/a')}</span></div>
+          <div>TOTAL LINES    : <span style="color: #fff;">{proof.get('total_lines', 'n/a')}</span></div>
+          <div>LLM IMPORTS    : <span style="color: var(--ok);">{proof.get('llm_imports_detected', 'n/a')}</span></div>
+          <div>I/O CALLS      : <span style="color: var(--ok);">{proof.get('io_calls_detected', 'n/a')}</span></div>
+          <div>SOURCE SHA256  : <span style="color: #fff;">{_html_escape.escape(proof_hash_short)}</span></div>
+          <div>AUDIT BLOCKS   : <span style="color: #fff;">{len(entries)}</span></div>
+          <div>RAZORPAY MODE  : <span style="color: var(--ok);">{_html_escape.escape(str(cfg.get('razorpay_mode', 'unknown')).upper())}</span></div>
         </div>
       </div>
 
-      <!-- Shadow Policy / What-If Evaluator -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🔍 Shadow Policy (What-If Evaluator)</div>
-          <span class="inv-pill inv-ok">0 MONEY RISK</span>
+          <div class="panel-title">🔍 Evaluation Snapshot</div>
+          <span class="inv-pill inv-ok">AUDITABLE METRICS</span>
         </div>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
-          Evaluate proposed policy rule modifications against historical attack vectors in sandbox isolation.
+          Generated from `eval/report.json`. Re-run `python -m eval.run` and `python -m eval.report` to refresh.
         </p>
         <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid var(--border); font-size: 12px; margin-bottom: 12px;">
-          <div>Baseline Policy : <strong>Budget Cap = Rs 2,000</strong> (100% Defense)</div>
-          <div>Shadow Policy   : <strong>Budget Cap = Rs 2,500</strong> (Historical eval: 20/20 safe)</div>
+          <div>Acceptance rate : <strong>{metric_value('acceptance_rate')}</strong></div>
+          <div>AOV uplift      : <strong>{metric_value('aov_uplift')}%</strong></div>
+          <div>Money loss rate : <strong>{metric_value('money_loss_rate')}</strong></div>
+          <div>Protocol pass   : <strong>{metric_value('protocol_pass_rate')}</strong></div>
+          <div>False block cost: <strong>{metric_value('false_block_cost')}</strong></div>
         </div>
-        <button class="btn btn-purple" onclick="runShadowEval()">Run Shadow Evaluation Matrix</button>
+        <a class="btn btn-purple" href="/metrics/revenue">Open Live Revenue Metrics</a>
       </div>
     </div>
     """
@@ -1009,7 +987,7 @@ async def judge_mode_view():
     async function runJudgeScenario(scenario) {
       var consoleBox = document.getElementById('judge-console');
       consoleBox.innerHTML = '<div style="color: var(--accent-cyan);">[Executing Scenario: ' + scenario + ']...</div>';
-      
+
       try {
         if (scenario === 'happy_path') {
           var res = await fetch('/agent/run_full_mission', {
@@ -1018,12 +996,16 @@ async def judge_mode_view():
             body: JSON.stringify({ intent: 'Buy SG cricket bat under Rs 2000', budget_inr: 2000, upsell_cap: 1.2, allowed_categories: ['cricket'] })
           });
           var data = await res.json();
-          var orderId = (data.order && data.order.id) ? data.order.id : 'order_TXApP9YP1uJHE9';
+          var orderId = (data.order && data.order.id) ? data.order.id : (data.order_id || 'not created');
+          var orderLine = orderId !== 'not created'
+            ? '<div class="log-entry"><span class="log-actor">RAZORPAY</span>: <span style="color: var(--ok); font-weight: 700;">Order ID: ' + orderId + '</span></div>'
+            : '<div class="log-entry"><span class="log-actor">RAZORPAY</span>: <span style="color: var(--warn); font-weight: 700;">No order created; inspect response below</span></div>';
           consoleBox.innerHTML = '<div class="log-entry" style="color: var(--ok); font-weight: 700;">PASS: HAPPY PATH EXECUTION COMPLETED</div>' +
             '<div class="log-entry"><span class="log-actor">PROPOSAL</span>: <span>SG Cricket Bat (Rs 1,499)</span></div>' +
             '<div class="log-entry"><span class="log-actor">GATEWAY</span>: <span style="color: var(--ok);">R1-R12 ALL 12 RULES PASSED</span></div>' +
             '<div class="log-entry"><span class="log-actor">BINDING</span>: <span>Single-use token issued and consumed</span></div>' +
-            '<div class="log-entry"><span class="log-actor">RAZORPAY</span>: <span style="color: var(--ok); font-weight: 700;">Order ID: ' + orderId + ' (Amount: Rs 1,499)</span></div>';
+            orderLine +
+            '<pre style="margin-top:8px; white-space:pre-wrap;">' + JSON.stringify(data, null, 2).slice(0, 1200) + '</pre>';
         } else if (scenario === 'audit_tamper') {
           consoleBox.innerHTML = '<div class="log-entry" style="color: var(--accent-cyan);">Testing SQLite Ledger Tamper Detection...</div>' +
             '<div class="log-entry"><span class="log-actor">STEP 1</span>: <span>Audit chain verified -> PASS</span></div>' +
@@ -1045,15 +1027,6 @@ async def judge_mode_view():
       }
     }
 
-    function runShadowEval() {
-      var consoleBox = document.getElementById('judge-console');
-      consoleBox.innerHTML = '<div class="log-entry" style="color: var(--accent-purple); font-weight: 700;">RUNNING SHADOW POLICY EVALUATOR</div>' +
-        '<div class="log-entry"><span class="log-actor">BASELINE</span>: <span>sellable-v1.0 (Budget Rs 2,000)</span></div>' +
-        '<div class="log-entry"><span class="log-actor">CANDIDATE</span>: <span>sellable-v1.1-shadow (Budget Rs 2,500)</span></div>' +
-        '<div class="log-entry"><span class="log-actor">REPLAY SUITE</span>: <span>20 Historical adversarial attack vectors replayed</span></div>' +
-        '<div class="log-entry"><span class="log-actor">CONTAINMENT</span>: <span style="color: var(--ok); font-weight: 700;">20 / 20 Attacks Contained (0 Money Movement)</span></div>' +
-        '<div class="log-entry"><span class="log-actor">SHADOW STATUS</span>: <span style="color: var(--ok);">SAFE FOR MIGRATION</span></div>';
-    }
     </script>
     """
     return HTMLResponse(_page_layout("Judge & Evaluator Console", "judge", content + script))

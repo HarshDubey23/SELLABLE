@@ -119,7 +119,7 @@ def main() -> int:
 
     # 2. mission (never fake a signature)
     mission_path = _find_mission_file(args.mission)
-    with open(mission_path, "r", encoding="utf-8") as f:
+    with open(mission_path, encoding="utf-8") as f:
         mission = json.load(f)
     key = os.environ.get("MISSION_HMAC_KEY", "").encode()
     if not key:
@@ -218,7 +218,7 @@ def main() -> int:
     order_body_resp = order.body or {}
     order_id = (order_body_resp.get("order_id")
                 or (order_body_resp.get("order") or {}).get("id") or "")
-    amount_paise = order_body_resp.get("amount_paise", total_paise)
+    order_body_resp.get("amount_paise", total_paise)
     log("merchant", "order", json.dumps(order_body_resp)[:140])
 
     # 7. bounded payment poll

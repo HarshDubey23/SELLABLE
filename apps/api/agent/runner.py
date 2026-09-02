@@ -32,7 +32,8 @@ async def run_mission_endpoint(mission_data: dict | None = None):
     # The custody invariant is preserved for all non-demo callers.
     sig = mission_data.get("signature", "")
     if sig == "__server_will_resign__" or sig == "__demo__":
-        from ..gateway.mission_verify import dumps as _dumps, sign_mission as _sign
+        from ..gateway.mission_verify import dumps as _dumps
+        from ..gateway.mission_verify import sign_mission as _sign
         tmp = {k: v for k, v in mission_data.items() if k != "signature"}
         mission_data["signature"] = _sign(_dumps(tmp))
 

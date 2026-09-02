@@ -1,7 +1,8 @@
-﻿# -*- coding: utf-8 -*-
-import pytest
+﻿import pytest
+
+from apps.api.gateway_service import GatewayException, GatewayMode, SimulatorGateway
 from apps.api.money_types import Money, MoneyError
-from apps.api.gateway_service import SimulatorGateway, GatewayMode, GatewayException
+
 
 def test_money_creation_and_formatting():
     m = Money.from_inr(1999)

@@ -117,7 +117,7 @@ def register(seq: int, *, mission_id: str, proposal_hash: str,
     now_ts = now_ts if now_ts is not None else int(time.time())
     expires_at = now_ts + ttl_seconds
     skus_json = json.dumps(skus)
-    
+
     store.execute(
         "INSERT INTO bindings (seq, mission_id, proposal_hash, cart_hash, quote_id, amount_paise, currency, skus, mandate_version, issued_at, expires_at, consumed_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
@@ -171,21 +171,21 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
     if row is None:
         money_counter.record("binding_miss", seq=seq)
         return False, "BINDING_NOT_FOUND", None
-    
+
     b = _row_to_binding(row)
     if row["consumed_at"] is not None:
         money_counter.record("binding_consumed", seq=seq)
         return False, "BINDING_CONSUMED", b
-        
+
     ok, reason = b.matches_money(
         mission_id=mission_id, proposal_hash=proposal_hash,
         cart_hash=cart_hash, quote_id=quote_id, amount_paise=amount_paise,
         currency=currency, skus=skus, now_ts=now_ts)
-        
+
     if not ok:
         money_counter.record(f"binding_{reason.lower()}", seq=seq)
         return False, reason, b
-        
+
     # Mark as consumed atomically
     now_ts_consumed = now_ts if now_ts is not None else int(time.time())
     affected = store.execute_rowcount(
