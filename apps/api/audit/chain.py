@@ -21,6 +21,7 @@ import hashlib
 import json
 import threading
 import time
+from pathlib import Path
 
 from ..store import db as store
 
@@ -189,7 +190,8 @@ def verify(db_path: str | None = None) -> bool:
     - prev_hash MUST be "0" * 64
     - hash MUST match _hash(genesis_entry)
     """
-    entries_to_check = _load_entries(db_path) if db_path else _chain
+    p = db_path if db_path else store.db_path()
+    entries_to_check = _load_entries(p) if (p and Path(p).exists()) else _chain
     if not entries_to_check:
         return True
     # Genesis must be first entry

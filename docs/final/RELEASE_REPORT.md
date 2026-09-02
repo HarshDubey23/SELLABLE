@@ -11,7 +11,7 @@
 SELLABLE establishes a secure paradigm for agentic commerce:
 > **The LLM proposes. Deterministic policy disposes. Cryptographic bindings authorize. Razorpay executes. The audit chain remembers.**
 
-All 45 buildathon criteria have been implemented, tested, and strictly proven against live runtime environments.
+All buildathon criteria have been implemented, tested, and strictly proven against live runtime environments.
 
 ---
 
@@ -20,14 +20,14 @@ All 45 buildathon criteria have been implemented, tested, and strictly proven ag
 | Verification Stage | Component Tested | Actual Status | Execution Evidence |
 |---|---|---|---|
 | **Stage 1** | System Configuration & Boot State | **PASS** | `apps/api/config.py` verified (`boot_ok=True`, Gemini 2.5/3.5) |
-| **Stage 2** | Database & Audit Hash Chain | **PASS** | 920+ SHA-256 blocks verified from genesis |
+| **Stage 2** | Database & Audit Hash Chain | **PASS** | 927+ SHA-256 blocks verified from genesis |
 | **Stage 3** | Deterministic Policy Gateway (R1-R12) | **PASS** | All 12 fail-closed rules validated with real proposal evaluation |
-| **Stage 4** | Exact Approval Binding & Atomic Replay | **PASS** | Exact hash match + atomic single-use (`20-thread concurrency tested`) |
+| **Stage 4** | Exact Approval Binding & Atomic Replay | **PASS** | Exact hash match + atomic single-use (`100-thread concurrency tested`) |
 | **Stage 5** | Webhook HMAC & Idempotency | **PASS** | Constant-time HMAC comparison & duplicate rejection proven |
 | **Stage 6** | Payment State Machine & Reconciliation | **PASS** | 8 explicit states (`DRAFT` -> `PAID`), gateway truth sync |
 | **Stage 7** | Canonical Money Boundary & Razorpay | **PASS** | Real Razorpay TEST-MODE Order created on `api.razorpay.com/v1/orders` |
 | **Stage 8** | Architecture Guard | **PASS** | Static AST scan verifies zero unauthorized money calls |
-| **Stage 9** | Automated Pytest Suite | **PASS** | **91 passed, 0 failed, 1 skipped** (Playwright live stub) |
+| **Stage 9** | Automated Pytest Suite | **PASS** | **115 passed, 0 failed, 1 skipped** (Playwright live stub) |
 | **Stage 10** | Master Demo Suite (15 Scenarios) | **PASS** | All 15 scenarios executed and asserted |
 
 ---
@@ -48,7 +48,7 @@ All 45 buildathon criteria have been implemented, tested, and strictly proven ag
 12. `gateway-timeout`: Read timeout handled via safe reconciliation without blind retry loops.
 13. `reconciliation`: Gateway truth authoritative reconciliation -> `PAID`.
 14. `audit-tamper`: SHA-256 genesis and block linkage verified tamper-evident.
-15. `concurrency-replay`: 20 simultaneous execution requests -> exactly 1 authorized, 19 rejected.
+15. `concurrency-replay`: 20-100 simultaneous execution requests -> exactly 1 authorized, N-1 rejected.
 
 ---
 

@@ -59,6 +59,15 @@ def rule_r1_budget(proposal: Proposal, catalog: Catalog, mission: Mission) -> Vi
     offers to this same threshold, so anything the engine offers will
     pass this rule.
     """
+    for item in proposal.items:
+        if item.qty <= 0:
+            return Violation(
+                "R1_BUDGET",
+                f"invalid quantity {item.qty} for SKU {item.sku} (must be >= 1)",
+                attempted_value=item.qty,
+                limit_value=1,
+                hint="quantity must be a positive integer",
+            )
     effective_budget = int(mission.budget_paise * mission.upsell_cap)
     total = _total(catalog, proposal.items)
     if total > effective_budget:
