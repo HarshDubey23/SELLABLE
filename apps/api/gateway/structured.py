@@ -18,6 +18,7 @@ INVARIANTS:
 from __future__ import annotations
 
 import time as _time
+from collections.abc import Callable
 from typing import Any
 
 from . import rules as R
@@ -47,7 +48,7 @@ RULE_INFO: list[dict[str, Any]] = [
 ]
 
 
-def _check(rule_id: str, label: str, fn) -> dict[str, Any]:
+def _check(rule_id: str, label: str, fn: Callable[[], Any]) -> dict[str, Any]:
     """Run one rule, swallow exceptions as FAIL-CLOSED."""
     try:
         v = fn()
@@ -125,20 +126,20 @@ def evaluate_full(*, mission: Mission | None,
     effective_budget = int(mission.budget_paise * mission.upsell_cap)
     baseline = min((i.price_paise * i.qty for i in proposal.items), default=0)
 
-    def r9(): return R.rule_r9_signature(mission, verify_fn)
-    def r10(): return R.rule_r10_expiry(mission, now_ts)
-    def r8(): return R.rule_r8_abort(mission.mission_id, aborted)
-    def r1(): return R.rule_r1_budget(proposal, catalog, mission)
-    def r2(): return R.rule_r2_forbidden(proposal, catalog, mission)
-    def r5(): return R.rule_r5_scope(proposal, catalog, mission)
-    def r4(): return R.rule_r4_upsell_cap(proposal, catalog, mission, baseline)
-    def r3(): return R.rule_r3_price_drift(proposal, catalog)
-    def r11(): return rule_r11_negotiation_bound(proposal, catalog, mission)
-    def r12(): return rule_r12_protocol_scope(
+    def r9() -> Any: return R.rule_r9_signature(mission, verify_fn)
+    def r10() -> Any: return R.rule_r10_expiry(mission, now_ts)
+    def r8() -> Any: return R.rule_r8_abort(mission.mission_id, aborted)
+    def r1() -> Any: return R.rule_r1_budget(proposal, catalog, mission)
+    def r2() -> Any: return R.rule_r2_forbidden(proposal, catalog, mission)
+    def r5() -> Any: return R.rule_r5_scope(proposal, catalog, mission)
+    def r4() -> Any: return R.rule_r4_upsell_cap(proposal, catalog, mission, baseline)
+    def r3() -> Any: return R.rule_r3_price_drift(proposal, catalog)
+    def r11() -> Any: return rule_r11_negotiation_bound(proposal, catalog, mission)
+    def r12() -> Any: return rule_r12_protocol_scope(
         proposal, catalog, protocol_scope,
         merchant_id=merchant_id, now_ts=now_ts)
-    def r7(): return R.rule_r7_allowlist(merchant_id, allowlist)
-    def r6(): return R.rule_r6_rate_limit(mission.mission_id, state, now_ts)
+    def r7() -> Any: return R.rule_r7_allowlist(merchant_id, allowlist)
+    def r6() -> Any: return R.rule_r6_rate_limit(mission.mission_id, state, now_ts)
 
     runners = [
         ("R9_SIGNATURE",          "Signature",      r9),
