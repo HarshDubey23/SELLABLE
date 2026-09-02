@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/gateway/test_inv1_binding.py — INV-1 binding persistence
 """
 import time, pytest
@@ -120,3 +120,45 @@ def test_binding_expired():
     )
     assert not ok
     assert code == "BINDING_EXPIRED"
+
+
+def test_concurrent_atomic_binding_consumption():
+    """Phase 5: 20 concurrent identical execution attempts on 1 binding. Exactly 1 passes, 19 rejected."""
+    import concurrent.futures
+
+    now = int(time.time())
+    seq = 400
+    approval.register(
+        seq=seq,
+        mission_id="mission-CONCUR",
+        proposal_hash="e" * 64,
+        cart_hash="e" * 64,
+        quote_id="Q-CONCUR",
+        amount_paise=1000,
+        currency="INR",
+        skus=[("SKU-X", 1)],
+        now_ts=now,
+    )
+
+    def attempt_verify():
+        ok, code, _ = approval.verify(
+            seq=seq,
+            mission_id="mission-CONCUR",
+            proposal_hash="e" * 64,
+            cart_hash="e" * 64,
+            quote_id="Q-CONCUR",
+            amount_paise=1000,
+            currency="INR",
+            skus=[("SKU-X", 1)],
+            now_ts=now + 1,
+        )
+        return ok, code
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(attempt_verify) for _ in range(20)]
+        results = [f.result() for f in futures]
+
+    passed_count = sum(1 for ok, _ in results if ok is True)
+    rejected_count = sum(1 for ok, _ in results if ok is False)
+    assert passed_count == 1
+    assert rejected_count == 19

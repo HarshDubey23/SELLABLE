@@ -161,6 +161,18 @@ def execute(sql: str, params: tuple = ()) -> int:
             conn.close()
 
 
+def execute_rowcount(sql: str, params: tuple = ()) -> int:
+    """Execute a write statement. Returns rowcount (number of rows affected). Thread-safe."""
+    with _lock:
+        conn = _connect()
+        try:
+            cur = conn.execute(sql, params)
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()
+
+
 def query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
     """Execute a read statement. Returns list of dicts. Thread-safe."""
     with _lock:

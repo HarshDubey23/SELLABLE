@@ -186,9 +186,16 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
         money_counter.record(f"binding_{reason.lower()}", seq=seq)
         return False, reason, b
         
-    # Mark as consumed
+    # Mark as consumed atomically
     now_ts_consumed = now_ts if now_ts is not None else int(time.time())
-    store.execute("UPDATE bindings SET consumed_at = ? WHERE seq = ?", (now_ts_consumed, seq))
+    affected = store.execute_rowcount(
+        "UPDATE bindings SET consumed_at = ? WHERE seq = ? AND consumed_at IS NULL",
+        (now_ts_consumed, seq)
+    )
+    if affected != 1:
+        money_counter.record("binding_concurrent_consumed", seq=seq)
+        return False, "BINDING_CONSUMED", b
+
     return True, "OK", b
 
 

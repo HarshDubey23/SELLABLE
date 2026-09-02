@@ -2,10 +2,11 @@
 import sys
 import subprocess
 import os
+import time
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Add project root to sys.path and load .env
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
@@ -20,7 +21,7 @@ def main():
     results = {}
     
     # 1. Environment & Config
-    print("\n[1/7] Verifying Environment & Configuration...")
+    print("\n[1/8] Verifying Environment & Configuration...")
     try:
         from apps.api.config import status_summary, refresh
         refresh()
@@ -33,7 +34,7 @@ def main():
         results["Environment"] = "FAIL"
 
     # 2. Database & Genesis Verification
-    print("\n[2/7] Verifying Database & Audit Genesis...")
+    print("\n[2/8] Verifying Database & Audit Genesis...")
     try:
         from apps.api.store import db as store
         from apps.api.audit import chain as audit_chain
@@ -45,19 +46,19 @@ def main():
         results["Database & Audit"] = "FAIL"
 
     # 3. Policy Gateway R1-R12 Invariants
-    print("\n[3/7] Verifying Deterministic Policy Gateway (R1-R12)...")
+    print("\n[3/8] Verifying Deterministic Policy Gateway (R1-R12)...")
     try:
         from apps.api.gateway import engine
         from apps.api.gateway.types import Mission, Proposal, ProposalItem, Decision
         from apps.api.products import CATALOG
         
-        # Test valid evaluation
+        # Valid evaluation
         m = Mission(mission_id="MSN-TEST-V", intent="buy cricket bat", budget_paise=200000, allowed_categories=("cricket",), forbidden_categories=(), upsell_cap=1.2, expires_at=2000000000, signature="test")
         p = Proposal(mission_id="MSN-TEST-V", items=(ProposalItem(sku="BAT-001", qty=1, price_paise=149900),))
         verd = engine.evaluate(mission=m, proposal=p, catalog=CATALOG, verify_fn=lambda *a: True)
         assert verd.decision == Decision.APPROVE
         
-        # Test overbudget evaluation
+        # Overbudget evaluation
         m_bad = Mission(mission_id="MSN-TEST-V2", intent="buy cricket bat", budget_paise=100000, allowed_categories=("cricket",), forbidden_categories=(), upsell_cap=1.0, expires_at=2000000000, signature="test")
         p_bad = Proposal(mission_id="MSN-TEST-V2", items=(ProposalItem(sku="BAT-001", qty=1, price_paise=149900),))
         verd_bad = engine.evaluate(mission=m_bad, proposal=p_bad, catalog=CATALOG, verify_fn=lambda *a: True)
@@ -71,7 +72,7 @@ def main():
         results["Gateway (R1-R12)"] = "FAIL"
 
     # 4. Approval Binding & Execution Boundary
-    print("\n[4/7] Verifying Approval Binding Security Invariant...")
+    print("\n[4/8] Verifying Approval Binding Security Invariant...")
     try:
         from apps.api.approval import verify as verify_binding
         # Unapproved / mismatched seq must fail
@@ -94,7 +95,7 @@ def main():
         results["Approval Binding"] = "FAIL"
 
     # 5. Attack Lab Scenarios (0 Money Calls Invariant)
-    print("\n[5/7] Verifying Attack Lab Scenarios...")
+    print("\n[5/8] Verifying Attack Lab Scenarios...")
     try:
         from apps.api.attack import SCENARIOS
         assert len(SCENARIOS) >= 8
@@ -105,7 +106,7 @@ def main():
         results["Attack Lab"] = "FAIL"
 
     # 6. Webhook HMAC & Idempotency
-    print("\n[6/7] Verifying Webhook HMAC & Idempotency...")
+    print("\n[6/8] Verifying Webhook HMAC & Idempotency...")
     try:
         from apps.api.webhook.receiver import router
         assert router is not None
@@ -115,11 +116,34 @@ def main():
         print(f"  -> Webhook: FAIL ({e})")
         results["Webhook HMAC"] = "FAIL"
 
-    # 7. Automated Pytest Suite
-    print("\n[7/7] Running Complete Pytest Suite (65 Invariant Tests)...")
+    # 7. Real Razorpay Test Mode Order Execution
+    print("\n[7/8] Verifying Real Razorpay TEST-MODE API Integration...")
+    try:
+        from apps.api import razorpay_client
+        now = int(time.time())
+        idem = razorpay_client.derive_idempotency_key("verify", now)
+        order = razorpay_client.create_order(
+            amount_paise=149900,
+            receipt=f"rcpt_vfy_{now}",
+            notes={"purpose": "strict_verification"},
+            idempotency_key=idem
+        )
+        order_id = order.get("id")
+        assert order_id and order_id.startswith("order_")
+        print(f"  -> Razorpay Mode: TEST")
+        print(f"  -> Real Test Order Created: {order_id} (Amount: Rs {order.get('amount')/100:,.0f})")
+        results["Razorpay Test Mode"] = "PASS"
+    except Exception as e:
+        print(f"  -> Razorpay API Error: FAIL ({e})")
+        results["Razorpay Test Mode"] = "FAIL"
+
+    # 8. Automated Pytest Suite
+    print("\n[8/8] Running Complete Automated Test Suite...")
     res = subprocess.run([sys.executable, "-m", "pytest", "-q"], capture_output=True, text=True)
     if res.returncode == 0:
-        print("  -> Pytest Suite: PASS (65/65 tests passed)")
+        match = re.search(r"(\d+)\s+passed", res.stdout)
+        count_str = match.group(1) if match else "all"
+        print(f"  -> Pytest Suite: PASS ({count_str} tests passed)")
         results["Automated Tests"] = "PASS"
     else:
         print(f"  -> Pytest Suite: FAIL\n{res.stdout}\n{res.stderr}")
