@@ -68,19 +68,19 @@ class ApprovalBinding:
         """
         if self.is_expired(now_ts):
             return False, "BINDING_EXPIRED"
-        if mission_id and self.mission_id != mission_id:
+        if self.mission_id != mission_id:
             return False, "MISSION_MISMATCH"
-        if proposal_hash and self.proposal_hash != proposal_hash:
+        if self.proposal_hash != proposal_hash:
             return False, "PROPOSAL_HASH_MISMATCH"
-        if cart_hash and self.cart_hash != cart_hash:
+        if self.cart_hash != cart_hash:
             return False, "CART_HASH_MISMATCH"
-        if self.quote_id and quote_id and self.quote_id != quote_id:
+        if self.quote_id != quote_id:
             return False, "QUOTE_MISMATCH"
-        if amount_paise and self.amount_paise != amount_paise:
+        if self.amount_paise != amount_paise:
             return False, "AMOUNT_MISMATCH"
-        if currency and self.currency != currency:
+        if self.currency != currency:
             return False, "CURRENCY_MISMATCH"
-        if skus and tuple(sorted(skus)) != self.sku_set:
+        if tuple(sorted(skus)) != self.sku_set:
             return False, "SKU_SET_MISMATCH"
         return True, "OK"
 

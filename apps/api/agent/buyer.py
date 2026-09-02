@@ -574,8 +574,7 @@ Propose which items to buy:"""
         # Checkout's browser would (public-key POST /v1/payments).
         # No DOM automation anywhere in this loop.
         trace.emit("buyer_agent", "payment_initiated",
-                   f"Attempting UPI payment on {order_id} via "
-                   f"api.razorpay.com")
+                   f"Attempting payment on {order_id} via PaymentGateway")
 
         from .recovery import run_recovery
 
