@@ -19,6 +19,7 @@ from .demo import router as demo_router
 from .demo_capture import router as capture_router
 from .demo_ui import router as demo_ui_router
 from .gateway.proof import compute_proof
+from .growth import growth_router
 from .manifest import router as manifest_router
 from .metrics.api import router as metrics_router
 from .mission_router import router as mission_router
@@ -80,6 +81,8 @@ app.include_router(ap2_router)
 app.include_router(uap_router)
 app.include_router(x402_router)
 print("[BOOT] protocol adapters: NPCI UAP/ACP/AP2 live, x402 honest 501 stub")
+app.include_router(growth_router)
+print("[BOOT] merchant growth & market intelligence engine: live at /growth")
 
 _boot_status = status_summary()
 print(f"[BOOT] config status: {_boot_status}")

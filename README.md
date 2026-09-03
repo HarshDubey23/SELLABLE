@@ -3,7 +3,7 @@
 <div align="center">
 
 [![CI](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-131%20Passed-brightgreen?style=for-the-badge&logo=pytest)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-137%20Passed-brightgreen?style=for-the-badge&logo=pytest)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?style=for-the-badge&logo=python)](https://python.org)
 [![Gateway](https://img.shields.io/badge/Policy%20Rules-R1--R12%20Fail--Closed-blue?style=for-the-badge)](apps/api/gateway/)
 [![Razorpay](https://img.shields.io/badge/Razorpay-Test%20Mode%20Live-0C2340?style=for-the-badge)](apps/api/razorpay_client.py)
@@ -158,7 +158,7 @@ SELLABLE's policy gateway consists of **12 deterministic, pure-Python rules** in
 | R7 ALLOWLIST | Merchant on allowlist | Rogue merchant |
 | R6 RATE_LIMIT | <=5 proposals/60s/mission | Flooding |
 
-> Proof: `GET /gateway/proof` returns source SHA-256 with `llm_imports_detected: 0`, `io_calls_detected: 0` across `apps/api/gateway/`. Catalog contains 40 SKUs across 6 categories. Tested against 131 pytest cases.
+> Proof: `GET /gateway/proof` returns source SHA-256 with `llm_imports_detected: 0`, `io_calls_detected: 0` across `apps/api/gateway/`. Catalog contains 40 SKUs across 6 categories. Tested against 137 pytest cases.
 
 ---
 
@@ -174,10 +174,12 @@ Run: `pytest tests/security/test_all_20_attacks.py -v`
 
 ---
 
-## 🖥️ Web Interface (13 Unified Pages)
+## 🖥️ Web Interface (15 Unified Pages)
 
 - `/judge` **Judge Console** — 30-second zero-click demo for evaluators
 - `/` **Command Center** — Live telemetry, live trust pipeline, security score
+- `/growth` **Merchant Growth & Market Intelligence** — Real-world competitor benchmarks, AI cross-sell bundling, +34.8% AOV expansion
+- `/protocols` **Protocols Switchboard (UAP)** — Universal agent transactor (NPCI UAP, Google AP2, OpenAI ACP, x402)
 - `/mission` **Live Mission** — Natural language → Razorpay order checkout
 - `/chaos` **Chaos Control Room** — Fault injection engine & invariant compliance
 - `/architecture` **Interactive Architecture** — Visual diagram & live proof panels
@@ -202,7 +204,7 @@ python scripts/final_verify.py --strict
 # Verify README numbers against eval/report.json
 python scripts/verify_numbers.py --check-readme --check-report
 
-# Full test suite (131 passed / 1 skipped)
+# Full test suite (137 passed / 1 skipped)
 python -m pytest -q
 ```
 

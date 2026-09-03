@@ -20,6 +20,7 @@ _NAV_ITEMS = [
     ("audit", "/audit-ui", "Audit Ledger"),
     ("gateway", "/gateway-ui", "Policy Matrix"),
     ("protocols", "/protocols", "Protocols (UAP)"),
+    ("growth", "/growth", "Merchant Growth"),
     ("architecture", "/architecture", "Architecture"),
     ("products", "/products", "Catalog"),
     ("metrics", "/metrics", "Metrics"),
