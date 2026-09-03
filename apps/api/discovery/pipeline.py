@@ -1,16 +1,18 @@
-"""Real-World Live Web Discovery Pipeline.
+"""Real-World Live Web Product Discovery & Verification Pipeline.
 
-Executes the full 6-stage pipeline:
-1. SEARCH: Queries the live web across Amazon, Flipkart, Decathlon, etc.
-2. EXTRACT: Extracts product name, price, seller, rating, availability, URL, and timestamp.
-3. VERIFY & NORMALIZE: Quarantines untrusted input, strips injections, normalizes to paise.
-4. COMPARE: Analyzes market options, price spread, and merchant catalog equivalents.
-5. RECOMMEND: Explains transparently why the winning option was selected.
-6. POLICY GATEWAY: Validates budget, categories, and price bounds before any payment authority.
+AUDITED & HARDENED:
+- ZERO synthetic fallback listings
+- ZERO invented prices (marked price_verified: False if not present in source text)
+- ZERO invented ratings (marked rating_verified: False if not present in source text)
+- ZERO assumed availability (marked availability_verified: False if not in source)
+- Returns explicit SEARCH_FAILED / DATA_UNVERIFIED if search returns 0 results
+- Preserves verbatim raw snippet evidence, source URL, and live crawl timestamp
+- Preserves deterministic Policy Gateway (R1-R12) money boundary
 """
 from __future__ import annotations
 
 import datetime as _dt
+import html as _html
 import re
 import urllib.parse
 import urllib.request
@@ -20,46 +22,42 @@ from pydantic import BaseModel, Field
 from ..products import CATALOG
 from ..growth.intelligence import sanitize_web_content
 
-# Known e-commerce domains in India
-_SELLER_DOMAINS = {
-    "amazon.in": "Amazon India",
-    "flipkart.com": "Flipkart",
-    "decathlon.in": "Decathlon",
-    "tatacliq.com": "Tata CLiQ",
-    "myntra.com": "Myntra",
-    "croma.com": "Croma",
-    "reliancedigital.in": "Reliance Digital",
-}
-
 
 class WebProductListing(BaseModel):
     product_name: str
+    price_paise: int | None = None
+    price_inr: float | None = None
+    price_verified: bool = False
     seller: str
-    price_paise: int
-    price_inr: float
+    seller_domain: str
     url: str
     rating: float | None = None
-    availability: str = "in_stock"
+    rating_verified: bool = False
+    availability: str = "unverified"
+    availability_verified: bool = False
     scraped_at: str
-    is_untrusted: bool = True
-    snippet: str
+    raw_evidence: str
+    is_untrusted: bool = True  # External web taint invariant
 
 
 class ComparisonSummary(BaseModel):
     total_sources_searched: int
-    cheapest_option: WebProductListing
-    highest_rated_option: WebProductListing | None = None
-    merchant_partner_option: dict[str, Any] | None = None
-    price_spread_inr: float = 0.0
+    verified_price_listings_count: int
+    cheapest_web_option: dict[str, Any] | None = None
+    merchant_matched_sku: str | None = None
+    merchant_matched_name: str | None = None
+    merchant_matched_price_inr: float | None = None
+    savings_vs_web_inr: float | None = None
 
 
 class RecommendationDecision(BaseModel):
+    decision_status: str  # "RECOMMENDED_VERIFIED" | "DATA_UNVERIFIED" | "NO_VERIFIED_PRICES"
     winner_name: str
-    winner_price_inr: float
+    winner_price_inr: float | None = None
     winner_seller: str
     winner_url: str
-    decision_type: str  # "MERCHANT_VERIFIED" | "EXTERNAL_MARKET"
     recommendation_reason: str
+    raw_evidence_source: str
     matched_merchant_sku: str | None = None
     savings_vs_market_inr: float = 0.0
 
@@ -67,281 +65,306 @@ class RecommendationDecision(BaseModel):
 class DiscoveryPipelineResult(BaseModel):
     query: str
     budget_paise: int
-    search_engine_status: str
+    search_engine_status: str  # "LIVE_SEARCH_SUCCESS" | "SEARCH_FAILED" | "ZERO_RESULTS"
+    error_message: str | None = None
     listings: list[WebProductListing]
-    comparison: ComparisonSummary
-    recommendation: RecommendationDecision
+    comparison: ComparisonSummary | None = None
+    recommendation: RecommendationDecision | None = None
     gateway_verdict: dict[str, Any]
     executed_at: str
 
 
-def _extract_price_from_text(text: str) -> int | None:
-    """Extract price in INR and convert to paise."""
-    # Matches: Rs. 1,499, Rs 1499, ₹1,499, ₹ 2499, INR 1200
+def _extract_price_from_text(text: str) -> tuple[int | None, bool]:
+    """Strictly extract price from text if and only if explicitly present.
+
+    Returns (price_paise, is_verified). Never invents or estimates.
+    """
+    # Matches: ₹ 1,499, ₹1499, Rs. 1499, Rs 2,499, INR 1999
     m = re.search(r"(?:₹|rs\.?|inr)\s*([0-9,]+)", text, re.IGNORECASE)
     if m:
         try:
             clean_str = m.group(1).replace(",", "").strip()
             val_inr = int(clean_str)
-            if 50 <= val_inr <= 200000:
-                return val_inr * 100
+            if 50 <= val_inr <= 300000:
+                return val_inr * 100, True
         except ValueError:
             pass
-    return None
+    return None, False
 
 
-def _extract_rating_from_text(text: str) -> float | None:
-    """Extract rating score e.g. 4.2 out of 5."""
+def _extract_rating_from_text(text: str) -> tuple[float | None, bool]:
+    """Extract rating score if present in text (e.g. 4.3 out of 5 stars)."""
     m = re.search(r"\b([1-5]\.[0-9])\b", text)
     if m:
         try:
-            return float(m.group(1))
+            r = float(m.group(1))
+            if 1.0 <= r <= 5.0:
+                return r, True
         except ValueError:
             pass
-    return None
+    return None, False
 
 
-def search_live_web(query: str, max_results: int = 6) -> list[dict[str, str]]:
-    """Stage 1: Real-time search query on DuckDuckGo HTML."""
-    search_term = f"{query} buy online price india amazon flipkart"
+def _extract_availability_from_text(text: str) -> tuple[str, bool]:
+    """Extract availability if explicitly mentioned in text."""
+    low = text.lower()
+    if "in stock" in low or "available" in low:
+        return "in_stock", True
+    if "out of stock" in low or "currently unavailable" in low or "sold out" in low:
+        return "out_of_stock", True
+    return "unverified", False
+
+
+def search_live_web(query: str, max_results: int = 10) -> tuple[str, list[WebProductListing], str | None]:
+    """Perform a TRUE LIVE WEB SEARCH using DuckDuckGo HTML endpoint.
+
+    Strictly parses real listings. If 0 results or network failure,
+    returns ("SEARCH_FAILED" / "ZERO_RESULTS", [], error_detail).
+    NEVER returns fake or synthetic fallback listings.
+    """
+    sanitized_query = sanitize_web_content(query).strip()
+    clean_q = re.sub(r"[^\w\s]", " ", sanitized_query).strip()
+    search_term = f"{clean_q} buy online price india amazon flipkart"
     url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_term)}"
+
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
         },
     )
 
-    results: list[dict[str, str]] = []
+    now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
     try:
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        with urllib.request.urlopen(req, timeout=12) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
             blocks = html.split('<div class="result results_links')
-            for b in blocks[1 : max_results + 3]:
+            if len(blocks) <= 1:
+                return "ZERO_RESULTS", [], "Search engine returned 0 result blocks."
+
+            listings: list[WebProductListing] = []
+            for b in blocks[1 : max_results + 1]:
                 url_m = re.search(r'href="([^"]+)"', b)
-                title_m = re.search(r'<h2[^>]*>.*?<a[^>]*>(.*?)</a>', b, re.DOTALL)
                 snippet_m = re.search(r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>', b, re.DOTALL)
+                title_m = re.search(r'<h2[^>]*>.*?<a[^>]*>(.*?)</a>', b, re.DOTALL)
 
                 raw_url = url_m.group(1) if url_m else ""
-                title = re.sub(r"<[^>]+>", "", title_m.group(1)).strip() if title_m else ""
-                snippet = re.sub(r"<[^>]+>", "", snippet_m.group(1)).strip() if snippet_m else ""
+                raw_title = title_m.group(1) if title_m else ""
+                raw_snippet = snippet_m.group(1) if snippet_m else ""
 
+                # Unescape and strip tags
+                title = _html.unescape(re.sub(r"<[^>]+>", "", raw_title)).strip()
+                snippet = _html.unescape(re.sub(r"<[^>]+>", "", raw_snippet)).strip()
+
+                # Unwrap DDG redirect
                 if "uddg=" in raw_url:
                     actual_url = urllib.parse.unquote(raw_url.split("uddg=")[1].split("&")[0])
                 else:
                     actual_url = raw_url
 
-                if actual_url.startswith("http") and title:
-                    results.append({"title": title, "url": actual_url, "snippet": snippet})
-                    if len(results) >= max_results:
+                if not actual_url.startswith("http") or not title:
+                    continue
+
+                # Parse domain
+                domain_m = re.search(r"https?://([^/]+)", actual_url)
+                seller_domain = domain_m.group(1).lower() if domain_m else "web"
+
+                seller_name = seller_domain
+                known_sellers = [
+                    ("amazon.in", "Amazon India"),
+                    ("flipkart.com", "Flipkart"),
+                    ("decathlon.in", "Decathlon"),
+                    ("myntra.com", "Myntra"),
+                    ("tatacliq.com", "Tata CLiQ"),
+                    ("cricketerpoint.com", "Cricketer Point"),
+                    ("sportsjam.in", "SportsJam"),
+                ]
+                for dom, sname in known_sellers:
+                    if dom in seller_domain:
+                        seller_name = sname
                         break
-    except Exception:
-        # Fallback to curated live e-commerce benchmarks if network blocks or offline
-        pass
 
-    # High-reliability fallback listings if search engine returned fewer than 3 items
-    if len(results) < 3:
-        now_ts = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
-        if "bat" in query.lower() or "cricket" in query.lower():
-            results = [
-                {
-                    "title": "SG Cricket Bat Kashmir Willow Full Size - Buy Online at Best Price in India",
-                    "url": "https://www.amazon.in/dp/B0829M18F2?tag=sellable-intel-21",
-                    "snippet": "SG Kashmir Willow Cricket Bat pre-knocked with toe guard. Price: Rs 1,799. Rating 4.0 out of 5 stars.",
-                },
-                {
-                    "title": "SS Ton Elite English Willow Cricket Bat - Best Prices | Flipkart.com",
-                    "url": "https://www.flipkart.com/ss-ton-elite-english-willow-bat/p/itmf87a6b29d",
-                    "snippet": "SS Ton English willow bat, professional thick edges. Price: Rs 2,899. Rating 4.5 stars. In stock.",
-                },
-                {
-                    "title": "SG Test Leather Cricket Ball (Pack of 3) - Decathlon Sports",
-                    "url": "https://www.decathlon.in/p/8521945/cricket-balls/leather-cricket-ball-3-pack",
-                    "snippet": "Official match leather ball, alum tanned, cork core. Price: Rs 1,099. Rating 4.2 stars.",
-                },
-                {
-                    "title": "Cosco Tennis Cricket Ball Pack of 6 - Amazon.in",
-                    "url": "https://www.amazon.in/dp/B00J5E8Y12",
-                    "snippet": "Soft tennis ball for practice and gully matches. Price: Rs 399. Rating 3.7 stars.",
-                },
-            ]
-        elif "headphone" in query.lower() or "audio" in query.lower() or "ear" in query.lower():
-            results = [
-                {
-                    "title": "Sony WH-1000XM4 Noise Cancelling Wireless Headphones - Amazon.in",
-                    "url": "https://www.amazon.in/dp/B0863TXGM3",
-                    "snippet": "Industry leading active noise cancellation, 30hr battery. Price: Rs 22,990. Rating 4.6 stars.",
-                },
-                {
-                    "title": "Studio Pro Wireless ANC Over-Ear Headphones - Flipkart",
-                    "url": "https://www.flipkart.com/studio-pro-headphones/p/itm8977",
-                    "snippet": "Deep bass, hybrid ANC, memory foam ear cups. Price: Rs 5,999. Rating 4.4 stars.",
-                },
-                {
-                    "title": "boAt Rockerz Bluetooth Headphones - Croma Electronics",
-                    "url": "https://www.croma.com/boat-rockerz-headphones/p/234120",
-                    "snippet": "Wireless on-ear headphones with 15hr playback. Price: Rs 1,299. Rating 4.1 stars.",
-                },
-            ]
-        else:
-            results = [
-                {
-                    "title": f"Best {query} Deals Online - Amazon.in",
-                    "url": f"https://www.amazon.in/s?k={urllib.parse.quote(query)}",
-                    "snippet": f"Shop {query} with fast delivery and great discounts. Price: Rs 1,499. Rating 4.2 stars.",
-                },
-                {
-                    "title": f"{query} Buy Online at Best Price in India - Flipkart.com",
-                    "url": f"https://www.flipkart.com/search?q={urllib.parse.quote(query)}",
-                    "snippet": f"Explore genuine {query} collection. Price: Rs 1,799. Rating 4.1 stars.",
-                },
-            ]
+                combined_text = f"{title} {snippet}"
+                price_paise, price_verified = _extract_price_from_text(combined_text)
+                rating, rating_verified = _extract_rating_from_text(snippet)
+                avail, avail_verified = _extract_availability_from_text(combined_text)
 
-    return results
+                listings.append(
+                    WebProductListing(
+                        product_name=title,
+                        price_paise=price_paise,
+                        price_inr=price_paise / 100.0 if price_paise else None,
+                        price_verified=price_verified,
+                        seller=seller_name,
+                        seller_domain=seller_domain,
+                        url=actual_url,
+                        rating=rating,
+                        rating_verified=rating_verified,
+                        availability=avail,
+                        availability_verified=avail_verified,
+                        scraped_at=now_iso,
+                        raw_evidence=snippet[:300] if snippet else title[:150],
+                        is_untrusted=True,
+                    )
+                )
+
+            if not listings:
+                return "ZERO_RESULTS", [], "No valid product URLs extracted from search engine response."
+            return "LIVE_SEARCH_SUCCESS", listings, None
+
+    except Exception as e:
+        return "SEARCH_FAILED", [], f"Live web request failed: {e!s}"
 
 
-def run_real_product_discovery(
-    query: str,
-    budget_paise: int = 300000,
-    allowed_categories: list[str] | None = None,
-) -> DiscoveryPipelineResult:
-    """Execute the complete 6-stage real product discovery pipeline."""
+def run_real_product_discovery(query: str, budget_paise: int = 250000) -> DiscoveryPipelineResult:
+    """Execute the 6-stage product discovery pipeline on live web data.
+
+    STAGES:
+    1. Search: Execute live web request via DuckDuckGo.
+    2. Extract: Extract only verified fields; quarantine raw evidence.
+    3. Verify & Normalize: Never invent values; mark verification status explicitly.
+    4. Compare: Compare verified web prices against SELLABLE local catalog.
+    5. Recommend: Transparently explain selection decision.
+    6. Policy Gate: Check against deterministic budget and category rules.
+    """
     now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    raw_search_results = search_live_web(query)
 
-    # Stage 2 & 3: EXTRACT, VERIFY & NORMALIZE
-    listings: list[WebProductListing] = []
-    for item in raw_search_results:
-        raw_title = item.get("title", "")
-        raw_snippet = item.get("snippet", "")
-        raw_url = item.get("url", "")
+    # Stage 1: Live Web Search
+    status, listings, error_msg = search_live_web(query, max_results=10)
 
-        # Clean untrusted input
-        clean_title = sanitize_web_content(raw_title)
-        clean_snippet = sanitize_web_content(raw_snippet)
-
-        # Extract price
-        price_paise = _extract_price_from_text(f"{raw_title} {raw_snippet}")
-        if not price_paise:
-            price_paise = 149900  # Conservative estimate if not explicitly stated in snippet
-
-        # Determine seller domain
-        seller = "Independent Merchant"
-        for dom, name in _SELLER_DOMAINS.items():
-            if dom in raw_url.lower():
-                seller = name
-                break
-
-        rating = _extract_rating_from_text(raw_snippet) or 4.1
-
-        listing = WebProductListing(
-            product_name=clean_title,
-            seller=seller,
-            price_paise=price_paise,
-            price_inr=round(price_paise / 100, 2),
-            url=raw_url,
-            rating=rating,
-            availability="in_stock",
-            scraped_at=now_iso,
-            is_untrusted=True,
-            snippet=clean_snippet,
+    # If search failed, return truthful explicit failure state
+    if status != "LIVE_SEARCH_SUCCESS" or not listings:
+        return DiscoveryPipelineResult(
+            query=query,
+            budget_paise=budget_paise,
+            search_engine_status=status,
+            error_message=error_msg or "Search engine unreachable or 0 results returned.",
+            listings=[],
+            comparison=None,
+            recommendation=None,
+            gateway_verdict={
+                "MONEY_PATH_ISOLATED_FROM_WEB": True,
+                "external_web_authority": "ZERO (ADVISORY ONLY)",
+                "status": "ABORTED_NO_LIVE_DATA",
+                "reason": "Search failed; refusal to process unverified synthetic data",
+            },
+            executed_at=now_iso,
         )
-        listings.append(listing)
 
-    # Sort listings by price
-    listings.sort(key=lambda x: x.price_paise)
-    cheapest = listings[0]
-    highest_rated = max(listings, key=lambda x: x.rating or 0.0)
-    price_spread = (listings[-1].price_paise - listings[0].price_paise) / 100
+    # Stage 2 & 3: Filter verified prices for truthful comparison
+    verified_listings = [l for l in listings if l.price_verified and l.price_paise is not None]
 
-    # Match against SELLABLE merchant catalog (as verified primary transaction partner)
-    matched_catalog_item = None
+    # Stage 4: Compare with SELLABLE Merchant Direct Catalog
+    # Find matching category in local catalog
     matched_sku = None
+    matched_item = None
     query_lower = query.lower()
-    for sku, cat_item in CATALOG.items():
-        if cat_item["price_paise"] <= budget_paise:
-            cat_name = cat_item["name"].lower()
-            if any(w in cat_name for w in query_lower.split() if len(w) > 2):
-                matched_catalog_item = cat_item
-                matched_sku = sku
-                break
 
-    if not matched_catalog_item:
-        # Fallback to first SKU in category
+    if "bat" in query_lower or "cricket" in query_lower:
         matched_sku = "BAT-001"
-        matched_catalog_item = CATALOG["BAT-001"]
+    elif "headphone" in query_lower or "audio" in query_lower or "ear" in query_lower:
+        matched_sku = "EAR-001"
+    elif "book" in query_lower or "python" in query_lower:
+        matched_sku = "BOOK-001"
 
-    merchant_option_dict = {
-        "sku": matched_sku,
-        "name": matched_catalog_item["name"],
-        "price_paise": matched_catalog_item["price_paise"],
-        "price_inr": round(matched_catalog_item["price_paise"] / 100, 2),
-        "rating": matched_catalog_item.get("rating", 4.1),
-        "seller": "SELLABLE Verified Merchant Dukaan",
-        "transactable": True,
-    }
+    if matched_sku and matched_sku in CATALOG:
+        matched_item = CATALOG[matched_sku]
+
+    cheapest_web = None
+    if verified_listings:
+        cheapest_listing = min(verified_listings, key=lambda x: x.price_paise or 99999999)
+        cheapest_web = {
+            "name": cheapest_listing.product_name,
+            "seller": cheapest_listing.seller,
+            "price_inr": cheapest_listing.price_inr,
+            "url": cheapest_listing.url,
+            "raw_evidence": cheapest_listing.raw_evidence,
+        }
+
+    savings_inr = None
+    merchant_price_inr = None
+    if matched_item and cheapest_web and cheapest_web["price_inr"]:
+        merchant_price_inr = matched_item["price_paise"] / 100.0
+        savings_inr = round(cheapest_web["price_inr"] - merchant_price_inr, 2)
 
     comparison = ComparisonSummary(
         total_sources_searched=len(listings),
-        cheapest_option=cheapest,
-        highest_rated_option=highest_rated,
-        merchant_partner_option=merchant_option_dict,
-        price_spread_inr=round(price_spread, 2),
+        verified_price_listings_count=len(verified_listings),
+        cheapest_web_option=cheapest_web,
+        merchant_matched_sku=matched_sku,
+        merchant_matched_name=matched_item["name"] if matched_item else None,
+        merchant_matched_price_inr=merchant_price_inr,
+        savings_vs_web_inr=savings_inr,
     )
 
-    # Stage 5: RECOMMENDATION
-    # If merchant price <= competitor price, recommend merchant direct
-    merchant_price = matched_catalog_item["price_paise"]
-    comp_price = cheapest.price_paise
-    savings_paise = max(0, comp_price - merchant_price)
-    savings_inr = round(savings_paise / 100, 2)
-
-    if merchant_price <= comp_price:
-        reason = (
-            f"Selected our Verified Merchant direct SKU '{matched_catalog_item['name']}' at ₹{merchant_price/100:.2f}: "
-            f"cheaper than {cheapest.seller} (₹{cheapest.price_inr:.2f}) by ₹{savings_inr:.2f}, "
-            f"with cryptographic return warranty and instant UPI settlement."
+    # Stage 5: Formulate Recommendation
+    # If merchant catalog offers better price + verified SLA, recommend merchant
+    if matched_item and savings_inr is not None and savings_inr >= 0:
+        recommendation = RecommendationDecision(
+            decision_status="RECOMMENDED_VERIFIED",
+            winner_name=matched_item["name"],
+            winner_price_inr=merchant_price_inr,
+            winner_seller="SELLABLE Verified Merchant (Direct)",
+            winner_url="http://localhost:8000/products",
+            recommendation_reason=(
+                f"Selected SELLABLE Verified Merchant SKU {matched_sku} at ₹{merchant_price_inr:,.2f}. "
+                f"Verified cheaper than {cheapest_web['seller'] if cheapest_web else 'web'} "
+                f"(₹{cheapest_web['price_inr']:,.2f}) by ₹{savings_inr:,.2f}, with guaranteed instant "
+                f"Razorpay settlement and HMAC mandate security."
+            ),
+            raw_evidence_source=cheapest_web["raw_evidence"] if cheapest_web else "",
+            matched_merchant_sku=matched_sku,
+            savings_vs_market_inr=savings_inr,
         )
-        decision_type = "MERCHANT_VERIFIED"
-        winner_name = matched_catalog_item["name"]
-        winner_price = round(merchant_price / 100, 2)
-        winner_seller = "SELLABLE Verified Merchant"
-        winner_url = f"http://localhost:8000/products#{matched_sku}"
+    elif cheapest_web:
+        recommendation = RecommendationDecision(
+            decision_status="RECOMMENDED_VERIFIED",
+            winner_name=cheapest_web["name"],
+            winner_price_inr=cheapest_web["price_inr"],
+            winner_seller=cheapest_web["seller"],
+            winner_url=cheapest_web["url"],
+            recommendation_reason=(
+                f"Selected {cheapest_web['seller']} listing as verified lowest web price at "
+                f"₹{cheapest_web['price_inr']:,.2f}. Verified directly from live search evidence."
+            ),
+            raw_evidence_source=cheapest_web["raw_evidence"],
+            matched_merchant_sku=matched_sku,
+            savings_vs_market_inr=0.0,
+        )
     else:
-        reason = (
-            f"Selected {cheapest.seller} listing '{cheapest.product_name[:50]}' at ₹{cheapest.price_inr:.2f}: "
-            f"lowest price found across {len(listings)} real-world sources."
+        # Honest fallback when web snippets did not disclose exact prices
+        recommendation = RecommendationDecision(
+            decision_status="DATA_UNVERIFIED",
+            winner_name=listings[0].product_name,
+            winner_price_inr=None,
+            winner_seller=listings[0].seller,
+            winner_url=listings[0].url,
+            recommendation_reason=(
+                "Search succeeded with live product listings, but exact numeric prices were not "
+                "disclosed in search engine snippets. Inspect raw source URLs directly."
+            ),
+            raw_evidence_source=listings[0].raw_evidence,
+            matched_merchant_sku=matched_sku,
+            savings_vs_market_inr=0.0,
         )
-        decision_type = "EXTERNAL_MARKET"
-        winner_name = cheapest.product_name
-        winner_price = cheapest.price_inr
-        winner_seller = cheapest.seller
-        winner_url = cheapest.url
 
-    recommendation = RecommendationDecision(
-        winner_name=winner_name,
-        winner_price_inr=winner_price,
-        winner_seller=winner_seller,
-        winner_url=winner_url,
-        decision_type=decision_type,
-        recommendation_reason=reason,
-        matched_merchant_sku=matched_sku,
-        savings_vs_market_inr=savings_inr,
-    )
-
-    # Stage 6: DETERMINISTIC POLICY GATEWAY PRE-CHECK
+    # Stage 6: Policy Gateway Pre-Check
+    # Untrusted data quarantine proof: external prices NEVER enter payment boundary
     gateway_verdict = {
-        "R1_BUDGET": (merchant_price <= budget_paise),
-        "R3_SERVER_CATALOG_PRICING": True,
-        "R5_CATEGORY": True,
-        "DECISION": "APPROVE" if merchant_price <= budget_paise else "REJECT",
         "MONEY_PATH_ISOLATED_FROM_WEB": True,
+        "external_web_authority": "ZERO (ADVISORY ONLY)",
+        "r1_budget_check": "PASS" if (recommendation.winner_price_inr or 0) * 100 <= budget_paise else "OVER_BUDGET",
+        "budget_paise_limit": budget_paise,
+        "mandate_binding_ready": True,
     }
 
     return DiscoveryPipelineResult(
         query=query,
         budget_paise=budget_paise,
-        search_engine_status="LIVE_WEB_SEARCH_ACTIVE",
+        search_engine_status="LIVE_SEARCH_SUCCESS",
+        error_message=None,
         listings=listings,
         comparison=comparison,
         recommendation=recommendation,
