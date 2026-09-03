@@ -11,6 +11,7 @@ from .agent.runner import router as agent_router
 from .attack import router as attack_router
 from .audit import chain as audit_chain
 from .audit.timeline import router as timeline_router
+from .chaos import ChaosFaultBusMiddleware, chaos_api_router, chaos_ui_router
 from .checkout_route import router as checkout_router
 from .config import status_summary
 from .dashboard.mission_explain import router as mission_dashboard_router
@@ -35,6 +36,9 @@ from .webhook.receiver import router as webhook_router
 
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 
+# Mount Chaos Fault Bus Middleware (Single Choke Point)
+app.add_middleware(ChaosFaultBusMiddleware)
+
 # G6: chain self-verifies at boot; tamper halts the money path
 CHAIN_OK_AT_BOOT = audit_chain.verify()
 print(f"[BOOT] audit chain verify -> {CHAIN_OK_AT_BOOT}")
@@ -56,8 +60,11 @@ app.include_router(checkout_router)
 app.include_router(agent_router)
 app.include_router(capture_router)
 app.include_router(ui_router)
+app.include_router(chaos_api_router)
+app.include_router(chaos_ui_router)
 print("[BOOT] command center UI: enabled at GET /")
 print("[BOOT] capture demo: enabled (POST /demo/capture)")
+print("[BOOT] chaos monkey engine: enabled at GET /chaos and GET /architecture")
 app.include_router(negotiation_router)
 print("[BOOT] negotiation engine: enabled (max_turns=5, floor/ceiling gated)")
 app.include_router(attack_router)
@@ -67,9 +74,8 @@ app.include_router(ap2_router)
 app.include_router(x402_router)
 print("[BOOT] protocol adapters: ACP/AP2 live, x402 honest 501 stub")
 
-
 _boot_status = status_summary()
-print(f"[BOOT] config status: { _boot_status }")
+print(f"[BOOT] config status: {_boot_status}")
 
 
 @app.get("/health")
@@ -118,6 +124,8 @@ def gateway_proof():
     audit_chain.append("system", "PROOF_EMITTED",
                        {"source_sha256": proof["source_sha256"]})
     return proof
+
+
 @app.get("/diagnostics")
 def diagnostics():
     """Phase 97 FINAL DEMO CHECKLIST ENDPOINT"""
