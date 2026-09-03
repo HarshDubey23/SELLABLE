@@ -544,8 +544,9 @@ async def mission_view():
 
       btn.disabled = true;
       btn.innerText = '⚡ Executing Mission...';
-      logBox.innerHTML = '';
+      logBox.innerHTML = '<div class="log-entry" style="color: var(--accent-cyan);">Initializing autonomous buyer agent...</div>';
       checkoutBox.style.display = 'none';
+      if (badge) badge.style.display = 'none';
 
       const payload = {
         intent: document.getElementById('m-intent').value,
@@ -562,29 +563,46 @@ async def mission_view():
         });
         const data = await res.json();
 
-        if (data.events) {
-          data.events.forEach(evt => {
+        logBox.innerHTML = '';
+        const events = data.events || (data.trace ? data.trace.events : []);
+        if (events && events.length > 0) {
+          events.forEach(evt => {
             const row = document.createElement('div');
             row.className = 'log-entry';
-            row.innerHTML = `<span class="log-time">[${new Date(evt.ts * 1000).toLocaleTimeString()}]</span> <span class="log-actor">${evt.actor}</span>: <span class="log-action">${evt.action}</span> - <span>${typeof evt.payload === 'object' ? JSON.stringify(evt.payload) : evt.payload}</span>`;
+            const timeStr = evt.ts ? new Date(evt.ts * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
+            const actor = evt.actor || 'SYS';
+            const action = evt.action || '';
+            const summary = evt.summary || (typeof evt.data === 'object' ? JSON.stringify(evt.data) : String(evt.data || ''));
+            
+            let colorCls = 'log-cyan';
+            if (actor === 'buyer_agent') colorCls = 'log-cyan';
+            else if (actor === 'gateway') colorCls = (action.includes('REJECT') || summary.includes('REJECT')) ? 'log-bad' : 'log-ok';
+            else if (actor === 'executor') colorCls = summary.includes('refused') ? 'log-bad' : 'log-ok';
+
+            row.innerHTML = '<span class="log-time">[' + timeStr + ']</span> <span class="log-actor">' + actor + '</span>: <span class="' + colorCls + '">' + action + '</span> - <span>' + summary + '</span>';
             logBox.appendChild(row);
           });
         }
 
-        if (data.order && data.order.id) {
-          checkoutBox.style.display = 'block';
-          document.getElementById('order-details-text').innerText = `Order ID: ${data.order.id} | Amount: Rs ${(data.order.amount/100).toLocaleString('en-IN')}`;
+        const orderId = (data.order && data.order.id) ? data.order.id : data.order_id;
+        const amountPaise = (data.order && data.order.amount) ? data.order.amount : (data.amount_paise || 0);
 
+        if (orderId) {
+          checkoutBox.style.display = 'block';
+          const formattedAmt = (amountPaise / 100).toLocaleString('en-IN');
+          document.getElementById('order-details-text').innerText = 'Order ID: ' + orderId + ' | Amount: Rs ' + formattedAmt;
+
+          const keyId = data.razorpay_key_id || 'rzp_test_TSttLNvLt9yUPI';
           document.getElementById('rzp-btn').onclick = function() {
             const options = {
-              key: data.razorpay_key_id || 'rzp_test_placeholder',
-              amount: data.order.amount,
+              key: keyId,
+              amount: amountPaise,
               currency: 'INR',
               name: 'SELLABLE Autonomous Commerce',
               description: 'Cryptographically Bound Order',
-              order_id: data.order.id,
+              order_id: orderId,
               handler: function (response) {
-                alert('Payment Successful! Payment ID: ' + response.razorpay_payment_id);
+                alert('Payment Captured! Payment ID: ' + response.razorpay_payment_id);
               },
               theme: { color: '#00BAF2' }
             };
@@ -592,14 +610,25 @@ async def mission_view():
             rzp.open();
           };
 
-          // Auto-trigger modal
-          document.getElementById('rzp-btn').click();
-        }
+          // Auto-trigger Razorpay modal
+          setTimeout(() => {
+            try { document.getElementById('rzp-btn').click(); } catch(e) {}
+          }, 300);
 
-        badge.style.display = 'inline-block';
-        badge.innerText = 'PROPOSAL APPROVED & BOUND';
+          if (badge) {
+            badge.style.display = 'inline-block';
+            badge.className = 'inv-pill inv-ok';
+            badge.innerText = 'PROPOSAL APPROVED & BOUND';
+          }
+        } else {
+          if (badge) {
+            badge.style.display = 'inline-block';
+            badge.className = 'inv-pill inv-bad';
+            badge.innerText = 'REJECTED (0 MONEY CALLS)';
+          }
+        }
       } catch (err) {
-        logBox.innerHTML += `<div class="log-entry" style="color: var(--bad);">Execution error: ${err.message}</div>`;
+        logBox.innerHTML += '<div class="log-entry" style="color: var(--bad);">Execution error: ' + err.message + '</div>';
       } finally {
         btn.disabled = false;
         btn.innerText = '⚡ Run Autonomous Mission';

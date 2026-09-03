@@ -3,6 +3,7 @@ HTTP endpoints for running buyer agent missions.
 """
 from fastapi import APIRouter, Depends, HTTPException
 
+from .. import config as app_config
 from ..deps import require_api_key
 from .buyer import run_mission
 from .scenarios import get_scenario, list_scenarios
@@ -120,4 +121,26 @@ async def run_full_mission_ui(payload: dict | None = None):
     sig = _sign(_dumps(mission_dict))
     mission_dict["signature"] = sig
 
-    return await run_mission(mission_dict)
+    res = await run_mission(mission_dict)
+
+    trace_dict = res.get("trace", {}) if isinstance(res, dict) else {}
+    events = trace_dict.get("events", [])
+    order_id = res.get("order_id") if isinstance(res, dict) else None
+    amount_paise = res.get("amount_paise", 0) if isinstance(res, dict) else 0
+
+    order_obj = None
+    if order_id:
+        order_obj = {"id": order_id, "amount": amount_paise}
+
+    return {
+        "ok": True,
+        "status": res.get("status", "unknown") if isinstance(res, dict) else "unknown",
+        "events": events,
+        "trace": trace_dict,
+        "order": order_obj,
+        "order_id": order_id,
+        "amount_paise": amount_paise,
+        "verdict": "APPROVED" if order_id else "REJECTED",
+        "razorpay_key_id": app_config.status_summary().get("razorpay_key_id", "rzp_test_TSttLNvLt9yUPI"),
+        "raw_response": res,
+    }
