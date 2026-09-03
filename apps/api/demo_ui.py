@@ -693,7 +693,7 @@ async function run(){
  setPill('b-warn','running <span class="dots"><span>&middot;</span><span>&middot;</span><span>&middot;</span></span>');
  $('#verdictPanel').innerHTML='<h2>Verdict</h2><p class="muted">pending&hellip;</p>';
  var id=$('#scenario').value;
- var r=await jpost('/demo/checkout/api/agent/run-scenario/'+id);
+ var r=await jpost('/api/agent/run-scenario/'+id);
  var events=normalize(r.data);
  for(var ev of events){
   if($('#moneyOnly').checked&&!isMoney(ev))continue;

@@ -1,69 +1,102 @@
-"""Single import boundary for google.genai (new SDK).
+"""Single import boundary for LLM calling.
 
-The gateway never imports this; only apps/api/demo.py does.
-Failures return error dicts, never raise.
+Rewritten to use OpenRouter for extreme speed and reliability during the demo,
+using a pool of API keys to avoid rate limits.
 """
 import os
+import random
 import re
 import time
 
+import requests
 
-def _key() -> str | None:
-    return (os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or os.environ.get("LLM_API_KEY"))
+
+def _get_keys() -> list[str]:
+    raw = os.environ.get("OPENROUTER_API_KEYS", "")
+    if raw:
+        return [k.strip() for k in raw.split(",") if k.strip()]
+    single = (
+        os.environ.get("OPENROUTER_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("LLM_API_KEY")
+    )
+    return [single] if single else []
 
 
 def _model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+    return os.environ.get("OPENROUTER_MODEL", "google/gemini-1.5-flash")
 
 
 def _fallback_models() -> list[str]:
-    """Ordered degradation when the primary model's quota is exhausted."""
-    raw = os.environ.get(
-        "GEMINI_FALLBACK_MODELS",
-        "gemini-3.5-flash,gemini-flash-latest,gemini-3-flash-preview")
-    return [m.strip() for m in raw.split(",") if m.strip()
-            and m.strip() != _model_name()]
+    return [
+        "openai/gpt-4o-mini",
+        "meta-llama/llama-3.1-8b-instruct",
+        "anthropic/claude-3-haiku",
+    ]
 
 
 def ask(system: str, user: str) -> dict:
     t0 = time.time()
-    key = _key()
-    if not key:
-        return {"text": "", "latency_ms": 0, "model": _model_name(),
-                "error": "no gemini api key in env"}
-    try:
-        from google import genai  # type: ignore[import-untyped]
-        client = genai.Client(api_key=key)
-        full = f"{system}\n\n---\n\n{user}"
 
-        # Primary first, then ordered fallbacks on quota errors.
-        candidates = [_model_name()] + _fallback_models()
-        last_error = None
-        for model in candidates:
+    candidates = [_model_name()] + _fallback_models()
+    last_error = None
+
+    keys = _get_keys()
+    if not keys:
+        return {
+            "text": "",
+            "latency_ms": 0,
+            "model": _model_name(),
+            "error": "no LLM API key in env",
+        }
+
+    # Shuffle keys to load balance
+    shuffled_keys = list(keys)
+    random.shuffle(shuffled_keys)
+
+    for model in candidates:
+        for key in shuffled_keys:
             try:
-                resp = client.models.generate_content(
-                    model=model,
-                    contents=full,
+                resp = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "HTTP-Referer": "https://github.com/HarshDubey23/SELLABLE",
+                        "X-Title": "SELLABLE Buildathon",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user}
+                        ],
+                        "temperature": 0.1,
+                    },
+                    timeout=8.0
                 )
-                text = resp.text if hasattr(resp, "text") else str(resp)
-                return {"text": text,
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"]
+                    return {
+                        "text": text,
                         "latency_ms": int((time.time() - t0) * 1000),
-                        "model": model, "error": None}
+                        "model": model,
+                        "error": None
+                    }
+                else:
+                    last_error = f"{model}: HTTP {resp.status_code} {resp.text}"
+                    if resp.status_code not in (429, 502, 503):
+                        break  # If it's a bad request, don't try other keys for the same model
             except Exception as e:
-                msg = str(e)
-                last_error = f"{model}: {msg}"
-                if ("429" not in msg and "RESOURCE_EXHAUSTED" not in msg
-                        and "quota" not in msg.lower()
-                        and "404" not in msg and "NOT_FOUND" not in msg):
-                    break  # non-quota/non-404 failure: don't burn other models
-        return {"text": "",
-                "latency_ms": int((time.time() - t0) * 1000),
-                "model": _model_name(), "error": last_error}
-    except Exception as e:
-        return {"text": "", "latency_ms": int((time.time() - t0) * 1000),
-                "model": _model_name(), "error": str(e)}
+                last_error = f"{model}: {str(e)}"
+
+    return {
+        "text": "",
+        "latency_ms": int((time.time() - t0) * 1000),
+        "model": _model_name(),
+        "error": last_error
+    }
 
 
 def parse_sku(text: str) -> str | None:

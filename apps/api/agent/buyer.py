@@ -84,17 +84,22 @@ def _detect_injection(description: str) -> bool:
 
 def _parse_skus(text: str) -> list[str]:
     """Parse the SKUS: line from a model response."""
-    match = re.search(r"SKUS:\s*(.+?)(?:\n|$)", text or "")
+    # LLMs might add markdown like **SKUS:** or SKUS :
+    match = re.search(r"SKUS[\s\*]*:\s*[\*]*\s*(.+?)(?:\n|$)", text or "", re.IGNORECASE)
     if not match:
         return []
     sku_str = match.group(1).strip()
+    # Remove any markdown asterisks that might surround the SKUs
+    sku_str = sku_str.replace("*", "")
     return [s.strip().upper() for s in sku_str.split(",") if s.strip()]
 
 
 def _parse_reason(text: str) -> str:
     """Parse the REASON: line from a model response."""
-    match = re.search(r"REASON:\s*(.+?)(?:\n|$)", text or "")
-    return match.group(1).strip()[:200] if match else "no reason given"
+    match = re.search(r"REASON[\s\*]*:\s*[\*]*\s*(.+?)(?:\n|$)", text or "", re.IGNORECASE)
+    if not match:
+        return "no reason given"
+    return match.group(1).replace("*", "").strip()[:200]
 
 
 def _parse_upsell_decision(text: str) -> tuple[str, str, str]:
@@ -310,9 +315,11 @@ Propose which items to buy:"""
                 # Model answered but named SKUs outside the search results —
                 # treat as unusable rather than trusting unverified SKUs.
                 proposed_skus = _deterministic_pick(detailed_products, mission_data)
+                raw_text = llm_result["text"].replace("\n", " ")[:200]
                 trace.emit("buyer_agent", "llm_fallback",
-                           f"model proposed unknown/off-search SKUs; "
+                           f"model proposed unknown/off-search SKUs (Raw: {raw_text}); "
                            f"deterministic fallback proposed {proposed_skus}",
+                           {"raw_text": llm_result["text"]},
                            used_fallback=True)
             else:
                 trace.emit("buyer_agent", "llm_reasoning",

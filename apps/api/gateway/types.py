@@ -1,13 +1,13 @@
 """Gateway contracts. Pure stdlib — no FastAPI, no network, no I/O."""
 import hashlib
 import json
+import sys
 from dataclasses import dataclass
+from enum import Enum
 
-try:
+if sys.version_info >= (3, 11):
     from enum import StrEnum
-except ImportError:
-    from enum import Enum
-
+else:
     class StrEnum(str, Enum):  # noqa: UP042
         pass
 
