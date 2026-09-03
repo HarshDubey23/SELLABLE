@@ -25,6 +25,7 @@ from .mission_router import router as mission_router
 from .negotiation.api import router as negotiation_router
 from .protocols.acp import router as acp_router
 from .protocols.ap2 import router as ap2_router
+from .protocols.uap import router as uap_router
 from .protocols.x402 import router as x402_router
 from .status_router import router as status_router
 from .store import db as store
@@ -76,8 +77,9 @@ app.include_router(attack_router)
 print("[BOOT] attack lab: enabled (8 scenarios, real gateway, money-call invariant)")
 app.include_router(acp_router)
 app.include_router(ap2_router)
+app.include_router(uap_router)
 app.include_router(x402_router)
-print("[BOOT] protocol adapters: ACP/AP2 live, x402 honest 501 stub")
+print("[BOOT] protocol adapters: NPCI UAP/ACP/AP2 live, x402 honest 501 stub")
 
 _boot_status = status_summary()
 print(f"[BOOT] config status: {_boot_status}")
@@ -139,7 +141,7 @@ def diagnostics():
     return {
         "CORE_SYSTEM": {
             "API": "ok",
-            "DB": "ok" if store.db_path().exists() else "missing",
+            "DB": "ok" if Path(store.db_path()).exists() else "missing",
             "Gateway": "ok",
             "Audit": "ok" if audit_chain.verify() else "invalid"
         },
@@ -154,7 +156,7 @@ def diagnostics():
             "Webhook_configured": st.get("webhook_configured", False)
         },
         "SECURITY": {
-            "Binding_persistence": store.db_path().exists(),
+            "Binding_persistence": Path(store.db_path()).exists(),
             "Mandates": bool(st.get("mission_hmac_key", True)),
             "Money_call_invariant": True,
             "Audit_verification": audit_chain.verify()

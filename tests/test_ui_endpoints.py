@@ -1,4 +1,4 @@
-﻿from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient
 
 from apps.api.main import app
 
@@ -51,3 +51,10 @@ def test_catalog_search():
     data = res.json()
     assert "results" in data
     assert len(data["results"]) > 0
+
+def test_protocols_page():
+    res = client.get("/protocols")
+    assert res.status_code == 200
+    assert "NPCI UAP" in res.text
+    assert "Universal Agent Protocol" in res.text
+

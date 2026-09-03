@@ -1731,3 +1731,337 @@ async def metrics_view():
   </div>
 """
     return HTMLResponse(render_page("System Metrics", "metrics", content))
+
+
+# ---------------------------------------------------------------------------
+# /protocols — UNIVERSAL AGENT PROTOCOL (NPCI UAP · AP2 · ACP)
+# ---------------------------------------------------------------------------
+@router.get("/protocols", response_class=HTMLResponse)
+async def protocols_view():
+    content = """
+  <div class="section-head">
+    <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,0.1);
+                border:1px solid var(--border-ok);border-radius:40px;padding:5px 16px;
+                font-size:11px;font-weight:700;color:var(--ok);margin-bottom:16px;">
+      &#127470;&#127475; NPCI UAP &middot; GOOGLE AP2 &middot; OPENAI ACP &middot; HTTP 402 MULTI-PROTOCOL ENGINE
+    </div>
+    <h1 class="section-title">&#127760; Universal Agent Protocol Switchboard</h1>
+    <p class="section-sub">
+      NPCI's Unified Agent Protocol (UAP) and the global protocol race make agentic commerce
+      the open problem of 2026. SELLABLE serves as the universal adapter: any agent protocol in,
+      deterministic mathematical governance in the middle, and trusted Razorpay execution at the boundary.
+    </p>
+  </div>
+
+  <!-- PROTOCOL SELECTOR TABS -->
+  <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;">
+    <button class="btn btn-lg btn-ok" id="tab-uap" onclick="selectProtocol('uap')">
+      &#127470;&#127475; NPCI UAP v1.0 (India UPI)
+    </button>
+    <button class="btn btn-lg btn-outline" id="tab-ap2" onclick="selectProtocol('ap2')">
+      &#127760; Google AP2 (Agent Payment)
+    </button>
+    <button class="btn btn-lg btn-outline" id="tab-acp" onclick="selectProtocol('acp')">
+      &#129302; OpenAI ACP (Commerce Protocol)
+    </button>
+    <button class="btn btn-lg btn-outline" id="tab-x402" onclick="selectProtocol('x402')">
+      &#9889; HTTP 402 Micropayments
+    </button>
+  </div>
+
+  <!-- 2-COLUMN TRANSACTOR INTERFACE -->
+  <div class="grid-2" style="margin-bottom:28px;">
+    <!-- LEFT: Inbound Protocol Payload -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title" id="payload-title">&#128229; Inbound NPCI UAP Payload</div>
+        <span class="badge badge-ok" id="protocol-badge">NPCI_UAP_v1.0</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-2);margin-bottom:12px;" id="payload-desc">
+        Standard NPCI Agent payload carrying buyer agent identity, delegated UPI e-mandate, and item cart.
+      </p>
+      <textarea id="protocol-json" class="form-input" style="height:260px;font-family:var(--font-mono);font-size:12px;line-height:1.5;resize:vertical;"></textarea>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:space-between;align-items:center;">
+        <button class="btn btn-primary" id="btn-transact" onclick="executeProtocolTransact()">
+          &#9889; Execute Protocol Transaction
+        </button>
+        <button class="btn btn-sm btn-outline" onclick="resetProtocolPayload()">Reset Default</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Live Execution Terminal & Settlement Receipt -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#128225; Gateway Normalization &amp; Execution</div>
+        <span class="badge badge-cyan" id="exec-status">IDLE</span>
+      </div>
+      <div id="protocol-log" class="log-box" style="height:260px;">
+        <div class="empty-state">
+          <div class="empty-state-icon">&#128736;</div>
+          <div class="empty-state-msg">Select a protocol and click "Execute Protocol Transaction".</div>
+        </div>
+      </div>
+      <div id="receipt-card" style="display:none;margin-top:16px;background:var(--ok-glow);border:1px solid var(--border-ok);border-radius:8px;padding:12px 16px;">
+        <div style="font-weight:700;color:var(--ok);font-size:13px;margin-bottom:4px;">&#10003; Protocol Transaction Authorized &amp; Bound</div>
+        <div id="receipt-details" style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-2);"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARISON TABLE -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">&#128202; Protocol Architectural Comparison &amp; SELLABLE Interop</div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Protocol</th>
+            <th>Primary Origin</th>
+            <th>Mandate Model</th>
+            <th>Settlement Rail</th>
+            <th>SELLABLE Integration Layer</th>
+            <th>Security Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b style="color:#fff;">NPCI UAP v1.0</b></td>
+            <td>India (NPCI 2026)</td>
+            <td>Delegated UPI e-Mandate Token</td>
+            <td>UPI / AutoPay Banking Rail</td>
+            <td><code>apps/api/protocols/uap.py</code></td>
+            <td><span class="badge badge-ok">NATIVE &middot; ACTIVE</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:#fff;">Google AP2</b></td>
+            <td>Global (Agent Payments)</td>
+            <td>Intent + Cart Dual Warrants</td>
+            <td>Google Pay / Tokenized Cards</td>
+            <td><code>apps/api/protocols/ap2.py</code></td>
+            <td><span class="badge badge-ok">NATIVE &middot; ACTIVE</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:#fff;">OpenAI ACP</b></td>
+            <td>Global (Agent Commerce)</td>
+            <td>Session Line-Item HMAC</td>
+            <td>Merchant PSP / Razorpay</td>
+            <td><code>apps/api/protocols/acp.py</code></td>
+            <td><span class="badge badge-ok">NATIVE &middot; ACTIVE</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:#fff;">HTTP 402</b></td>
+            <td>IETF / Web Standard</td>
+            <td>L402 Lightning / Micro-tokens</td>
+            <td>Cryptographic Token Stream</td>
+            <td><code>apps/api/protocols/x402.py</code></td>
+            <td><span class="badge badge-cyan">STANDBY &middot; HONEST 501</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+  let currentProtocol = 'uap';
+
+  const PAYLOADS = {
+    uap: {
+      url: '/protocol/uap/transact',
+      data: {
+        uap_agent_id: "npci:agent:buyer-delhivery-v1",
+        consent_handle: "upi:delegated:handle_9921",
+        mandate: {
+          mandate_id: "MND-NPCI-2026-X99",
+          max_amount_paise: 250000,
+          purpose_code: "COMMERCE_PURCHASE",
+          valid_until: Math.floor(Date.now() / 1000) + 3600,
+          signature: "simulated_npci_ed25519_sig"
+        },
+        mission: {
+          allowed_categories: ["cricket"],
+          budget_paise: 250000,
+          expires_at: 2000000000,
+          forbidden_categories: [],
+          intent: "Buy SG Cricket Bat under Rs 2,500 via NPCI UAP",
+          mission_id: "UAP-MSN-2026",
+          signature: "4662397a5fec2d4c578f80df9738cdf521097db8cd8b4756eb09bef78ede2bdc",
+          upsell_cap: 1.0
+        },
+        items: [{sku: "BAT-001", qty: 1}]
+      }
+    },
+    ap2: {
+      url: '/protocol/ap2/mandates/evaluate',
+      data: {
+        mission: {
+          allowed_categories: ["electronics"],
+          budget_paise: 500000,
+          expires_at: 2000000000,
+          forbidden_categories: [],
+          intent: "Buy Headphones via Google AP2",
+          mission_id: "AP2-MSN-2026",
+          signature: "9d2a7b712a6b2bdce2698d1a935a13e80dbcf45b7def7d6e1d96ccf365f3207f",
+          upsell_cap: 1.0
+        },
+        items: [{sku: "HEAD-001", qty: 1}],
+        intent_mandate: {
+          ceiling_paise: 500000,
+          mission_id: "AP2-MSN-2026",
+          expires_at: 2000000000
+        }
+      }
+    },
+    acp: {
+      url: '/protocol/acp/checkout_sessions',
+      data: {
+        mission: {
+          allowed_categories: ["books"],
+          budget_paise: 100000,
+          expires_at: 2000000000,
+          forbidden_categories: [],
+          intent: "Buy Books via OpenAI ACP",
+          mission_id: "ACP-MSN-2026",
+          signature: "884f896b8732db80efe1add4339894147464bfc39271e592959d4fdbe03607f5",
+          upsell_cap: 1.0
+        },
+        line_items: [{id: "BOOK-001", quantity: 1}]
+      }
+    },
+    x402: {
+      url: '/protocol/x402/authorize',
+      data: {
+        payment_token: "l402_macaroon_token_placeholder",
+        amount_sats: 2500,
+        resource: "/orders/checkout"
+      }
+    }
+  };
+
+  function selectProtocol(p) {
+    currentProtocol = p;
+    document.querySelectorAll('[id^="tab-"]').forEach(btn => {
+      btn.className = 'btn btn-lg btn-outline';
+    });
+    document.getElementById('tab-' + p).className = 'btn btn-lg btn-ok';
+    
+    const badge = document.getElementById('protocol-badge');
+    const title = document.getElementById('payload-title');
+    const desc = document.getElementById('payload-desc');
+    
+    if (p === 'uap') {
+      badge.textContent = 'NPCI_UAP_v1.0';
+      title.textContent = '📥 Inbound NPCI UAP Payload';
+      desc.textContent = 'Standard NPCI Agent payload carrying buyer agent identity, delegated UPI e-mandate, and item cart.';
+    } else if (p === 'ap2') {
+      badge.textContent = 'GOOGLE_AP2';
+      title.textContent = '📥 Inbound Google AP2 Payload';
+      desc.textContent = 'Google Agent Payment Protocol with intent and cart cryptographic mandate dual warrants.';
+    } else if (p === 'acp') {
+      badge.textContent = 'OPENAI_ACP';
+      title.textContent = '📥 Inbound OpenAI ACP Session';
+      desc.textContent = 'OpenAI Agent Commerce Protocol session with item declarations bound by mission HMAC.';
+    } else if (p === 'x402') {
+      badge.textContent = 'HTTP_402_L402';
+      title.textContent = '📥 Inbound x402 Micropayment Header';
+      desc.textContent = 'IETF Lightning L402 token stream (honest 501 partial implementation).';
+    }
+    resetProtocolPayload();
+  }
+
+  function resetProtocolPayload() {
+    document.getElementById('protocol-json').value = JSON.stringify(PAYLOADS[currentProtocol].data, null, 2);
+  }
+
+  function addProtoLog(msg, cls) {
+    const box = document.getElementById('protocol-log');
+    if (box.querySelector('.empty-state')) box.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'log-entry ' + (cls || 'log-cyan');
+    div.innerHTML = '<span class="log-time">' + new Date().toLocaleTimeString() + '</span> ' + msg;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function executeProtocolTransact() {
+    const log = document.getElementById('protocol-log');
+    log.innerHTML = '';
+    const status = document.getElementById('exec-status');
+    status.className = 'badge badge-warn';
+    status.textContent = 'PROCESSING';
+    
+    const receiptCard = document.getElementById('receipt-card');
+    receiptCard.style.display = 'none';
+
+    let payload;
+    try {
+      payload = JSON.parse(document.getElementById('protocol-json').value);
+    } catch(e) {
+      addProtoLog('JSON parse error: ' + e.message, 'log-bad');
+      status.className = 'badge badge-bad';
+      status.textContent = 'ERROR';
+      return;
+    }
+
+    addProtoLog('Ingesting protocol payload via ' + PAYLOADS[currentProtocol].url, 'log-cyan');
+    addProtoLog('Normalizing protocol artifacts into canonical ProposalReq...', 'log-cyan');
+
+    try {
+      const resp = await fetch(PAYLOADS[currentProtocol].url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': 'sellable_demo_key_4f7e9c2a8b1d3e6f'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        addProtoLog('Protocol rejected (' + resp.status + '): ' + JSON.stringify(data.detail || data), 'log-bad');
+        status.className = 'badge badge-bad';
+        status.textContent = 'REJECTED';
+        return;
+      }
+
+      addProtoLog('Protocol translation successful!', 'log-ok');
+      if (data.executor) {
+        const d = data.executor.data || {};
+        const dec = d.decision || 'UNKNOWN';
+        if (dec === 'APPROVE') {
+          addProtoLog('Gateway R1-R12 Verdict: APPROVE (Seq: ' + (data.executor.seq || '—') + ')', 'log-ok');
+          addProtoLog('SHA-256 Proposal Hash: ' + (d.proposal_hash ? d.proposal_hash.slice(0,24) + '…' : '—'), 'log-cyan');
+          addProtoLog('Cryptographic binding minted and ready for Razorpay settlement.', 'log-ok');
+          status.className = 'badge badge-ok';
+          status.textContent = 'AUTHORIZED';
+
+          receiptCard.style.display = 'block';
+          document.getElementById('receipt-details').innerHTML = 
+            '<b>Protocol:</b> ' + (data.protocol || currentProtocol.toUpperCase()) + '<br>' +
+            '<b>Settlement Rail:</b> ' + (data.settlement_rail || 'PSP_CANONICAL_RAZORPAY') + '<br>' +
+            '<b>Status:</b> ' + (data.uap_receipt ? data.uap_receipt.status : 'AUTHORIZED') + '<br>' +
+            '<b>Binding Hash:</b> ' + (d.proposal_hash || '—') + '<br>' +
+            '<b>Total Paise:</b> ' + (data.total_paise || '—');
+        } else {
+          addProtoLog('Gateway R1-R12 Verdict: REJECT (' + (d.rule_id || '') + ' - ' + (d.reason || '') + ')', 'log-bad');
+          status.className = 'badge badge-bad';
+          status.textContent = 'GATEWAY_REJECT';
+        }
+      } else {
+        addProtoLog('Response: ' + JSON.stringify(data), 'log-cyan');
+        status.className = 'badge badge-cyan';
+        status.textContent = 'COMPLETE';
+      }
+    } catch(err) {
+      addProtoLog('Network / execution error: ' + err.message, 'log-bad');
+      status.className = 'badge badge-bad';
+      status.textContent = 'ERROR';
+    }
+  }
+
+  // Initialize
+  resetProtocolPayload();
+  </script>
+"""
+    return HTMLResponse(render_page("Protocols (UAP)", "protocols", content))

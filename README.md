@@ -3,7 +3,7 @@
 <div align="center">
 
 [![CI](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-125%20Passed-brightgreen?style=for-the-badge&logo=pytest)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-131%20Passed-brightgreen?style=for-the-badge&logo=pytest)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?style=for-the-badge&logo=python)](https://python.org)
 [![Gateway](https://img.shields.io/badge/Policy%20Rules-R1--R12%20Fail--Closed-blue?style=for-the-badge)](apps/api/gateway/)
 [![Razorpay](https://img.shields.io/badge/Razorpay-Test%20Mode%20Live-0C2340?style=for-the-badge)](apps/api/razorpay_client.py)
@@ -158,7 +158,7 @@ SELLABLE's policy gateway consists of **12 deterministic, pure-Python rules** in
 | R7 ALLOWLIST | Merchant on allowlist | Rogue merchant |
 | R6 RATE_LIMIT | <=5 proposals/60s/mission | Flooding |
 
-> Proof: `GET /gateway/proof` returns source SHA-256 with `llm_imports_detected: 0`, `io_calls_detected: 0` across `apps/api/gateway/`. Catalog contains 40 SKUs across 6 categories. Tested against 125 pytest cases.
+> Proof: `GET /gateway/proof` returns source SHA-256 with `llm_imports_detected: 0`, `io_calls_detected: 0` across `apps/api/gateway/`. Catalog contains 40 SKUs across 6 categories. Tested against 131 pytest cases.
 
 ---
 
@@ -202,7 +202,7 @@ python scripts/final_verify.py --strict
 # Verify README numbers against eval/report.json
 python scripts/verify_numbers.py --check-readme --check-report
 
-# Full test suite (125 passed / 1 skipped)
+# Full test suite (131 passed / 1 skipped)
 python -m pytest -q
 ```
 
@@ -212,7 +212,7 @@ python -m pytest -q
 
 | Criterion | SELLABLE Implementation |
 |---|---|
-| **Transactable by AI buyers** | Agent manifest, schema.org catalog, ACP/AP2/x402 protocols |
+| **Transactable by AI buyers** | Agent manifest, schema.org catalog, NPCI UAP / Google AP2 / OpenAI ACP / x402 |
 | **Every money action explainable** | Per-rule rejection reason, reason_code + trace_id |
 | **Every money action bounded** | HMAC mandate + R1_BUDGET enforces absolute ceiling |
 | **Every money action gated** | Binding required; proven by `test_no_approve_no_money.py` |
@@ -221,7 +221,17 @@ python -m pytest -q
 
 ---
 
+## 🏆 Razorpay Buildathon Evaluation Kit
+
+- 📋 **[Submission Dossier & Application Answers](docs/SUBMISSION_DOSSIER.md)** — Complete, form-ready answers for all 12 buildathon application questions (including deep technical breakdown of *"What broke and how we got out"*).
+- 🎥 **[5-Minute Pitch Script & Storyboard](PITCH_VIDEO_SCRIPT.md)** — High-signal, timestamped script hitting all 4 scoring axes (Problem Taste, Build Quality, AI Judgment, Failure Recovery).
+- 🇮🇳 **[Universal Agent Protocol (NPCI UAP)](apps/api/protocols/uap.py)** — India's open agent standard with delegated UPI mandate support.
+- ⚖️ **[Judge Console (`/judge`)](http://localhost:8000/judge)** — 30-second automated proof of all 4 cryptographic acts.
+
+---
+
 ## 📜 License
 
 MIT License. Built for Razorpay AI Buildathon 2026 — Track 01: AI Growth & Agentic Commerce.  
 Solo Builder: **Harsh Dubey** ([@HarshDubey23](https://github.com/HarshDubey23))
+
