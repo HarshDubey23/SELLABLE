@@ -355,10 +355,15 @@ def _page_layout(title: str, active_tab: str, content: str) -> str:
       <nav class="nav-links">
         <a href="/" class="{'active' if active_tab == 'dashboard' else ''}">Command Center</a>
         <a href="/mission" class="{'active' if active_tab == 'mission' else ''}">Live Mission</a>
+        <a href="/judge" class="{'active' if active_tab == 'judge' else ''}">Judge Console</a>
+        <a href="/chaos" class="{'active' if active_tab == 'chaos' else ''}">Chaos Control</a>
+        <a href="/architecture" class="{'active' if active_tab == 'architecture' else ''}">Architecture</a>
         <a href="/attack-ui" class="{'active' if active_tab == 'attack' else ''}">Attack Lab</a>
         <a href="/audit-ui" class="{'active' if active_tab == 'audit' else ''}">Audit Ledger</a>
-        <a href="/gateway-ui" class="{'active' if active_tab == 'gateway' else ''}">Policy Matrix (R1-R12)</a>
+        <a href="/gateway-ui" class="{'active' if active_tab == 'gateway' else ''}">Policy Matrix</a>
         <a href="/products" class="{'active' if active_tab == 'products' else ''}">Catalog</a>
+        <a href="/why" class="{'active' if active_tab == 'why' else ''}">Why SELLABLE</a>
+        <a href="/demo" class="{'active' if active_tab == 'demo' else ''}">Demo Hub</a>
       </nav>
       <div class="status-badge">
         <span class="status-pulse"></span>
