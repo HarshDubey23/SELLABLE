@@ -87,3 +87,32 @@ def test_discovery_http_endpoints():
     assert "listings" in data
     assert "gateway_verdict" in data
     assert data["gateway_verdict"]["MONEY_PATH_ISOLATED_FROM_WEB"] is True
+
+
+def test_discovery_checkout_and_settlement_end_to_end():
+    """Verify that a winning product can be purchased with Policy Gateway and Razorpay test mode."""
+    chk_resp = client.post("/discovery/checkout", json={
+        "sku": "EAR-001",
+        "product_name": "TWS Earbuds 42H Playback",
+        "amount_paise": 129900,
+        "budget_paise": 500000,
+        "category": "electronics"
+    })
+    assert chk_resp.status_code == 200
+    chk_data = chk_resp.json()
+    assert chk_data["ok"] is True
+    assert chk_data["order_id"].startswith("order_")
+    assert chk_data["amount_inr"] == 1299.00
+    assert chk_data["binding_hash"] is not None
+    assert chk_data["status"] == "ORDER_CREATED_READY_FOR_PAYMENT"
+
+    # Settle payment
+    confirm_resp = client.post("/discovery/confirm-payment", json={
+        "order_id": chk_data["order_id"],
+        "payment_id": "pay_test_discovery_123"
+    })
+    assert confirm_resp.status_code == 200
+    confirm_data = confirm_resp.json()
+    assert confirm_data["ok"] is True
+    assert confirm_data["status"] == "PAID_AND_SETTLED"
+    assert confirm_data["audit_block_hash"] is not None
