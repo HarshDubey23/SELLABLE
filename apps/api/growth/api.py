@@ -109,3 +109,47 @@ async def execute_growth_transaction(req: GrowthTransactReq):
         "seq": executor_resp.get("seq"),
         "executor": executor_resp,
     }
+
+
+# =========================================================================
+# CLOSED-LOOP MERCHANT GROWTH ENGINE (OBSERVE -> RECOMMEND -> APPROVE -> MEASURE)
+# =========================================================================
+
+from .loop import (
+    observe_store_performance,
+    identify_revenue_opportunity,
+    merchant_approve_action,
+    execute_and_measure_growth_loop,
+)
+
+
+@router.get("/loop/observe")
+async def loop_observe(sku: str = "BAT-001"):
+    """Step 1: Observe actual product performance and live competitor pricing."""
+    return observe_store_performance(sku)
+
+
+@router.get("/loop/opportunity")
+async def loop_opportunity(sku: str = "BAT-001"):
+    """Step 2 & 3: Identify specific revenue gap and formulate exact bundle/price action."""
+    return identify_revenue_opportunity(sku)
+
+
+@router.post("/loop/approve/{action_id}")
+async def loop_approve(action_id: str):
+    """Step 4: Merchant approves the action; appends to SHA-256 audit ledger."""
+    res = merchant_approve_action(action_id)
+    if not res.get("ok"):
+        raise HTTPException(404, detail="Action not found")
+    return res
+
+
+@router.post("/loop/execute/{action_id}")
+async def loop_execute(action_id: str, sample_batch_size: int = 10):
+    """Step 5 & 6: Execute approved action through Gateway + Razorpay and measure outcome."""
+    try:
+        res = await execute_and_measure_growth_loop(action_id, sample_batch_size)
+        return res
+    except ValueError as e:
+        raise HTTPException(404, detail=str(e))
+

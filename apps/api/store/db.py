@@ -16,6 +16,7 @@ concurrent readers while the single writer holds the lock.
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,18 @@ def init_schema() -> None:
                     mission_id TEXT,
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS growth_actions (
+                    action_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    base_sku TEXT NOT NULL,
+                    bundle_skus TEXT NOT NULL,
+                    proposed_price_paise INTEGER NOT NULL,
+                    baseline_aov_paise INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    approved_at INTEGER,
+                    deployed_at INTEGER,
+                    created_at INTEGER NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS idx_orders_idem
                     ON orders(idempotency_key);
                 CREATE INDEX IF NOT EXISTS idx_events_order
@@ -192,6 +205,50 @@ def query_one(sql: str, params: tuple = ()) -> dict[str, Any] | None:
 
 def db_path() -> str:
     return str(_DB_PATH)
+
+
+def save_growth_action(action: dict[str, Any]) -> None:
+    """Save or update a merchant growth action recommendation."""
+    execute(
+        """INSERT OR REPLACE INTO growth_actions
+           (action_id, title, base_sku, bundle_skus, proposed_price_paise,
+            baseline_aov_paise, status, approved_at, deployed_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            action["action_id"],
+            action["title"],
+            action["base_sku"],
+            action["bundle_skus"],
+            action["proposed_price_paise"],
+            action["baseline_aov_paise"],
+            action.get("status", "PENDING"),
+            action.get("approved_at"),
+            action.get("deployed_at"),
+            action.get("created_at", int(time.time())),
+        ),
+    )
+
+
+def approve_growth_action(action_id: str) -> bool:
+    """Merchant approves and deploys a growth action."""
+    import time
+    now_ts = int(time.time())
+    count = execute(
+        "UPDATE growth_actions SET status = 'APPROVED', approved_at = ?, deployed_at = ? WHERE action_id = ?",
+        (now_ts, now_ts, action_id),
+    )
+    return count > 0
+
+
+def get_growth_action(action_id: str) -> dict[str, Any] | None:
+    """Retrieve a specific growth action by ID."""
+    return query_one("SELECT * FROM growth_actions WHERE action_id = ?", (action_id,))
+
+
+def list_growth_actions() -> list[dict[str, Any]]:
+    """List all growth actions ordered by creation timestamp descending."""
+    return query("SELECT * FROM growth_actions ORDER BY created_at DESC")
+
 
 
 # Initialize schema on import

@@ -21,6 +21,7 @@ _NAV_ITEMS = [
     ("gateway", "/gateway-ui", "Policy Matrix"),
     ("protocols", "/protocols", "Protocols (UAP)"),
     ("growth", "/growth", "Merchant Growth"),
+    ("discovery", "/discovery", "Live Discovery"),
     ("architecture", "/architecture", "Architecture"),
     ("products", "/products", "Catalog"),
     ("metrics", "/metrics", "Metrics"),

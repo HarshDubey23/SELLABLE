@@ -69,7 +69,7 @@ def test_growth_api_endpoints():
     # Test UI HTML page
     ui_resp = client.get("/growth")
     assert ui_resp.status_code == 200
-    assert "Merchant Growth &amp; Market Intelligence Studio" in ui_resp.text
+    assert "Closed-Loop Merchant Growth System" in ui_resp.text
 
     # Test JSON evaluate
     eval_resp = client.post("/growth/evaluate", json={
@@ -86,6 +86,36 @@ def test_growth_api_endpoints():
     radar_resp = client.get("/growth/market-radar")
     assert radar_resp.status_code == 200
     assert radar_resp.json()["count"] >= 10
+
+
+def test_growth_closed_loop_end_to_end():
+    """Verify closed-loop: Observe -> Opportunity -> Approve -> Measure Outcome."""
+    # 1. Observe
+    obs_resp = client.get("/growth/loop/observe?sku=BAT-001")
+    assert obs_resp.status_code == 200
+    assert obs_resp.json()["sku"] == "BAT-001"
+    assert obs_resp.json()["baseline_aov_paise"] == 149900
+
+    # 2. Opportunity
+    opp_resp = client.get("/growth/loop/opportunity?sku=BAT-001")
+    assert opp_resp.status_code == 200
+    data = opp_resp.json()
+    action_id = data["action_id"]
+    assert data["proposed_bundle_price_paise"] == 249900
+    assert data["projected_aov_lift_pct"] == 66.7
+
+    # 3. Approve
+    app_resp = client.post(f"/growth/loop/approve/{action_id}")
+    assert app_resp.status_code == 200
+    assert app_resp.json()["status"] == "APPROVED"
+
+    # 4. Execute & Measure
+    exec_resp = client.post(f"/growth/loop/execute/{action_id}?sample_batch_size=10")
+    assert exec_resp.status_code == 200
+    res = exec_resp.json()
+    assert res["net_revenue_gain_paise"] == 1000000  # Rs 10,000 gain
+    assert res["aov_lift_pct"] == 66.7
+    assert "This merchant earned Rs 10,000.00 more" in res["business_outcome_statement"]
 
 
 def test_growth_engine_never_initiates_direct_payments():

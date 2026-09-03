@@ -18,6 +18,7 @@ from .dashboard.mission_explain import router as mission_dashboard_router
 from .demo import router as demo_router
 from .demo_capture import router as capture_router
 from .demo_ui import router as demo_ui_router
+from .discovery import discovery_router
 from .gateway.proof import compute_proof
 from .growth import growth_router
 from .manifest import router as manifest_router
@@ -83,6 +84,8 @@ app.include_router(x402_router)
 print("[BOOT] protocol adapters: NPCI UAP/ACP/AP2 live, x402 honest 501 stub")
 app.include_router(growth_router)
 print("[BOOT] merchant growth & market intelligence engine: live at /growth")
+app.include_router(discovery_router)
+print("[BOOT] real-world web discovery pipeline: live at /discovery")
 
 _boot_status = status_summary()
 print(f"[BOOT] config status: {_boot_status}")
