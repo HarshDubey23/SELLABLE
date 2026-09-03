@@ -693,7 +693,7 @@ async function run(){
  setPill('b-warn','running <span class="dots"><span>&middot;</span><span>&middot;</span><span>&middot;</span></span>');
  $('#verdictPanel').innerHTML='<h2>Verdict</h2><p class="muted">pending&hellip;</p>';
  var id=$('#scenario').value;
- var r=await jpost('/api/agent/run-scenario/'+id);
+ var r=await jpost('/demo/checkout/api/agent/run-scenario/'+id);
  var events=normalize(r.data);
  for(var ev of events){
   if($('#moneyOnly').checked&&!isMoney(ev))continue;
@@ -752,6 +752,9 @@ def _proxy_allowed(method: str, path: str) -> bool:
 
 
 @router.post("/demo/checkout/api/{path:path}")
+@router.post("/demo/api/{path:path}")
+@router.get("/demo/checkout/api/{path:path}")
+@router.get("/demo/api/{path:path}")
 async def demo_proxy(path: str, request: Request,
                      x_api_key: str = Header(default="")) -> JSONResponse:
     """Browser calls this; server forwards with X-API-Key or invokes directly."""
@@ -766,7 +769,7 @@ async def demo_proxy(path: str, request: Request,
             res = await run_scenario_endpoint(scenario_id)
             return JSONResponse(res)
         except Exception as e:
-            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+            return JSONResponse({"ok": False, "error": str(e), "status": "error", "events": []}, status_code=200)
 
     if clean_path in ("agent/run_full_mission", "agent/run-mission"):
         from .agent.runner import run_full_mission_ui
