@@ -8,16 +8,14 @@ orchestration layer is allowed to import the LLM. The gateway remains pure.
 Invariant N-1: negotiation/types.py must not import any web framework, HTTP
 client, LLM SDK, or I/O module. Enforced by tests/test_negotiation_purity.py.
 """
-from __future__ import annotations
-
-import enum
+import sys
 from dataclasses import dataclass, field
+from enum import Enum
 
-try:
+if sys.version_info >= (3, 11):
     from enum import StrEnum
-except ImportError:
-
-    class StrEnum(enum.StrEnum):
+else:
+    class StrEnum(str, Enum):  # noqa: UP042
         pass
 
 

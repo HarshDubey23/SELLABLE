@@ -6,17 +6,16 @@ Implements Section 14, 15, 16:
 - Bounded reconciliation against gateway truth on timeout
 - Strict transition validation (no illegal state transitions)
 """
-import enum
+import sys
 import time
-
-try:
-    from enum import StrEnum
-except ImportError:
-
-    class StrEnum(enum.StrEnum):
-        pass
-
+from enum import Enum
 from typing import Any
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    class StrEnum(str, Enum):  # noqa: UP042
+        pass
 
 
 class PaymentState(StrEnum):

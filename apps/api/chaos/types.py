@@ -1,10 +1,14 @@
-"""Types and Data Structures for SELLABLE Chaos Monkey Engine."""
-from __future__ import annotations
-
+import sys
 import time
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    class StrEnum(str, Enum):  # noqa: UP042
+        pass
 
 
 class FaultType(StrEnum):

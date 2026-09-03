@@ -6,18 +6,17 @@ Implements Section 3 & 4:
 - RazorpayTestGateway: Real Razorpay Test Mode API integration
 - SimulatorGateway: Deterministic Fault-Injection harness with explicit simulation modes
 """
-import enum
 import hashlib
+import sys
 import time
-
-try:
-    from enum import StrEnum
-except ImportError:
-
-    class StrEnum(enum.StrEnum):
-        pass
-
+from enum import Enum
 from typing import Any, Protocol
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    class StrEnum(str, Enum):  # noqa: UP042
+        pass
 
 from . import money, razorpay_client
 
