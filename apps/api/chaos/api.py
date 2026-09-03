@@ -1,7 +1,7 @@
 """Chaos Control API Endpoints & SSE Live Feed Router."""
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -14,7 +14,7 @@ router = APIRouter(tags=["chaos"])
 
 
 @router.post("/api/chaos/faults")
-def arm_fault(payload: Dict[str, Any]):
+def arm_fault(payload: dict[str, Any]):
     """Arm a new fault in Chaos Monkey."""
     fault_id = payload.get("fault_id", f"f-{payload.get('type', 'custom')}")
     type_str = payload.get("type", "latency_spike")

@@ -33,7 +33,7 @@ router = APIRouter(tags=["ui"])
 async def dashboard_view():
     entries = audit_chain.entries()
     chain_valid = audit_chain.verify()
-    money_calls_count = money_mod.snapshot().get("total", 0)
+    money_mod.snapshot().get("total", 0)
     bindings = all_bindings()
 
     # Eval metrics for hero KPI band
@@ -60,8 +60,8 @@ async def dashboard_view():
         except (ValueError, TypeError):
             return str(v)
 
-    money_loss = _mv("money_loss_rate", "0%")
-    p95 = _mv("p95_latency", "0.1ms")
+    _mv("money_loss_rate", "0%")
+    _mv("p95_latency", "0.1ms")
     test_count = 125  # From verified baseline
 
     content = f"""

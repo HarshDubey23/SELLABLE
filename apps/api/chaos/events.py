@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any, AsyncGenerator, Dict, List, Set
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from .types import ChaosEvent
 
@@ -13,8 +14,8 @@ class EventBroadcaster:
     """Manages live SSE subscriber queues and historical event buffer."""
 
     def __init__(self, max_history: int = 1000):
-        self._history: List[ChaosEvent] = []
-        self._subscribers: Set[asyncio.Queue] = set()
+        self._history: list[ChaosEvent] = []
+        self._subscribers: set[asyncio.Queue] = set()
         self._max_history = max_history
 
     def emit(
@@ -23,7 +24,7 @@ class EventBroadcaster:
         actor: str,
         summary: str,
         trace_id: str = "t-system",
-        data: Dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
         now_ts: float | None = None,
     ) -> ChaosEvent:
         event = ChaosEvent(
@@ -59,7 +60,7 @@ class EventBroadcaster:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         self._subscribers.discard(q)
 
-    def get_history(self, limit: int = 200, trace_id: str | None = None) -> List[Dict[str, Any]]:
+    def get_history(self, limit: int = 200, trace_id: str | None = None) -> list[dict[str, Any]]:
         evs = self._history
         if trace_id:
             evs = [e for e in evs if e.trace_id == trace_id]

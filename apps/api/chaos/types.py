@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from enum import StrEnum
+from typing import Any
 
 
-class FaultType(str, Enum):
+class FaultType(StrEnum):
     LATENCY_SPIKE = "latency_spike"
     PRICE_FLIP = "price_flip"
     DUPLICATE_STORM = "duplicate_storm"
@@ -25,13 +25,13 @@ class FaultConfig:
     fault_id: str
     type: FaultType
     target_route: str
-    params: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = field(default_factory=dict)
     duration_ms: int = 60000
     created_at: float = field(default_factory=time.time)
     expires_at: float = field(default_factory=lambda: time.time() + 60)
     armed: bool = True
 
-    def is_expired(self, now_ts: Optional[float] = None) -> bool:
+    def is_expired(self, now_ts: float | None = None) -> bool:
         now_ts = now_ts if now_ts is not None else time.time()
         return not self.armed or now_ts >= self.expires_at
 
@@ -42,7 +42,7 @@ class InvariantResult:
     name: str
     held: bool
     evidence: str
-    event_ids: List[str] = field(default_factory=list)
+    event_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -50,9 +50,9 @@ class RunVerdict:
     run_id: str
     scenario_id: str
     outcome: str  # "SURVIVED" or "BREACH"
-    invariants: List[InvariantResult]
-    counts: Dict[str, int]
-    timeline: List[Dict[str, Any]]
+    invariants: list[InvariantResult]
+    counts: dict[str, int]
+    timeline: list[dict[str, Any]]
     created_at: float = field(default_factory=time.time)
 
 
@@ -63,9 +63,9 @@ class ChaosEvent:
     kind: str  # "chaos_injection", "gateway_decision", "agent_action", "ledger_append", "verdict"
     actor: str  # "chaos_monkey", "buyer_agent", "policy_gateway", "razorpay_executor"
     summary: str
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "ts": self.ts,
             "trace_id": self.trace_id,

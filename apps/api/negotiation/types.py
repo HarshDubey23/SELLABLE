@@ -10,13 +10,14 @@ client, LLM SDK, or I/O module. Enforced by tests/test_negotiation_purity.py.
 """
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
+
 try:
     from enum import StrEnum
 except ImportError:
-    from enum import Enum
 
-    class StrEnum(str, Enum):
+    class StrEnum(enum.StrEnum):
         pass
 
 

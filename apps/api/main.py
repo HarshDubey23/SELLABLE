@@ -163,9 +163,9 @@ def diagnostics():
 @app.get("/api/v1/telemetry")
 def telemetry():
     """Real-time telemetry for dashboard auto-refresh. Polled every 3s by the UI."""
-    from .audit import chain as _ac
-    from .approval import all_bindings as _ab
     from . import money as _m
+    from .approval import all_bindings as _ab
+    from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
     from .store import db as _store
     _ok, _reason = _ac.verify_strict()
@@ -191,8 +191,8 @@ def telemetry():
 @app.get("/api/v1/security-score")
 def security_score():
     """Returns a 0-9 security score for the runtime posture."""
-    from .audit import chain as _ac
     from . import money as _m
+    from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
     _ok = _ac.verify()
     score_components = {
@@ -220,19 +220,21 @@ def security_score():
 async def simulate_gateway(payload: dict):
     """Interactive rule simulator: submit a proposal, see which rules fire."""
     import time
-    from .gateway.types import Mission, Proposal, ProposalItem
+
     from .gateway import engine as gw_engine
+    from .gateway.types import Mission, Proposal, ProposalItem
     from .products import CATALOG
 
     now_ts = int(time.time())
     budget = int(payload.get("budget_paise", 200000))
     amount = int(payload.get("amount_paise", 150000))
-    category = payload.get("category", "cricket")
+    payload.get("category", "cricket")
     allowed = payload.get("allowed_categories", ["cricket"])
     sku = payload.get("sku", "BAT-001")
 
     try:
-        from .gateway.mission_verify import sign_mission as _sign, dumps as _dumps
+        from .gateway.mission_verify import dumps as _dumps
+        from .gateway.mission_verify import sign_mission as _sign
         mission_dict = {
             "mission_id": "SIM-001",
             "intent": "simulation",

@@ -83,7 +83,7 @@ async def run_scenario_endpoint(scenario_id: str):
 @router.post("/agent/run_full_mission")
 async def run_full_mission_ui(payload: dict | None = None):
     """UI convenience endpoint to run a natural language mission directly from UI.
-    
+
     Accepts: {
         "intent": "Buy SG cricket bat under Rs 2000",
         "budget_inr": 2000,
@@ -92,6 +92,7 @@ async def run_full_mission_ui(payload: dict | None = None):
     }
     """
     import time
+
     from ..gateway.mission_verify import dumps as _dumps
     from ..gateway.mission_verify import sign_mission as _sign
 

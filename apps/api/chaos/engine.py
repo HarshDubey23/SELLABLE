@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..audit import chain as audit_chain
-from ..store import db as store
 from .events import event_bus
 from .types import FaultConfig, FaultType, InvariantResult, RunVerdict
 
@@ -15,9 +14,9 @@ class ChaosEngine:
     """Central manager for armed faults, virtual clock jumps, and invariant proofs."""
 
     def __init__(self):
-        self._faults: Dict[str, FaultConfig] = {}
+        self._faults: dict[str, FaultConfig] = {}
         self._virtual_clock_offset: float = 0.0
-        self._runs: Dict[str, RunVerdict] = {}
+        self._runs: dict[str, RunVerdict] = {}
         self._enabled: bool = os.environ.get("CHAOS_ENABLED", "true").lower() in ("true", "1", "yes")
 
     @property
@@ -40,14 +39,14 @@ class ChaosEngine:
         )
         return new_time
 
-    def check_safety(self) -> Tuple[bool, str]:
+    def check_safety(self) -> tuple[bool, str]:
         """Safety check: refuse to arm unless Razorpay key starts with rzp_test_."""
         key_id = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TSttLNvLt9yUPI")
         if not key_id.startswith("rzp_test_"):
             return False, "SAFETY_REFUSAL: Chaos Monkey refused to arm in Razorpay LIVE mode!"
         return True, "SAFE"
 
-    def arm_fault(self, fault_id: str, type_str: str, target_route: str, params: Dict[str, Any] | None = None, duration_ms: int = 60000) -> Tuple[bool, str, Optional[FaultConfig]]:
+    def arm_fault(self, fault_id: str, type_str: str, target_route: str, params: dict[str, Any] | None = None, duration_ms: int = 60000) -> tuple[bool, str, FaultConfig | None]:
         safe, msg = self.check_safety()
         if not safe:
             return False, msg, None
@@ -93,7 +92,7 @@ class ChaosEngine:
             return True
         return False
 
-    def reset_all(self) -> Dict[str, Any]:
+    def reset_all(self) -> dict[str, Any]:
         """Global kill switch: disarms all faults, clears clock offset, resets simulator fixtures."""
         armed_count = len(self._faults)
         self._faults.clear()
@@ -112,7 +111,7 @@ class ChaosEngine:
             "disarmed_count": armed_count,
         }
 
-    def active_faults(self) -> List[Dict[str, Any]]:
+    def active_faults(self) -> list[dict[str, Any]]:
         now_ts = self.now()
         active = []
         for fid, cfg in list(self._faults.items()):
@@ -128,7 +127,7 @@ class ChaosEngine:
                 })
         return active
 
-    def get_fault_for_route(self, route_path: str, ftype: Optional[FaultType] = None) -> Optional[FaultConfig]:
+    def get_fault_for_route(self, route_path: str, ftype: FaultType | None = None) -> FaultConfig | None:
         if not self._enabled:
             return None
         now_ts = self.now()
@@ -142,12 +141,12 @@ class ChaosEngine:
                 return cfg
         return None
 
-    def evaluate_invariants(self, run_id: str, scenario_id: str, events: List[Dict[str, Any]]) -> RunVerdict:
+    def evaluate_invariants(self, run_id: str, scenario_id: str, events: list[dict[str, Any]]) -> RunVerdict:
         """Evaluates I1-I8 invariants and returns machine-verifiable verdict."""
-        results: List[InvariantResult] = []
+        results: list[InvariantResult] = []
 
         # I1: At most one order per idempotency key
-        orders_by_idem: Dict[str, List[str]] = {}
+        orders_by_idem: dict[str, list[str]] = {}
         for ev in events:
             if ev.get("actor") == "executor" and ev.get("kind") == "order_created":
                 idem = ev.get("data", {}).get("idempotency_key", ev.get("trace_id"))
@@ -180,7 +179,7 @@ class ChaosEngine:
         ))
 
         # I3: Each payment captured exactly once
-        captures_by_order: Dict[str, int] = {}
+        captures_by_order: dict[str, int] = {}
         for ev in events:
             if ev.get("kind") == "payment_captured":
                 oid = ev.get("data", {}).get("order_id", "unknown")
@@ -209,7 +208,7 @@ class ChaosEngine:
         # I5: Reservations past TTL always released; stock drift = 0
         from ..products import CATALOG
         stock_drift_ok = True
-        for sku, pinfo in CATALOG.items():
+        for _sku, pinfo in CATALOG.items():
             if pinfo.get("stock", 0) < 0:
                 stock_drift_ok = False
         results.append(InvariantResult(
@@ -265,7 +264,7 @@ class ChaosEngine:
         self._runs[run_id] = verdict
         return verdict
 
-    def get_run(self, run_id: str) -> Optional[RunVerdict]:
+    def get_run(self, run_id: str) -> RunVerdict | None:
         return self._runs.get(run_id)
 
 

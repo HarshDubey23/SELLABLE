@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any
 
-from ..audit import chain as audit_chain
 from ..gateway_service import RazorpayTestGateway, SimulatorGateway
 from ..products import CATALOG
 from .engine import chaos_engine
 from .events import event_bus
-from .types import FaultType, RunVerdict
+from .types import RunVerdict
 
 
 def _safe_create_order(amount_paise: int, receipt: str, notes: dict, idempotency_key: str | None = None) -> dict:
@@ -29,9 +27,9 @@ class ChaosScenarioRunner:
     async def run_drill(self, scenario_id: str) -> RunVerdict:
         run_id = f"run-{scenario_id.lower()}-{uuid.uuid4().hex[:8]}"
         trace_id = f"t-{scenario_id.lower()}"
-        events: List[Dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
 
-        def log_step(actor: str, kind: str, summary: str, data: Dict[str, Any] | None = None):
+        def log_step(actor: str, kind: str, summary: str, data: dict[str, Any] | None = None):
             ev = event_bus.emit(
                 kind=kind,
                 actor=actor,
@@ -101,7 +99,7 @@ class ChaosScenarioRunner:
 
         log_step("executor", "order_created", f"5 concurrent submits processed -> Exactly {len(unique_orders)} order created: {order_ids[0] if order_ids else 'order_sim_1'}", data={"order_id": order_ids[0] if order_ids else "order_sim_1", "idempotency_key": idem_key, "approved_amount_paise": 149900, "amount_paise": 149900})
 
-        for r in results[1:]:
+        for _r in results[1:]:
             log_step("gateway", "gateway_decision", "DUPLICATE_IDEM hit -> Replay returned cached response (HTTP 200)", data={"decision": "APPROVE", "cached": True})
 
         chaos_engine.disarm_fault("f-dupe")

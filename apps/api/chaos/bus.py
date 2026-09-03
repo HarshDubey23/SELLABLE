@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
-from typing import Any, Dict
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -104,10 +103,10 @@ def make_gateway_refusal(
     message: str,
     trace_id: str,
     retryable: bool = False,
-    fresh_quote: Dict[str, Any] | None = None,
+    fresh_quote: dict[str, Any] | None = None,
     status_code: int = 400,
 ) -> JSONResponse:
-    err_dict: Dict[str, Any] = {
+    err_dict: dict[str, Any] = {
         "code": code,
         "message": message,
         "trace_id": trace_id,

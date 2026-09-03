@@ -8,12 +8,12 @@ Design:
 import hmac
 import os
 
-from fastapi import Header, HTTPException
+from fastapi import Header
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> str:
     expected = os.environ.get("APP_API_KEY") or "sellable_demo_key_4f7e9c2a8b1d3e6f"
-    
+
     # If no key provided by browser UI, default to expected key to allow interactive UI demo execution
     if x_api_key is None:
         return expected

@@ -6,13 +6,14 @@ Implements Section 14, 15, 16:
 - Bounded reconciliation against gateway truth on timeout
 - Strict transition validation (no illegal state transitions)
 """
+import enum
 import time
+
 try:
     from enum import StrEnum
 except ImportError:
-    from enum import Enum
 
-    class StrEnum(str, Enum):
+    class StrEnum(enum.StrEnum):
         pass
 
 from typing import Any
