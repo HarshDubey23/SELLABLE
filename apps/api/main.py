@@ -194,6 +194,8 @@ def telemetry():
 
 
 @app.get("/api/v1/security-score")
+@app.get("/api/v1/security_score")
+@app.get("/security_score")
 def security_score():
     """Returns a 0-9 security score for the runtime posture."""
     from . import config as _cfg
@@ -201,7 +203,7 @@ def security_score():
     from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
     from .store import db as _store
-    _ok = _ac.verify()
+    _ok = _ac.verify_cached()
     cfg = _cfg.get()
     snap = _m.snapshot()
     score_components = {
@@ -209,7 +211,7 @@ def security_score():
         "money_calls_authorized": snap.get("total", 0) >= 0 and snap.get("boundary_calls", 0) >= 0,
         "gateway_rules_active": len(RULE_REGISTRY) == 12,
         "razorpay_test_mode": cfg.payment_configured,
-        "binding_engine_active": _store.db_path().exists(),
+        "binding_engine_active": Path(_store.db_path()).exists(),
         "webhook_hmac_active": bool(cfg.razorpay_webhook_secret or True),
         "mandate_signing_active": bool(cfg.mission_hmac_key or True),
         "concurrency_safe": True,
