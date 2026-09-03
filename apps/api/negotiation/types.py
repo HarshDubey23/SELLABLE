@@ -11,7 +11,14 @@ client, LLM SDK, or I/O module. Enforced by tests/test_negotiation_purity.py.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
 
 
 class NegotiationStatus(StrEnum):

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Explicit Payment State Machine and Reconciliation Service for SELLABLE.
 
 Implements Section 14, 15, 16:
@@ -7,7 +7,14 @@ Implements Section 14, 15, 16:
 - Strict transition validation (no illegal state transitions)
 """
 import time
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
 from typing import Any
 
 

@@ -2,7 +2,14 @@
 import hashlib
 import json
 from dataclasses import dataclass
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
 
 
 class Decision(StrEnum):
