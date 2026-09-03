@@ -19,12 +19,13 @@ MANIFEST = {
     "supported_protocols": {
         "sellable-v1": "native (this manifest)",
         "schema.org": "Product/Offer JSON-LD via /catalog.jsonld",
+        "npci_uap": "NPCI Universal Agent Protocol v1.0 live at /protocol/uap/transact with delegated UPI e-mandates",
         "acp_ap2_x402": "ACP + AP2 adapters live at /protocol/* (translate "
                         "to the canonical executor; the gateway decides); "
                         "x402 is an honest 501 stub",
     },
     "capabilities": ["search", "get_product", "quote", "propose",
-                     "checkout", "payment_status"],
+                     "checkout", "payment_status", "market_intelligence", "aov_growth_bundling"],
     "tools": [
         {"name": "search_products", "method": "GET",
          "endpoint": "/tools/search_products",
@@ -60,6 +61,13 @@ MANIFEST = {
         {"name": "demo_e2e", "method": "GET",
          "endpoint": "/demo/e2e", "params": {},
          "description": "Runs one complete end-to-end mission flow with real Razorpay test order creation"},
+        {"name": "market_intelligence_radar", "method": "GET",
+         "endpoint": "/growth/market-radar", "params": {},
+         "description": "Real-world competitor benchmarks (Amazon, Flipkart) with verified timestamps and source URLs"},
+        {"name": "merchant_growth_evaluate", "method": "POST",
+         "endpoint": "/growth/evaluate",
+         "params": {"intent": "string", "budget_paise": "int", "preferred_sku": "string?"},
+         "description": "Analyzes intent, discovers competitor benchmarks, and synthesizes high-AOV cross-sell bundles"},
     ],
     "payment": {
         "gateway": "razorpay_test",
