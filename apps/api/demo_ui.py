@@ -722,6 +722,13 @@ def demo_checkout() -> HTMLResponse:
     return _page("Live checkout", _CHECKOUT_BODY, _CHECKOUT_JS)
 
 
+@router.get("/demo/shopping")
+@router.get("/demo/shopping/")
+def demo_shopping_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/mission", status_code=307)
+
+
 def _get_api_key() -> str:
     return (
         os.environ.get("APP_API_KEY")
