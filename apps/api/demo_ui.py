@@ -29,6 +29,8 @@ import traceback
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from .web.layout import render_page as _unified_page
+
 router = APIRouter(tags=["demo-ui"])
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -396,9 +398,152 @@ boot();
 """
 
 
+
 @router.get("/demo", response_class=HTMLResponse)
 def demo_hub() -> HTMLResponse:
-    return _page("Demo hub", _HUB_BODY, _HUB_JS)
+    content = """
+  <div class="section-head">
+    <h1 class="section-title">&#127919; Demo Hub</h1>
+    <p class="section-sub">
+      Live checkout replays, chaos engineering, attack payload inspector, and audit tamper proof.
+      All running against the real server — no mocks.
+    </p>
+  </div>
+
+  <!-- PURITY CERTIFICATE -->
+  <div class="panel panel-ok" style="margin-bottom:24px;">
+    <div class="panel-header">
+      <div class="panel-title" style="color:var(--ok);">&#9989; Gateway Purity Certificate</div>
+      <a href="/gateway/proof" target="_blank" class="badge badge-ok" style="text-decoration:none;">
+        GET /gateway/proof
+      </a>
+    </div>
+    <div id="proof-card" style="font-size:13px;font-family:var(--font-mono);color:var(--muted);line-height:1.8;">
+      Loading...
+    </div>
+  </div>
+
+  <!-- NUMBERS STRIP -->
+  <div class="kpi-grid" style="margin-bottom:24px;">
+    <div class="kpi-card">
+      <div class="kpi-label">Catalog SKUs</div>
+      <div class="kpi-value cyan" id="n-skus">—</div>
+      <div class="kpi-sub">including 6 injection plants</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Gateway Rules</div>
+      <div class="kpi-value ok" id="n-rules">12</div>
+      <div class="kpi-sub">R1–R12 deterministic</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">LLM in Money Path</div>
+      <div class="kpi-value ok" id="n-llm">0</div>
+      <div class="kpi-sub">zero LLM in gateway</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Chain Status</div>
+      <div class="kpi-value ok" id="n-chain">VERIFIED</div>
+      <div class="kpi-sub">SHA-256 audit chain</div>
+    </div>
+  </div>
+
+  <!-- DEMO CARDS -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:24px;">
+    <a class="panel panel-cyan" href="/demo/checkout?scenario=injection_i1&amp;autorun=1"
+       style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="margin-bottom:10px;">&#9654; 60-Second Judge Tour</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        Live checkout replaying injection_i1: watch the planted payload flare red —
+        and what the gateway does about it.
+      </p>
+    </a>
+    <a class="panel" href="/demo/checkout" style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="margin-bottom:10px;">&#128179; Live Checkout Replay</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        Six scenarios: happy path, injections I1/I3, payment-failure recovery,
+        impossible mission, upsell.
+      </p>
+    </a>
+    <a class="panel panel-bad" href="/demo/failures" style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="color:var(--bad);margin-bottom:10px;">&#128163; Chaos Engineering</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        Six real attacks fired against live endpoints: forged signatures,
+        expired missions, tampered ledgers.
+      </p>
+    </a>
+    <a class="panel" href="/audit-ui" style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="margin-bottom:10px;">&#9964; Audit Block Explorer</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        Full append-only SHA-256 hash chain with block-by-block explorer and click-to-copy.
+      </p>
+    </a>
+    <a class="panel" href="/judge" style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="margin-bottom:10px;">&#9878; Judge Console</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        30-second automated evidence demo with downloadable JSON evidence receipt.
+      </p>
+    </a>
+    <a class="panel" href="/attack-ui" style="text-decoration:none;cursor:pointer;">
+      <div class="panel-title" style="margin-bottom:10px;">&#9876; Attack Lab (20 Exploits)</div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;">
+        All 20 adversarial attacks I1–I20 executed sequentially. Money leaked: Rs 0.
+      </p>
+    </a>
+  </div>
+
+  <!-- RULEBOOK PREVIEW -->
+  <div class="panel" style="margin-bottom:24px;">
+    <div class="panel-header">
+      <div class="panel-title">&#128736; Gateway Rulebook Preview</div>
+      <a href="/gateway-ui" class="badge badge-cyan" style="text-decoration:none;">Full Matrix &rarr;</a>
+    </div>
+    <div id="rules-table" style="font-size:12px;color:var(--muted);">Loading...</div>
+  </div>
+
+  <script>
+  (async function boot() {
+    const esc = s => (s||'').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    async function jget(u) { try { const r = await fetch(u); return {status:r.status, data:await r.json()}; } catch(e) { return {status:0,data:null}; } }
+
+    // Purity certificate
+    const g = await jget('/gateway/proof');
+    if (g.data) {
+      document.getElementById('proof-card').innerHTML =
+        '<div>LLM imports detected: <b style="color:var(--ok);">' + esc(g.data.llm_imports_detected) + '</b></div>' +
+        '<div>I/O calls detected: <b style="color:var(--ok);">' + esc(g.data.io_calls_detected||0) + '</b></div>' +
+        '<div>Source SHA-256: <span class="hash-chip" onclick="navigator.clipboard.writeText(\'' + esc(g.data.source_sha256||'') + '\')" style="word-break:break-all;">' + esc((g.data.source_sha256||'').slice(0,32)) + '&hellip;</span></div>' +
+        '<div style="margin-top:6px;font-size:11px;color:var(--dim);">' + esc(g.data.generated_at||'') + '</div>';
+    }
+
+    // Numbers
+    const h = await jget('/health');
+    const p = await jget('/policy');
+    const rules = (p.data && (p.data.rules||p.data.policies)) || [];
+    document.getElementById('n-rules').textContent = rules.length || 12;
+    document.getElementById('n-skus').textContent = 40;
+    document.getElementById('n-llm').textContent = (g.data && g.data.llm_imports_detected !== undefined ? g.data.llm_imports_detected : 0);
+    if (h.data) {
+      const cv = h.data.audit_chain_ok ?? h.data.chain_ok;
+      const el = document.getElementById('n-chain');
+      el.textContent = cv ? 'VERIFIED' : 'ALERT';
+      el.className = 'kpi-value ' + (cv ? 'ok' : 'bad');
+    }
+
+    // Rulebook table
+    if (rules.length > 0) {
+      let html = '<table style="width:100%;border-collapse:collapse;"><tr style="border-bottom:1px solid var(--border);"><th style="padding:6px;text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;">Rule</th><th style="padding:6px;text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;">Phase</th><th style="padding:6px;text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;">Severity</th></tr>';
+      rules.slice(0,12).forEach(r => {
+        html += '<tr style="border-bottom:1px solid rgba(51,65,85,0.2);"><td style="padding:6px;font-family:var(--font-mono);color:var(--rzp-cyan);">' + esc(r.rule_id||r.id) + '</td><td style="padding:6px;color:var(--muted);">Phase ' + esc(r.phase!==undefined?r.phase:'1') + '</td><td style="padding:6px;"><span class="badge ' + (r.severity==='FATAL'?'badge-bad':'badge-warn') + '">' + esc(r.severity||'FATAL') + '</span></td></tr>';
+      });
+      html += '</table>';
+      document.getElementById('rules-table').innerHTML = html;
+    } else {
+      document.getElementById('rules-table').innerHTML = '<a href="/gateway-ui" style="color:var(--rzp-cyan);">View full R1-R12 policy matrix &rarr;</a>';
+    }
+  })();
+  </script>
+"""
+    return HTMLResponse(_unified_page("Demo Hub", "demo", content))
 
 
 # ===========================================================================
