@@ -35,10 +35,13 @@ def main():
     print("\n[Stage 1/10] Verifying System Configuration...")
     try:
         from apps.api.config import refresh, status_summary
-        # Provide fallback test values for cold-start / CI environments if needed
-        os.environ.setdefault("MISSION_HMAC_KEY", "2399c5f289b4466315ad4f43b4f55b70ffe33aa66ec23261d9b313f2ea5b3677")
-        os.environ.setdefault("USER_MANDATE_KEY", "13f81275b54466008321a7527678ba36f86e00445307ef3501480e7683cffcc0")
-        os.environ.setdefault("APP_API_KEY", "sellable_demo_key_4f7e9c2a8b1d3e6f")
+        # Provide non-empty fallback test values for cold-start / CI environments
+        if not os.environ.get("MISSION_HMAC_KEY"):
+            os.environ["MISSION_HMAC_KEY"] = "2399c5f289b4466315ad4f43b4f55b70ffe33aa66ec23261d9b313f2ea5b3677"
+        if not os.environ.get("USER_MANDATE_KEY"):
+            os.environ["USER_MANDATE_KEY"] = "13f81275b54466008321a7527678ba36f86e00445307ef3501480e7683cffcc0"
+        if not os.environ.get("APP_API_KEY"):
+            os.environ["APP_API_KEY"] = "sellable_demo_key_4f7e9c2a8b1d3e6f"
         refresh()
         cfg = status_summary()
         assert cfg.get("boot_ok") is True
