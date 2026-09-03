@@ -9,7 +9,7 @@
 5. Set environment variables from the `.env.example` (all `from_secure: true`):
    - `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
    - `MISSION_HMAC_KEY`, `USER_MANDATE_KEY`
-   - `GEMINI_API_KEY`, `GEMINI_MODEL=gemini-3.6-flash`, `APP_API_KEY`
+   - `GEMINI_API_KEY`, `GEMINI_MODEL=google/gemini-1.5-flash`, `APP_API_KEY`
 6. Auto-deploy on push to `main`.
 
 ## Fly.io

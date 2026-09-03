@@ -10,7 +10,7 @@ events=16
 8 buyer_agent/tool_call: GET /tools/get_product/LAP-002
 9 buyer_agent/tool_result: LAP-002: Gaming Laptop RTX 4050 16GB Rs 4,499
 10 buyer_agent/llm_call: asking model to propose items for: laptop
-11 buyer_agent/llm_fallback: model unavailable (gemini-3.6-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['LAP-002']
+11 buyer_agent/llm_fallback: model unavailable (google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['LAP-002']
 12 buyer_agent/proposal_submitted: POST /tools/submit_proposal items=['LAP-002']
 13 gateway/verdict_received: APPROVE (all rules passed)
 14 merchant_ai/no_offers: No pre-gated upsell offers available for this cart

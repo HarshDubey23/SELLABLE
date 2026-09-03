@@ -142,6 +142,6 @@ async def run_full_mission_ui(payload: dict | None = None):
         "order_id": order_id,
         "amount_paise": amount_paise,
         "verdict": "APPROVED" if order_id else "REJECTED",
-        "razorpay_key_id": app_config.status_summary().get("razorpay_key_id", "rzp_test_TSttLNvLt9yUPI"),
+        "razorpay_key_id": app_config.get().razorpay_key_id or "",
         "raw_response": res,
     }

@@ -32,7 +32,7 @@ router = APIRouter(tags=["ui"])
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_view():
     entries = audit_chain.entries()
-    chain_valid = audit_chain.verify()
+    chain_valid = audit_chain.verify_cached()
     money_mod.snapshot().get("total", 0)
     bindings = all_bindings()
 
@@ -122,7 +122,7 @@ async def dashboard_view():
         <div class="pipe-label">Layer 02 · Untrusted</div>
         <div class="pipe-title">Buyer Agent</div>
         <div class="pipe-count" id="pl-proposals">—</div>
-        <div class="pipe-sub">Gemini reasoning</div>
+        <div class="pipe-sub">AI Advisory Reasoning</div>
       </div>
       <div class="pipe-node active">
         <div class="pipe-label">Layer 03 · Deterministic</div>
@@ -480,13 +480,28 @@ async def mission_view():
       const events = data.events || (data.trace ? data.trace.events : []);
       if (events && events.length > 0) {
         events.forEach(evt => {
-          const actor = evt.actor || 'SYS';
+          const actor = (evt.actor || 'SYS').toUpperCase();
           const action = evt.action || '';
-          const summary = evt.summary || (typeof evt.data === 'object' ? JSON.stringify(evt.data) : String(evt.data || ''));
+          let summary = evt.summary || '';
+          if (!summary && evt.data) {
+            summary = typeof evt.data === 'object' ? JSON.stringify(evt.data) : String(evt.data);
+          }
+          if (!summary && evt.payload) {
+            summary = typeof evt.payload === 'object' ? JSON.stringify(evt.payload) : String(evt.payload);
+          }
+          if (!summary && evt.detail) {
+            summary = String(evt.detail);
+          }
+          
           let cls = 'log-cyan';
-          if (actor === 'gateway') cls = (action.includes('REJECT') || summary.includes('REJECT')) ? 'log-bad' : 'log-ok';
-          else if (actor === 'executor') cls = summary.includes('refused') ? 'log-bad' : 'log-ok';
-          addLog('<b>' + actor.toUpperCase() + '</b>: ' + action + ' — ' + summary, cls);
+          if (actor.includes('GATEWAY')) {
+            cls = (action.includes('REJECT') || summary.includes('REJECT') || summary.includes('fail')) ? 'log-bad' : 'log-ok';
+          } else if (actor.includes('EXECUTOR')) {
+            cls = summary.includes('refused') ? 'log-bad' : 'log-ok';
+          } else if (actor.includes('BUYER_AGENT')) {
+            cls = 'log-actor';
+          }
+          addLog('<b>' + actor + '</b>: <span style="font-weight:600;">' + action + '</span> &mdash; ' + summary, cls);
         });
       }
 
@@ -509,18 +524,52 @@ async def mission_view():
         }
 
         const keyId = data.razorpay_key_id || 'rzp_test_TSttLNvLt9yUPI';
-        document.getElementById('rzp-btn').onclick = () => {
-          const opts = {
-            key: keyId, amount: amountPaise, currency: 'INR',
-            name: 'SELLABLE Autonomous Commerce',
-            description: 'Cryptographically Bound Order',
-            order_id: orderId,
-            handler: r => alert('Payment Captured! ID: ' + r.razorpay_payment_id),
-            theme: {color: '#00BAF2'}
-          };
-          new Razorpay(opts).open();
-        };
-        setTimeout(() => { try { document.getElementById('rzp-btn').click(); } catch(e){} }, 400);
+        function openCheckout() {
+          try {
+            if (typeof Razorpay === 'undefined') {
+              addLog('Loading Razorpay checkout script...', 'log-cyan');
+              const s = document.createElement('script');
+              s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+              s.onload = () => {
+                try {
+                  const rzp = new Razorpay({
+                    key: keyId, amount: amountPaise, currency: 'INR',
+                    name: 'SELLABLE Autonomous Commerce',
+                    description: 'Cryptographically Bound Order',
+                    order_id: orderId,
+                    handler: r => alert('Payment Captured! ID: ' + r.razorpay_payment_id),
+                    theme: {color: '#6366F1'}
+                  });
+                  rzp.open();
+                } catch(e) {
+                  alert('Razorpay Checkout Init Error: ' + e.message);
+                }
+              };
+              s.onerror = () => {
+                alert('Could not load Razorpay checkout script. Check network/adblocker.');
+              };
+              document.head.appendChild(s);
+              return;
+            }
+            const opts = {
+              key: keyId, amount: amountPaise, currency: 'INR',
+              name: 'SELLABLE Autonomous Commerce',
+              description: 'Cryptographically Bound Order',
+              order_id: orderId,
+              handler: r => alert('Payment Captured! ID: ' + r.razorpay_payment_id),
+              theme: {color: '#6366F1'}
+            };
+            const rzp = new Razorpay(opts);
+            rzp.on('payment.failed', function (response){
+              alert('Payment Failed: ' + (response.error ? response.error.description : 'unknown error'));
+            });
+            rzp.open();
+          } catch(err) {
+            alert('Razorpay Checkout Error: ' + err.message);
+          }
+        }
+        document.getElementById('rzp-btn').onclick = openCheckout;
+        setTimeout(() => { try { openCheckout(); } catch(e){} }, 500);
 
       } else {
         setPipelineStep(3, 'active');
@@ -758,7 +807,7 @@ async def attack_lab_view():
 @router.get("/audit-ui", response_class=HTMLResponse)
 async def audit_view():
     entries = audit_chain.entries()
-    chain_valid = audit_chain.verify()
+    chain_valid = audit_chain.verify_cached()
 
     blocks_html = ""
     recent = list(reversed(entries[-40:])) if entries else []
@@ -935,7 +984,7 @@ async def gateway_matrix_view():
   <div class="section-head">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
       <div>
-        <h1 class="section-title">&#128736; Deterministic Policy Engine (R1&ndash;R12)</h1>
+        <h1 class="section-title">&#128736; Policy Gateway Matrix (R1&ndash;R12)</h1>
         <p class="section-sub">
           12 pure, fail-closed, stdlib-only policy rules. Zero LLM imports.
           Zero network calls. Zero file I/O. Verified by
@@ -1115,7 +1164,7 @@ async def catalog_view():
 @router.get("/demo/judge", response_class=HTMLResponse)
 async def judge_mode_view():
     entries = audit_chain.entries()
-    chain_valid = audit_chain.verify()
+    chain_valid = audit_chain.verify_cached()
     total_calls = money_mod.snapshot().get("total", 0)
     bindings = all_bindings()
 

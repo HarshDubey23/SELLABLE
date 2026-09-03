@@ -481,7 +481,7 @@
       "BAT-002"
      ],
      "reason": "Selected the SS Ton Elite English Willow Bat as it is a high-rated professional cricket bat that fits comfortably within the Rs 3,000 budget.",
-     "model": "gemini-3.6-flash",
+     "model": "google/gemini-1.5-flash",
      "latency_ms": 5504,
      "raw_response": "SKUS: BAT-002\nREASON: Selected the SS Ton Elite English Willow Bat as it is a high-rated professional cricket bat that fits comfortably within the Rs 3,000 budget."
     }

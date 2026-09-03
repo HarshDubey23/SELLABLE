@@ -18,6 +18,7 @@ Enriched audit fields (Razorpay-grade trail):
 - review_state     : auto_approved/pending_merchant/approved/rejected/executed
 """
 import hashlib
+import hmac
 import json
 import threading
 import time
@@ -135,6 +136,8 @@ def append(actor: str, action: str, payload,
             "review_state": review_state,
         })
         _chain.append(entry)
+        global _verify_cache
+        _verify_cache = None
         return entry["seq"]
 
 
@@ -178,6 +181,21 @@ def _load_entries(db_path: str) -> list[dict]:
     return [dict(r) for r in rows] if rows else []
 
 
+_verify_cache: tuple[float, bool] | None = None
+_VERIFY_TTL = 2.0
+
+
+def verify_cached() -> bool:
+    """Cached audit verification with 2.0s TTL for page renders and telemetry."""
+    global _verify_cache
+    now = time.monotonic()
+    if _verify_cache is not None and (now - _verify_cache[0]) < _VERIFY_TTL:
+        return _verify_cache[1]
+    ok = verify()
+    _verify_cache = (now, ok)
+    return ok
+
+
 def verify(db_path: str | None = None) -> bool:
     """Recompute every hash from GENESIS. One flipped byte => False.
 
@@ -203,7 +221,7 @@ def verify(db_path: str | None = None) -> bool:
     if genesis["prev_hash"] != "0" * 64:
         return False
     expected_genesis_hash = _hash(genesis)
-    if genesis.get("hash") != expected_genesis_hash:
+    if not genesis.get("hash") or not hmac.compare_digest(genesis["hash"], expected_genesis_hash):
         return False
 
     prev = genesis["hash"]
@@ -211,11 +229,11 @@ def verify(db_path: str | None = None) -> bool:
         if e["seq"] == 0:
             return False  # duplicate genesis — tampered
         expected = _hash(e)
-        if e.get("hash") and e["hash"] != expected:
+        if not e.get("hash") or not hmac.compare_digest(e["hash"], expected):
             return False
         if e["prev_hash"] != prev:
             return False
-        prev = e.get("hash", expected)
+        prev = e["hash"]
     return True
 
 
@@ -231,12 +249,12 @@ def verify_strict(db_path: str | None = None) -> tuple[bool, str]:
         return False, f"first entry action={genesis['action']!r}, expected GENESIS"
     if genesis["prev_hash"] != "0" * 64:
         return False, "genesis prev_hash is not all-zeros"
-    if genesis.get("hash") != _hash(genesis):
+    if not genesis.get("hash") or not hmac.compare_digest(genesis["hash"], _hash(genesis)):
         return False, "genesis hash mismatch"
     prev = genesis["hash"]
     for e in entries_to_check[1:]:
         expected = _hash(e)
-        if e.get("hash") != expected:
+        if not e.get("hash") or not hmac.compare_digest(e["hash"], expected):
             return False, f"seq {e['seq']}: hash mismatch"
         if e["prev_hash"] != prev:
             return False, f"seq {e['seq']}: prev_hash mismatch (chain broken)"

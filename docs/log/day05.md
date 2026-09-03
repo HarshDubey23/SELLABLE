@@ -83,7 +83,7 @@ gated trust-adjusted revenue > ungated
   with a guarded import.
 - `eval/run.py` `sys.path` insertion needed `parents[1]` not `parents[2]`
   when run as `-m eval.run`.
-- `GEMINI_MODEL=gemini-3.6-flash` 404'd on every call; fallback chain only
+- `GEMINI_MODEL=google/gemini-1.5-flash` 404'd on every call; fallback chain only
   caught 429, not 404. Fixed primary + added 404/NOT_FOUND to fallback.
 - Walk-away test initially expected WALKED_AWAY from a wide gap, but the
   buyer clamps to the floor and meets the merchant there — walk-away in

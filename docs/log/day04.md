@@ -37,7 +37,7 @@ with a real HTTP-only payment flow.
 - **Idempotency keys**: every mutating Razorpay POST carries
   `X-Razorpay-Idempotency-Key`, deterministically derived from
   mission/proposal/seq, mirrored into the audit row.
-- **Gemini quota fallback**: primary `gemini-3.6-flash` quota (20/day)
+- **Gemini quota fallback**: primary `google/gemini-1.5-flash` quota (20/day)
   degraded via ordered fallbacks `3.7-flash -> 3.5-flash -> 2.5-flash`
   on `429`/`RESOURCE_EXHAUSTED`.
 - **Hygiene**: moved `e2e_day2`/`send_test_webhook` to `scripts/`,
@@ -65,7 +65,7 @@ aud_69 payment_link_issued     parent=aud_67
 - Playwright checkout never produced a single `captured` payment in any
   Day 3 run. Every `happy_path` ended `order_created_payment_pending`.
   Fix: dropped Playwright, went HTTP-only.
-- Gemini `gemini-3.6-flash` daily free-tier quota hit mid-demo. Fix:
+- Gemini `google/gemini-1.5-flash` daily free-tier quota hit mid-demo. Fix:
   ordered fallback chain on 429.
 - Mission signing inside the FastAPI process violated the documented G5
   custody claim. Fix: out-of-band CLI signer.

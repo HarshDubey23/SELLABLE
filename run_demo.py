@@ -48,7 +48,8 @@ USER_MANDATE_KEY={mandate_key}
 APP_API_KEY={api_key}
 PORT=8000
 SELLABLE_BASE_URL="http://127.0.0.1:8000"
-GEMINI_MODEL=gemini-3.6-flash
+GEMINI_MODEL=google/gemini-1.5-flash
+OPENROUTER_MODEL=google/gemini-1.5-flash
 """
         ENV_PATH.write_text(content, encoding="utf-8")
         print("[NOTICE] Demo mode: payments SIMULATED, reasoning deterministic.")
@@ -114,6 +115,13 @@ def poll_health(url: str, max_seconds: float = 30.0) -> bool:
     return False
 
 
+def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) == 0
+
+
 def run_smoke_checks(url: str) -> bool:
     print("[SMOKE] Running automated system health smoke checks...")
     endpoints = ["/health", "/api/v1/telemetry", "/gateway/proof", "/audit/verify", "/judge"]
@@ -135,6 +143,7 @@ def run_smoke_checks(url: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="SELLABLE Single Entry Point Demo Launcher")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Server port (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open browser")
     args = parser.parse_args()
@@ -149,11 +158,20 @@ def main():
     seed_and_sign_missions()
 
     port = args.port
-    base_url = f"http://localhost:{port}"
+    host = args.host
+    base_url = f"http://{host}:{port}"
 
-    print(f"\n[BOOT] Starting Uvicorn server daemon on port {port}...")
+    if port_in_use(port, host=host):
+        print(f"[ERROR] Port {port} is already in use on {host}.")
+        print(f"Try: python run_demo.py --port {port + 1}")
+        sys.exit(1)
+
+    os.environ["PORT"] = str(port)
+    os.environ["SELLABLE_BASE_URL"] = base_url
+
+    print(f"\n[BOOT] Starting Uvicorn server daemon on {host}:{port}...")
     server_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", str(port)],
+        [sys.executable, "-m", "uvicorn", "apps.api.main:app", "--host", host, "--port", str(port)],
         cwd=str(REPO_ROOT),
     )
 
@@ -162,11 +180,16 @@ def main():
         if not poll_health(base_url, max_seconds=30.0):
             print("[ERROR] Server failed to become healthy within 30 seconds.")
             server_proc.terminate()
+            server_proc.wait()
             sys.exit(1)
 
         print("[BOOT] Server is LIVE and healthy!")
         print("-" * 72)
-        run_smoke_checks(base_url)
+        if not run_smoke_checks(base_url):
+            print("[ERROR] Critical smoke checks failed. Stopping server.")
+            server_proc.terminate()
+            server_proc.wait()
+            sys.exit(1)
 
         print("=" * 72)
         print("                SELLABLE DEMO URL DIRECTORY MENU")
@@ -181,7 +204,7 @@ def main():
         print(f"  8. POLICY MATRIX (R1-R12)   : {base_url}/gateway-ui")
         print(f"  9. MERCHANT CATALOG         : {base_url}/products")
         print(f" 10. WHY SELLABLE PHILOSOPHY  : {base_url}/why")
-        print(f" 11. DEMO HUB & PROOF         : {base_url}/demo")
+        print(f" 11. METRICS & TELEMETRY      : {base_url}/metrics")
         print("=" * 72)
         print("  Press Ctrl+C to stop the server cleanly.")
 

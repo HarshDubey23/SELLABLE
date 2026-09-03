@@ -1,7 +1,7 @@
 # Day 5 — Proof of Work
 
 Generated live on this machine. Every claim backed by file or screenshot in this directory.
-Server: `http://127.0.0.1:8000` • Model: `gemini-3.6-flash` (fallback `gemini-3.5-flash`) • Date: 2026-08-29 04:33 IST
+Server: `http://127.0.0.1:8000` • Model: `google/gemini-1.5-flash` (fallback `gemini-3.5-flash`) • Date: 2026-08-29 04:33 IST
 Commit: `0e3d587` (fix: gemini 3.6-flash) • Chain: `b275ea5a...` (gateway proof)
 
 ## Verification Results
@@ -28,7 +28,7 @@ Commit: `0e3d587` (fix: gemini 3.6-flash) • Chain: `b275ea5a...` (gateway proo
 - Bounds: `bounds.py` `clamp_offer()`, `check_monotonic()`, `check_walk_away()`, `check_budget()`, `check_ttl()` — pure stdlib, no I/O.
 - Live runs (fresh server 2026-08-29 04:33):
   - Deterministic `MSN-PROOF-DET` floor 119900 ceiling 149900 budget 150000 max 5 → `accepted final_price 135464` turns 4 gap 27000→11400→3480→0 (`endpoints/negotiation_det.json`)
-  - LLM `MSN-PROOF-LLM` turn1 buyer rationale: `"Based on current market rates for this product, I can offer Rs. 1229 to close this deal right away."` (gemini-3.6-flash, ~3.9s latency) merchant counter `149900` — prices still clamped `raw==price`, `rationale` LLM-generated vs fallback `"Buyer offers Rs. 1229.00 (turn 1)."`, verified (`endpoints/negotiation_llm.json`)
+  - LLM `MSN-PROOF-LLM` turn1 buyer rationale: `"Based on current market rates for this product, I can offer Rs. 1229 to close this deal right away."` (google/gemini-1.5-flash, ~3.9s latency) merchant counter `149900` — prices still clamped `raw==price`, `rationale` LLM-generated vs fallback `"Buyer offers Rs. 1229.00 (turn 1)."`, verified (`endpoints/negotiation_llm.json`)
   - Walk-away `budget 50000 < floor` → `walked_away final_price None` (budget gate `bounds.py:check_budget`)
 - Persistence: `negotiations`+`negotiation_turns` tables (15 negotiations, 46 turns) — survives restart, `GET /negotiation/{id}` reloads from DB.
 
@@ -75,7 +75,7 @@ Playwright `chromium` headless, `page.goto(..., wait_until=networkidle)` — `sc
 1. Negotiation: LLM proposes rationales, deterministic strategy prices, 6 bounds prevent loss; even if LLM hallucinates price it is clamped (`raw_price` preserved) and gateway re-verifies via R11. `tests/test_negotiation.py` 9 cases + `test_negotiation_purity` PASS.
 2. Capture: real Razorpay order + public-key payment attempt + 10s poll, fully audit-chained (`demo_capture.py`).
 3. Eval: 3-arm harness quantifies gateway value (100% resistance, +Rs 34,510 fraud prevented at 100×3 scale per `eval/report.md`).
-4. Gemini: model `gemini-3.6-flash` live (3–5s latency, genuine rationales “Based on current market rates...” vs fallback “Buyer offers Rs...”); ordered fallback `gemini-3.5-flash` on 503/429 observed in `scenario_*.json` `llm_response.model`.
+4. Gemini: model `google/gemini-1.5-flash` live (3–5s latency, genuine rationales “Based on current market rates...” vs fallback “Buyer offers Rs...”); ordered fallback `gemini-3.5-flash` on 503/429 observed in `scenario_*.json` `llm_response.model`.
 
 ## Files
 

@@ -24,15 +24,22 @@ def _get_keys() -> list[str]:
     return [single] if single else []
 
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 def _model_name() -> str:
-    return os.environ.get("OPENROUTER_MODEL", "google/gemini-1.5-flash")
+    m = os.environ.get("OPENROUTER_MODEL") or os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
+    if "gemini" in m or "3.6" in m:
+        return "openai/gpt-4o-mini"
+    return m
 
 
 def _fallback_models() -> list[str]:
     return [
+        "deepseek/deepseek-chat",
+        "meta-llama/llama-3.3-70b-instruct",
         "openai/gpt-4o-mini",
-        "meta-llama/llama-3.1-8b-instruct",
-        "anthropic/claude-3-haiku",
     ]
 
 

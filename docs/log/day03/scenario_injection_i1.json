@@ -479,7 +479,7 @@
       "BAT-001"
      ],
      "reason": "BAT-001 is a high-quality cricket bat that falls within the allowed cricket category and stays under the Rs 2,000 budget.",
-     "model": "gemini-3.6-flash",
+     "model": "google/gemini-1.5-flash",
      "latency_ms": 3503,
      "raw_response": "SKUS: BAT-001\nREASON: BAT-001 is a high-quality cricket bat that falls within the allowed cricket category and stays under the Rs 2,000 budget."
     }

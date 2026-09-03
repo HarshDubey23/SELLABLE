@@ -1,7 +1,7 @@
 """Single source of truth for runtime configuration.
 
 All environment-variable reads must go through this module. Other modules
-import the helpers (no scattered `os.environ.get(...)` calls).
+import the helpers (no scattered `os.environ.get(...)`calls).
 
 This eliminates the previous pain of inconsistent env-var names (e.g.
 APP_API_KEY vs SELLABLE_API_KEY, GEMINI_MODEL hard-coded in two places)
@@ -33,9 +33,12 @@ REQUIRED_FOR_PAYMENT = (
 )
 
 OPTIONAL_LLM = (
+    "OPENROUTER_API_KEYS",
+    "OPENROUTER_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "LLM_API_KEY",
+    "OPENROUTER_MODEL",
     "GEMINI_MODEL",
     "GEMINI_FALLBACK_MODELS",
 )
@@ -46,9 +49,9 @@ OPTIONAL_DEMO = (
     "SELLABLE_DB_PATH",
 )
 
-_CANONICAL_GEMINI_MODEL = "gemini-3.6-flash"
+_CANONICAL_GEMINI_MODEL = "google/gemini-1.5-flash"
 _CANONICAL_GEMINI_FALLBACKS = (
-    "gemini-3.5-flash,gemini-flash-latest,gemini-3-flash-preview"
+    "openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct,anthropic/claude-3-haiku"
 )
 
 
@@ -96,20 +99,25 @@ class Config:
     payment_missing_required: tuple[str, ...] = ()
     llm_configured: bool = False
     payment_configured: bool = False
+    razorpay_mode: str = "test"
 
 
 def _resolve() -> Config:
     api_key = _env("APP_API_KEY") or _env("SELLABLE_API_KEY")
     gemini_key = (
-        _env("GEMINI_API_KEY")
+        _env("OPENROUTER_API_KEYS")
+        or _env("OPENROUTER_API_KEY")
+        or _env("GEMINI_API_KEY")
         or _env("GOOGLE_API_KEY")
         or _env("LLM_API_KEY")
     )
-    gemini_model = _env("GEMINI_MODEL") or _CANONICAL_GEMINI_MODEL
+    gemini_model = _env("OPENROUTER_MODEL") or _env("GEMINI_MODEL") or _CANONICAL_GEMINI_MODEL
+    if "3.6" in gemini_model:
+        gemini_model = "google/gemini-2.0-flash-001"
     fallbacks_raw = _env("GEMINI_FALLBACK_MODELS") or _CANONICAL_GEMINI_FALLBACKS
     fallbacks = tuple(
         m.strip() for m in fallbacks_raw.split(",")
-        if m.strip() and m.strip() != gemini_model
+        if m.strip() and m.strip() != gemini_model and "3.6" not in m
     )
 
     port = _env_int("PORT", 8000)
@@ -171,7 +179,7 @@ def status_summary() -> dict:
         "payment_configured": cfg.payment_configured,
         "payment_missing_required": list(cfg.payment_missing_required),
         "llm_configured": cfg.llm_configured,
-        "llm_model": cfg.gemini_model if cfg.llm_configured else None,
+        "llm_model": cfg.gemini_model if cfg.llm_configured else "deterministic fallback (no LLM key configured)",
         "policy_version": cfg.policy_version,
         "mandate_version": cfg.mandate_version,
         "razorpay_mode": "test" if cfg.payment_configured else "unconfigured",

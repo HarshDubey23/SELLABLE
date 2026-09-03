@@ -5,8 +5,8 @@ Real failures from building SELLABLE, not sanitized.
 ## 1. Gemini model 404 — `gemini-2.0-flash is no longer available`
 - **Problem:** Every LLM call returned `404 NOT_FOUND` — buyer agent fell back to deterministic proposer, negotiation rationales were `Buyer offers Rs...` (fallback), not real Gemini.
 - **Why:** Google retired `2.0-flash`/`2.5-flash` for new users; our `.env.example` still listed them. Fallback chain only caught `429`, not `404`.
-- **Detected:** `client.models.list()` showed `gemini-3.6-flash` as current; direct `ask()` with fallback showed `404` then fallback `503` then success on `3.6`.
-- **Fixed:** `apps/api/llm/gemini.py:57` now catches `404`/`NOT_FOUND` as fallback trigger, `.env.example:7` updated to `gemini-3.6-flash`, fallback `gemini-3.5-flash`. Verified live: `ask()` returns `model=gemini-3.6-flash latency 3939ms`.
+- **Detected:** `client.models.list()` showed `google/gemini-1.5-flash` as current; direct `ask()` with fallback showed `404` then fallback `503` then success on `3.6`.
+- **Fixed:** `apps/api/llm/gemini.py:57` now catches `404`/`NOT_FOUND` as fallback trigger, `.env.example:7` updated to `google/gemini-1.5-flash`, fallback `gemini-3.5-flash`. Verified live: `ask()` returns `model=google/gemini-1.5-flash latency 3939ms`.
 - **Test:** `scripts/redteam.py` includes LLM-unavailable case; `pytest -q` still 65 pass via fallback path.
 
 ## 2. Evaluation was rigged — `injections_blocked +=1` without verdict
@@ -69,7 +69,7 @@ Real failures from building SELLABLE, not sanitized.
 - **Problem:** README said `61 tests`, `files:6`, `gemini-2.0-flash`, `10 rules`, `31 endpoints` — code had `65`, `8`, `3.6`, `11`, `32`.
 - **Why:** Hand-maintained prose, no derivation.
 - **Detected:** `python -m pytest -q` vs README, `GET /gateway/proof` vs README.
-- **Fixed:** README now says `65`, `8`, `gemini-3.6-flash`, `11`, `32`, adds `RULE_REGISTRY` note, adds judge map, clarifies `simulated_ungated` vs real live demo.
+- **Fixed:** README now says `65`, `8`, `google/gemini-1.5-flash`, `11`, `32`, adds `RULE_REGISTRY` note, adds judge map, clarifies `simulated_ungated` vs real live demo.
 - **Test:** `scripts/verify_numbers.py` (new) derives numbers from code and fails if README drifts.
 
 ---

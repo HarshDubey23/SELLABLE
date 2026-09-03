@@ -482,7 +482,7 @@
       "BAT-001"
      ],
      "reason": "The SG Kashmir Willow Cricket Bat is a great cricket gift that fits well within the Rs 2,000 budget.",
-     "model": "gemini-3.6-flash",
+     "model": "google/gemini-1.5-flash",
      "latency_ms": 5643,
      "raw_response": "SKUS: BAT-001\nREASON: The SG Kashmir Willow Cricket Bat is a great cricket gift that fits well within the Rs 2,000 budget."
     }

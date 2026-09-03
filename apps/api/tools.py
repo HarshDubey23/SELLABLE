@@ -283,7 +283,7 @@ async def tool_submit_proposal(req: ProposalReq):
         mission=mission, proposal=proposal, catalog=CATALOG,
         verify_fn=mission_verify.verify_mission,
         state=state, now_ts=int(time.time()),
-        chain_ok=chain.verify(),
+        chain_ok=chain.verify_strict()[0],
         protocol_scope=req.protocol_scope,
     )
 

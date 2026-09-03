@@ -499,12 +499,12 @@
         "seq": 13,
         "actor": "buyer_agent",
         "action": "llm_fallback",
-        "summary": "model unavailable (gemini-3.6-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['BAT-002']",
+        "summary": "model unavailable (google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['BAT-002']",
         "data": {
           "skus": [
             "BAT-002"
           ],
-          "llm_error": "gemini-3.6-flash: [Errno 11001] getaddrinfo failed"
+          "llm_error": "google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed"
         }
       },
       {

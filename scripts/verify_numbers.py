@@ -89,7 +89,7 @@ checks = [
     (str(skus) in readme, f"README contains SKUs {skus}"),
     (str(rules) in readme, f"README contains rules {rules}"),
     (str(tests) in readme, f"README contains tests {tests}"),
-    ("gemini-3.6-flash" in readme, "README contains gemini-3.6-flash"),
+    ("gemini-1.5-flash" in readme or "google/gemini-1.5-flash" in readme, "README contains valid model"),
 ]
 for ok, msg in checks:
     print(f"{'OK' if ok else 'FAIL'} {msg}")

@@ -188,8 +188,6 @@ async def webhook(
                 },
             },
         )
-    # Only now mark as seen — persistence succeeded
-    processed_event_ids.add(event_id)
 
     # ---- PHASE 3: Update ledger (hierarchy enforcement) ----
     if order_id not in payment_ledger:
@@ -264,6 +262,8 @@ async def webhook(
                 },
             )
 
+    # Only mark as processed once persistence and audit have both succeeded
+    processed_event_ids.add(event_id)
     return {"status": "ok", "event_id": event_id, "event": event_name, "order_id": order_id}
 
 

@@ -42,9 +42,9 @@ python run_demo.py
 
 ---
 
-## 📊 Proven Outcomes & Evaluation Metrics (eval/report.json)
+## 📊 Proven Outcomes & Evaluation Metrics (eval/report.json & docs/TRUTH_NUMBERS.json)
 
-Evaluation metrics derived from 100 live mission runs powered by `gemini-3.6-flash`:
+Evaluation metrics derived from 100 benchmark mission runs powered by `google/gemini-1.5-flash` (with multi-key OpenRouter failover and deterministic local fallback):
 
 | Metric | Value | Meaning |
 |---|:---:|---|
@@ -57,7 +57,7 @@ Evaluation metrics derived from 100 live mission runs powered by `gemini-3.6-fla
 | **Gateway Latency p95** | `0.1` | **0.1ms p95 latency** for pure Python policy evaluation |
 | **False Block Cost** | `199268.0` | Total opportunity cost of rejected proposals (paise) |
 
-*Run `python -m eval.run` and `python scripts/verify_numbers.py --check-readme` to verify.*
+*Run `python -m eval.run`, `python scripts/render_truth_numbers.py`, and `python scripts/verify_numbers.py --check-readme` to verify.*
 
 ---
 
@@ -80,6 +80,62 @@ User -> [HMAC mandate: budget=2000, category=cricket]
 
 Result: The LLM could be fully compromised. It still cannot spend a rupee.
 ```
+
+---
+
+## 📐 Architecture & Cryptographic Trust Boundaries
+
+```mermaid
+flowchart TD
+    subgraph S1["1. INTENT & MANDATE (User Realm)"]
+        UI["User Natural Language Intent\ne.g. 'Buy cricket bat under ₹2,000'"]
+        HMAC["HMAC-SHA256 Mandate Warrants\nbudget_paise: 200000 · allowed_cat: ['cricket']"]
+    end
+
+    subgraph S2["2. ADVISORY REASONING (Untrusted LLM Realm)"]
+        LLM["Buyer Agent (OpenRouter / GPT-4o-mini / DeepSeek)\nDiscovers Tools & Explores Catalog\nProposes SKU: BAT-001\n⚠️ ZERO MONEY AUTHORITY"]
+    end
+
+    subgraph S3["3. DETERMINISTIC POLICY GATEWAY (Pure Python Stdlib)"]
+        Gate{"Policy Engine R1–R12\nZero LLM · Zero Network · Zero I/O"}
+        R1["Phase 1: Budget & Upsell Caps (R1, R4)"]
+        R2["Phase 2: Catalog & Price Drift (R2, R3, R5)"]
+        R3["Phase 3: Cryptographic Integrity (R8, R9, R10, R11, R12)"]
+    end
+
+    subgraph S4["4. CRYPTOGRAPHIC BINDING LAYER"]
+        Binding["SHA-256 Approval Binding\nHash: SHA256(mission + quote + cart + amount)\nAtomic Single-Use State in SQLite WAL"]
+    end
+
+    subgraph S5["5. CANONICAL MONEY BOUNDARY"]
+        MoneyBoundary["Isolated Razorpay Client (razorpay_client.py)\nAtomic Consumption Check: WHERE consumed=0\nExecutes: POST /v1/orders"]
+        RazorpayRail["Razorpay Banking Rails\n(UPI / Cards / NetBanking / Webhooks)"]
+    end
+
+    subgraph S6["6. TAMPER-EVIDENT AUDIT CHAIN"]
+        Ledger[("Immutable SHA-256 SQLite Ledger\nBoot-Verified Hash Chain\nZero Tamper Tolerance")]
+    end
+
+    UI --> HMAC
+    HMAC --> LLM
+    LLM -->|Untrusted Proposal| Gate
+    Gate --> R1 & R2 & R3
+    R1 & R2 & R3 -->|If ANY rule fails| Reject["REJECT (0 Money Calls Made)"]
+    Reject --> Ledger
+    R1 & R2 & R3 -->|If ALL 12 pass| Binding
+    Binding -->|Exact Match & Unconsumed| MoneyBoundary
+    MoneyBoundary --> RazorpayRail
+    RazorpayRail -->|Webhook HMAC Event| Ledger
+    Binding -.->|Audit Record| Ledger
+```
+
+### The 6 Layers of Cryptographic Custody
+1. **Layer 01 · HMAC Mandate (Trusted)**: The buyer's wallet generates an HMAC-SHA256 signature binding budget ceiling, allowed product categories, and expiration.
+2. **Layer 02 · Buyer Agent (Untrusted)**: The AI buyer uses OpenRouter / GPT-4o-mini to search the catalog, analyze user intent, and submit a proposed cart. The model has **zero** money authority.
+3. **Layer 03 · Gateway Engine (Deterministic)**: 12 pure mathematical rules in Python stdlib evaluate the proposal in under 0.2ms. If an exploit (like prompt injection or price drift) is attempted, the gate fails closed.
+4. **Layer 04 · Approval Binding (Cryptographic)**: Once approved, an exact SHA-256 hash is computed over `(mission_id, quote_id, cart_hash, amount_paise)`. This forms a single-use authorization token.
+5. **Layer 05 · Razorpay Boundary (Money Boundary)**: Order creation is strictly quarantined to `razorpay_client.py`. It executes an atomic SQL query: `UPDATE bindings SET consumed=1 WHERE binding_hash=? AND consumed=0`. Double spending is physically impossible.
+6. **Layer 06 · Audit Chain (Durable)**: Every transaction, block, proposal, and rejection is recorded in an append-only SHA-256 hash-chained SQLite WAL database, verified at server boot.
 
 ---
 

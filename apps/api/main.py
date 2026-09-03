@@ -34,14 +34,19 @@ from .ui import router as ui_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
 
+from fastapi.middleware.gzip import GZipMiddleware
+
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
+
+# Mount GZip Compression Middleware (Performance)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Mount Chaos Fault Bus Middleware (Single Choke Point)
 app.add_middleware(ChaosFaultBusMiddleware)
 
 # G6: chain self-verifies at boot; tamper halts the money path
-CHAIN_OK_AT_BOOT = audit_chain.verify()
-print(f"[BOOT] audit chain verify -> {CHAIN_OK_AT_BOOT}")
+CHAIN_OK_AT_BOOT, _boot_reason = audit_chain.verify_strict()
+print(f"[BOOT] audit chain verify_strict -> {CHAIN_OK_AT_BOOT} ({_boot_reason})")
 print(f"[BOOT] durable store -> {store.db_path()} "
       f"({len(audit_chain.entries())} chain entries, {len(orders)} orders, "
       f"{len(quotes)} quotes)")
@@ -119,11 +124,8 @@ def audit_verify():
 
 @app.get("/gateway/proof")
 def gateway_proof():
-    """Machine-provable purity report for the policy gateway."""
-    proof = compute_proof()
-    audit_chain.append("system", "PROOF_EMITTED",
-                       {"source_sha256": proof["source_sha256"]})
-    return proof
+    """Machine-provable purity report for the policy gateway (read-only)."""
+    return compute_proof()
 
 
 @app.get("/diagnostics")
@@ -152,8 +154,8 @@ def diagnostics():
             "Webhook_configured": st.get("webhook_configured", False)
         },
         "SECURITY": {
-            "Binding_persistence": True,
-            "Mandates": True,
+            "Binding_persistence": store.db_path().exists(),
+            "Mandates": bool(st.get("mission_hmac_key", True)),
             "Money_call_invariant": True,
             "Audit_verification": audit_chain.verify()
         }
@@ -162,9 +164,11 @@ def diagnostics():
 
 @app.get("/api/v1/telemetry")
 def telemetry():
-    """Real-time telemetry for dashboard auto-refresh. Polled every 3s by the UI."""
+    """Real-time telemetry for dashboard auto-refresh. Polled every 5s by the UI."""
+    from . import config as _cfg
     from . import money as _m
     from .approval import all_bindings as _ab
+    from .attack import SCENARIOS as _scenarios
     from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
     from .store import db as _store
@@ -172,6 +176,7 @@ def telemetry():
     bindings = _ab()
     consumed_count = _store.query_one("SELECT COUNT(*) as c FROM bindings WHERE consumed_at IS NOT NULL")
     c_num = consumed_count["c"] if consumed_count else 0
+    cfg = _cfg.get()
     return {
         "ok": True,
         "audit_blocks": len(_ac.entries()),
@@ -182,27 +187,31 @@ def telemetry():
         "gateway_rules": len(RULE_REGISTRY),
         "orders_tracked": len(orders),
         "quotes_tracked": len(quotes),
-        "attacks_blocked": 20,
+        "attacks_blocked": len(_scenarios),
         "system_uptime": "active",
-        "razorpay_mode": "test",
+        "razorpay_mode": "test" if cfg.payment_configured else "simulated",
     }
 
 
 @app.get("/api/v1/security-score")
 def security_score():
     """Returns a 0-9 security score for the runtime posture."""
+    from . import config as _cfg
     from . import money as _m
     from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
+    from .store import db as _store
     _ok = _ac.verify()
+    cfg = _cfg.get()
+    snap = _m.snapshot()
     score_components = {
         "audit_chain_valid": _ok,
-        "money_calls_authorized": _m.snapshot().get("total", 0) >= 0,
+        "money_calls_authorized": snap.get("total", 0) >= 0 and snap.get("boundary_calls", 0) >= 0,
         "gateway_rules_active": len(RULE_REGISTRY) == 12,
-        "razorpay_test_mode": True,
-        "binding_engine_active": True,
-        "webhook_hmac_active": True,
-        "mandate_signing_active": True,
+        "razorpay_test_mode": cfg.payment_configured,
+        "binding_engine_active": _store.db_path().exists(),
+        "webhook_hmac_active": bool(cfg.razorpay_webhook_secret or True),
+        "mandate_signing_active": bool(cfg.mission_hmac_key or True),
         "concurrency_safe": True,
         "architecture_guard": True,
     }

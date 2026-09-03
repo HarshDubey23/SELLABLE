@@ -12,7 +12,7 @@ events=18
 10 buyer_agent/tool_call: GET /tools/get_product/PAD-001
 11 buyer_agent/tool_result: PAD-001: SG Batting Pads Youth Rs 999
 12 buyer_agent/llm_call: asking model to propose items for: cricket bat
-13 buyer_agent/llm_fallback: model unavailable (gemini-3.6-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['BAT-002']
+13 buyer_agent/llm_fallback: model unavailable (google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['BAT-002']
 14 buyer_agent/proposal_submitted: POST /tools/submit_proposal items=['BAT-002']
 15 gateway/verdict_received: APPROVE (all rules passed)
 16 merchant_ai/no_offers: No pre-gated upsell offers available for this cart

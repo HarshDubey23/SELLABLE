@@ -35,12 +35,17 @@ def _payload(e: dict[str, Any]) -> dict[str, Any]:
 
 def events_from_audit(entries: list[dict[str, Any]]) -> list[MoneyEvent]:
     out: list[MoneyEvent] = []
+    from ..store import db as _store
+    orders_map = {row["order_id"]: row for row in _store.query("SELECT * FROM orders")}
     for e in entries:
         kind = KIND_MAP.get(str(e.get("action", "")))
         if not kind:
             continue
         meta = _payload(e)
         amount = int(meta.get("amount_paise") or meta.get("after_paise") or 0)
+        entity_id = e.get("entity_id") or ""
+        if amount == 0 and entity_id in orders_map:
+            amount = int(orders_map[entity_id].get("amount_paise", 0))
         out.append(MoneyEvent(
             kind=kind,
             amount_paise=amount,

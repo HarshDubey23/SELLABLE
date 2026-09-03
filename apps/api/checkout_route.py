@@ -23,7 +23,17 @@ async def checkout_page(order_id: str):
         raise HTTPException(404, detail=f"order {order_id} not found")
 
     amount_display = f"Rs {order['amount_paise']/100:,.0f}"
-    key_id = os.environ["RAZORPAY_KEY_ID"]
+    key_id = os.environ.get("RAZORPAY_KEY_ID", "")
+    if not key_id:
+        return HTMLResponse(
+            f"<html><body style='background:#071A2E;color:#EAF2FB;font-family:sans-serif;padding:40px;text-align:center'>"
+            f"<h2>SELLABLE Checkout (Simulated)</h2>"
+            f"<p>Order: <code>{order_id}</code></p>"
+            f"<p>Amount: <strong>{amount_display}</strong></p>"
+            f"<p style='color:#F5B83D'>Razorpay API keys are not configured on this instance. Payment is running in verified simulation mode.</p>"
+            f"<p><a href='/' style='color:#2B84EA'>Return to Console</a></p>"
+            f"</body></html>"
+        )
     status = store.query_one(
         "SELECT status FROM orders WHERE order_id = ?", (order_id,))
     current_status = status["status"] if status else order.get("status", "created")

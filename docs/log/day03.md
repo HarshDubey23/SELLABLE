@@ -85,7 +85,7 @@ Scenarios (live Gemini + live Razorpay):
    top pe le aata hai.
 
 5. **LLM model 404.** Symptom: Gemini returned `gemini-2.0-flash is no
-   longer available`. Fix: GEMINI_MODEL=gemini-3.6-flash in .env; buyer
+   longer available`. Fix: GEMINI_MODEL=google/gemini-1.5-flash in .env; buyer
    mein deterministic fallback bhi hai agar model phir se down ho — trace
    mein clearly marked, silently fake nahi hota.
 
@@ -132,7 +132,7 @@ Scenarios (live Gemini + live Razorpay):
   scenarios.py ab loader hai, signer nahi.
 - Idempotency keys: har mutating Razorpay POST pe X-Razorpay-Idempotency-Key,
   deterministically derived (mission/proposal/seq), audit row mein mirrored.
-- Gemini quota fallback: primary gemini-3.6-flash ka free-tier daily quota
+- Gemini quota fallback: primary google/gemini-1.5-flash ka free-tier daily quota
   (20/day) khatam ho gaya tha; ab ordered fallbacks (3.7-flash ->
   3.5-flash -> 2.5-flash) 429 pe degrade karte hain.
 - Hygiene: e2e_day2/send_test_webhook scripts/ mein move, pytest testpaths
