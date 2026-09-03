@@ -1,12 +1,8 @@
-# Runtime dependencies only — pinned exact (F-07, Phase 3).
-# Dev/test tooling lives in requirements-dev.txt. Regenerate pins from a working
-# venv:  pip freeze | grep -iE "^(fastapi|uvicorn|...)"
-# NOTE: the razorpay SDK is NOT imported anywhere (razorpay_client.py speaks
-# raw HTTPS via requests) — it is deliberately absent from this manifest.
-fastapi==0.141.1
-uvicorn==0.52.4
-python-dotenv==1.2.3
-pydantic==2.13.5
-requests==2.34.2
-httpx==0.28.1
-google-genai==2.20.0
+# Runtime dependencies with explicit lower and upper bounds (Workstream A4).
+fastapi>=0.110.0,<1.0.0
+uvicorn>=0.28.0,<1.0.0
+python-dotenv>=1.0.0,<2.0.0
+pydantic>=2.0.0,<3.0.0
+requests>=2.30.0,<3.0.0
+httpx>=0.25.0,<1.0.0
+google-genai>=1.0.0,<3.0.0

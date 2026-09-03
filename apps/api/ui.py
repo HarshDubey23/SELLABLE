@@ -328,54 +328,8 @@ nav.nav-links a.nav-judge:hover { background: rgba(245, 158, 11, 0.14); }
 .why-number { font-size: 60px; font-weight: 900; font-family: var(--font-mono); color: var(--bad); line-height: 1; }
 """
 
-def _page_layout(title: str, active_tab: str, content: str) -> str:
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>SELLABLE — {title}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-  <style>{_CSS}</style>
-</head>
-<body>
-  <header class="navbar">
-    <div class="header-wrap">
-      <div class="brand-group">
-        <div class="brand-logo">S</div>
-        <div>
-          <div class="brand-title">SELLABLE</div>
-          <div style="font-size: 10px; color: var(--text-dim);">Autonomous Commerce Security</div>
-        </div>
-        <span class="brand-tag">Track 01</span>
-      </div>
-      <nav class="nav-links">
-        <a href="/" class="{'active' if active_tab == 'dashboard' else ''}">Command Center</a>
-        <a href="/mission" class="{'active' if active_tab == 'mission' else ''}">Live Mission</a>
-        <a href="/judge" class="{'active' if active_tab == 'judge' else ''}">Judge Console</a>
-        <a href="/chaos" class="{'active' if active_tab == 'chaos' else ''}">Chaos Control</a>
-        <a href="/architecture" class="{'active' if active_tab == 'architecture' else ''}">Architecture</a>
-        <a href="/attack-ui" class="{'active' if active_tab == 'attack' else ''}">Attack Lab</a>
-        <a href="/audit-ui" class="{'active' if active_tab == 'audit' else ''}">Audit Ledger</a>
-        <a href="/gateway-ui" class="{'active' if active_tab == 'gateway' else ''}">Policy Matrix</a>
-        <a href="/products" class="{'active' if active_tab == 'products' else ''}">Catalog</a>
-        <a href="/why" class="{'active' if active_tab == 'why' else ''}">Why SELLABLE</a>
-        <a href="/demo" class="{'active' if active_tab == 'demo' else ''}">Demo Hub</a>
-      </nav>
-      <div class="status-badge">
-        <span class="status-pulse"></span>
-        Razorpay TEST MODE
-      </div>
-    </div>
-  </header>
-  <main class="container">
-    {content}
-  </main>
-</body>
-</html>"""
+from .web.layout import render_page as _page_layout
+""
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_view():
