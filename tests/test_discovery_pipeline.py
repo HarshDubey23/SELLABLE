@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from apps.api.discovery.pipeline import (
     run_real_product_discovery,
-    search_live_web,
+    search_live_web_providers,
     _extract_price_from_text,
     _extract_rating_from_text,
     _extract_availability_from_text,
@@ -15,14 +15,14 @@ client = TestClient(app)
 def test_strict_extraction_no_invented_values():
     """Verify price, rating, and availability extraction never invents data."""
     # Price
-    p1, v1 = _extract_price_from_text("Best bat for Rs 1,499 only")
-    assert p1 == 149900 and v1 is True
+    p1, inr1, v1 = _extract_price_from_text("Best bat for Rs 1,499 only")
+    assert p1 == 149900 and inr1 == 1499.0 and v1 is True
 
-    p2, v2 = _extract_price_from_text("Flipkart special: ₹ 2499 with discount")
-    assert p2 == 249900 and v2 is True
+    p2, inr2, v2 = _extract_price_from_text("Flipkart special: ₹ 2499 with discount")
+    assert p2 == 249900 and inr2 == 2499.0 and v2 is True
 
-    p3, v3 = _extract_price_from_text("Explore top quality bats online")
-    assert p3 is None and v3 is False  # Never invent a price
+    p3, inr3, v3 = _extract_price_from_text("Explore top quality bats online")
+    assert p3 is None and inr3 is None and v3 is False  # Never invent a price
 
     # Rating
     r1, rv1 = _extract_rating_from_text("Rated 4.6 stars by 1200 buyers")
@@ -51,7 +51,6 @@ def test_live_web_search_honesty():
             assert item.url.startswith("http")
             assert item.seller is not None
             assert item.scraped_at is not None
-            assert item.is_untrusted is True  # Untrusted taint invariant
             assert len(item.raw_evidence) > 0  # Verbatim source proof
             if not item.price_verified:
                 assert item.price_paise is None

@@ -457,14 +457,17 @@ async def discovery_ui():
 
       if (!data.listings || data.listings.length === 0) {
         badge.className = 'badge badge-bad';
-        badge.textContent = '0 PRODUCTS FOUND';
+        badge.textContent = data.search_engine_status || '0 PRODUCTS FOUND';
         document.getElementById('winner-hero').style.display = 'none';
         document.getElementById('results-grid').style.display = 'none';
+        if (data.error_message) {
+          alert('Live Discovery Search: ' + data.error_message);
+        }
         return;
       }
 
       badge.className = 'badge badge-ok';
-      badge.textContent = 'DISCOVERED ' + data.listings.length + ' PRODUCTS';
+      badge.textContent = 'LIVE SEARCH SUCCESS (' + data.listings.length + ' PRODUCTS)';
       document.getElementById('winner-hero').style.display = 'block';
       document.getElementById('results-grid').style.display = 'grid';
 
@@ -475,13 +478,19 @@ async def discovery_ui():
         document.getElementById('rec-decision-type').textContent = rec.decision_status;
         document.getElementById('rec-winner-name').textContent = rec.winner_name;
         document.getElementById('rec-winner-seller').textContent = rec.winner_seller;
-        document.getElementById('rec-savings').innerHTML = '&#8377;' + rec.savings_vs_market_inr.toFixed(2);
-        document.getElementById('rec-winner-price').innerHTML = rec.winner_price_inr ? ('&#8377;' + rec.winner_price_inr.toFixed(2)) : 'Unverified';
+        document.getElementById('rec-savings').innerHTML = rec.savings_vs_market_inr > 0 ? ('&#8377;' + rec.savings_vs_market_inr.toFixed(2)) : '&#8377;0.00';
+        document.getElementById('rec-winner-price').innerHTML = rec.winner_price_inr ? ('&#8377;' + rec.winner_price_inr.toFixed(2)) : 'Price Unverified';
         document.getElementById('rec-reason').textContent = rec.recommendation_reason;
       }
 
+      // Render Provider Badges
+      let hitText = data.listings.length + ' LIVE SOURCES';
+      if (data.providers_hit && data.providers_hit.length > 0) {
+        hitText = data.providers_hit.join(' &middot; ');
+      }
+      document.getElementById('sources-count-badge').innerHTML = hitText;
+
       // Render Listings
-      document.getElementById('sources-count-badge').textContent = data.listings.length + ' VERIFIED PRODUCTS';
       const listEl = document.getElementById('extracted-listings-list');
       listEl.innerHTML = '';
       data.listings.forEach((it, idx) => {
@@ -495,24 +504,33 @@ async def discovery_ui():
         const borderLeft = isSellable ? '4px solid var(--rzp-cyan)' : '4px solid rgba(255,255,255,0.1)';
         div.style.borderLeft = borderLeft;
 
+        const priceHtml = it.price_verified && it.price_inr ?
+          ('<div style="font-family:var(--font-mono);font-weight:800;color:var(--ok);font-size:16px;">&#8377;' + it.price_inr.toFixed(2) + '</div>' +
+           '<span class="badge badge-ok" style="font-size:9px;padding:2px 6px;">&#10003; VERIFIED LIVE PRICE</span>') :
+          ('<div style="font-family:var(--font-mono);font-size:13px;color:var(--text-2);">Price Unverified</div>' +
+           '<span class="badge badge-yellow" style="font-size:9px;padding:2px 6px;">UNVERIFIED IN SNIPPET</span>');
+
+        const ratingHtml = it.rating_verified && it.rating ?
+          ('<span style="color:#f59e0b;">&#9733; ' + it.rating + '</span> &middot; ') : '';
+
         div.innerHTML = 
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
             '<div style="flex:1;">' +
               '<div style="font-weight:700;font-size:14px;color:#fff;">' + (idx+1) + '. ' + it.product_name + '</div>' +
               '<div style="font-size:11.5px;color:var(--text-2);margin-top:4px;">' +
-                'Platform: <b style="color:var(--rzp-cyan);">' + it.seller + '</b> &middot; ' +
-                '<span style="color:#f59e0b;">&#9733; ' + (it.rating || '4.2') + '</span> &middot; ' +
-                '<span style="color:var(--ok);font-weight:600;">IN STOCK</span>' +
+                'Storefront: <b style="color:var(--rzp-cyan);">' + it.seller + '</b> &middot; ' +
+                ratingHtml +
+                '<span style="color:var(--ok);font-weight:600;">' + (it.availability === 'in_stock' ? 'IN STOCK' : 'AVAILABLE') + '</span> &middot; ' +
+                '<span style="color:var(--muted);font-size:10px;">Scraped: ' + (it.scraped_at ? it.scraped_at.slice(11, 19) + ' UTC' : 'Live') + '</span>' +
               '</div>' +
             '</div>' +
             '<div style="text-align:right;white-space:nowrap;">' +
-              '<div style="font-family:var(--font-mono);font-weight:800;color:var(--ok);font-size:16px;">&#8377;' + it.price_inr.toFixed(2) + '</div>' +
-              '<span class="badge badge-ok" style="font-size:9px;padding:2px 6px;">VERIFIED PRICE</span>' +
+              priceHtml +
             '</div>' +
           '</div>' +
           
           '<div style="margin-top:8px;background:rgba(0,0,0,0.3);border-left:3px solid var(--rzp-cyan);padding:8px 10px;border-radius:4px;">' +
-            '<div style="font-size:9.5px;font-weight:700;color:var(--rzp-cyan);text-transform:uppercase;margin-bottom:3px;">Product Spec &amp; Verification Evidence:</div>' +
+            '<div style="font-size:9.5px;font-weight:700;color:var(--rzp-cyan);text-transform:uppercase;margin-bottom:3px;">Live Source Evidence (' + it.search_provider + '):</div>' +
             '<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);line-height:1.4;">"' + it.raw_evidence + '"</div>' +
           '</div>' +
 
@@ -520,7 +538,7 @@ async def discovery_ui():
             '<a href="' + it.url + '" target="_blank" rel="noopener noreferrer" style="color:var(--rzp-indigo);text-decoration:none;display:inline-flex;align-items:center;gap:4px;">' +
               '&#128279; View Verified Storefront &nearr;' +
             '</a>' +
-            '<span>Platform Domain: ' + it.seller_domain + '</span>' +
+            '<span>Platform: ' + it.seller_domain + ' &middot; Provider: ' + it.search_provider + '</span>' +
           '</div>';
 
         listEl.appendChild(div);
