@@ -94,6 +94,10 @@ def ensure_schema() -> None:
         " transcript_hash TEXT,"
         " parent_negotiation_id TEXT,"
         " override_of TEXT,"
+        " settlement_approve_seq INTEGER,"
+        " settlement_quote_id TEXT,"
+        " settlement_proposal_hash TEXT,"
+        " settled_at INTEGER,"
         " created_at INTEGER NOT NULL,"
         " updated_at INTEGER NOT NULL,"
         " expires_at INTEGER NOT NULL,"
@@ -122,7 +126,47 @@ def ensure_schema() -> None:
         " created_at INTEGER NOT NULL)")
 
 
+def _migrate_settlement_columns() -> None:
+    """Add the settlement claim columns to an existing table (idempotent)."""
+    existing = {row["name"] for row in
+                store.query("SELECT name FROM pragma_table_info("
+                            "'market_negotiations')")}
+    for col, coltype in (("settlement_approve_seq", "INTEGER"),
+                         ("settlement_quote_id", "TEXT"),
+                         ("settlement_proposal_hash", "TEXT"),
+                         ("settled_at", "INTEGER")):
+        if col not in existing:
+            store.execute(
+                f"ALTER TABLE market_negotiations ADD COLUMN {col} {coltype}")
+
+
+
 ensure_schema()
+_migrate_settlement_columns()
+
+
+def claim_settlement(negotiation_id: str, *, approve_seq: int, quote_id: str,
+                     proposal_hash: str, now_ts: int | None = None) -> bool:
+    """Claim the sole right to settle this negotiation.
+
+    The same conditional UPDATE the rest of the system uses for anything
+    that must happen once. Without it, settling twice would evaluate the
+    gateway twice, mint two approve sequences, two bindings and two
+    execution rows -- and the execution machine, which dedupes on the
+    authorization it is handed, would correctly conclude these were two
+    different authorized purchases and open two payments.
+
+    Returns True if this caller claimed it, False if someone already had.
+    """
+    now_ts = now_ts if now_ts is not None else int(time.time())
+    affected = store.execute_rowcount(
+        "UPDATE market_negotiations SET settlement_approve_seq = ?, "
+        "settlement_quote_id = ?, settlement_proposal_hash = ?, "
+        "settled_at = ?, updated_at = ? "
+        "WHERE negotiation_id = ? AND settlement_approve_seq IS NULL",
+        (approve_seq, quote_id, proposal_hash, now_ts, now_ts,
+         negotiation_id))
+    return affected == 1
 
 
 # -------------------------------------------------------- transitions
