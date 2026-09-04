@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import platform
 import re
 import statistics
 import subprocess
@@ -92,20 +93,36 @@ def test_facts() -> dict:
     }
 
 
+# Named explicitly, so a new virtualenv or vendored dependency cannot
+# quietly join the count.
+FIRST_PARTY_SOURCE_DIRS = ("apps", "tests", "scripts", "eval",
+                           "external_buyer", "mcp_server")
+
+
 def codebase_facts() -> dict:
     from apps.api import execution as ex
     from apps.api.gateway.registry import RULE_REGISTRY
     from apps.api.products import CATALOG
 
-    py_files = [p for p in REPO.rglob("*.py")
-                if ".venv" not in p.parts and "__pycache__" not in p.parts
-                and ".git" not in p.parts]
-    loc = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines())
-              for p in py_files)
+    # Count first-party source by naming the directories, not by excluding
+    # the ones we happen to remember. An earlier version filtered ".venv"
+    # and then counted a second virtualenv at "venv/", reporting 1.3 million
+    # lines of "our" code. A metric that large is obviously wrong; a metric
+    # only twice as large as it should be would not have been caught.
+    py_files = [
+        f
+        for d in FIRST_PARTY_SOURCE_DIRS
+        for f in (REPO / d).rglob("*.py")
+        if "__pycache__" not in f.parts
+    ]
+    py_files += [f for f in REPO.glob("*.py")]
+    loc = sum(len(f.read_text(encoding="utf-8", errors="ignore").splitlines())
+              for f in py_files)
 
     return {
         "python_files": len(py_files),
         "python_lines": loc,
+        "counted_from": sorted(FIRST_PARTY_SOURCE_DIRS) + ["*.py at the repo root"],
         "gateway_rules": len(RULE_REGISTRY),
         "gateway_rule_ids": [r["rule_id"] for r in RULE_REGISTRY],
         "catalog_skus": len(CATALOG),
@@ -155,7 +172,7 @@ def gateway_latency_facts(iterations: int = 2000) -> dict:
         "p99_ms": pct(0.99),
         "mean_ms": round(statistics.mean(samples), 4),
         "max_ms": round(samples[-1], 4),
-        "measured_on": f"{os.uname().sysname} python{sys.version_info.major}."
+        "measured_on": f"{platform.system()} python{sys.version_info.major}."
                        f"{sys.version_info.minor}",
         "note": ("in-process evaluation of R1-R12 only; excludes HTTP, "
                  "persistence and the audit append. Machine-dependent."),

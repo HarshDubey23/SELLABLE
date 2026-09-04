@@ -17,6 +17,13 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+
+# The README states a bound rather than a measurement, because a p95 is a
+# property of the machine that measured it. The bound is generous by two
+# orders of magnitude against a typical run and still fails loudly if the
+# gateway ever starts doing I/O.
+P95_BOUND_MS = 5.0
+P95_BOUND_SENTENCE = "p95 under 5 ms"
 README = REPO / "README.md"
 TRUTH = REPO / "docs" / "generated" / "truth.json"
 
@@ -49,7 +56,28 @@ def main() -> int:
     expect("catalog size", f"| {code['catalog_skus']} SKUs |")
     expect("adversarial result",
            f"**{adv['scenarios_blocked']} of {adv['scenarios_total']} blocked**")
-    expect("p95 latency", f"p95 {lat['p95_ms']:.3f} ms")
+    # NOT an exact-match check, on purpose.
+    #
+    # This was the CI failure. `p95_ms` is measured on whatever machine ran
+    # generate_truth.py, so the README could only ever match the developer
+    # laptop that last regenerated it — every CI runner produced a different
+    # figure and the gate failed by construction. Pinning a machine-dependent
+    # measurement to a documentation string is not a truth check, it is a
+    # promise that two machines are identical.
+    #
+    # The README therefore states a BOUND, which is a claim a reader can
+    # actually rely on, and this asserts the measurement satisfies it.
+    expect("p95 latency bound", P95_BOUND_SENTENCE)
+    measured_p95 = float(lat["p95_ms"])
+    checks.append(("p95 within the stated bound",
+                   measured_p95 < P95_BOUND_MS,
+                   f"{measured_p95} ms < {P95_BOUND_MS} ms"))
+    if measured_p95 >= P95_BOUND_MS:
+        failures.append(
+            f"the gateway measured p95 {measured_p95} ms, which does not "
+            f"satisfy the bound of {P95_BOUND_MS} ms that the README states. "
+            f"Either the gateway regressed or the claim needs revising — do "
+            f"not widen the bound without understanding which.")
 
     # Nothing may claim a passing suite while the suite is red.
     if not tests["all_green"]:

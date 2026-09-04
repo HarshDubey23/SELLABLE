@@ -1,37 +1,46 @@
-﻿.env
-venv/
+# --- secrets ---------------------------------------------------------
+.env
+
+# --- python ----------------------------------------------------------
 __pycache__/
 *.pyc
 *.pyo
+.venv/
+venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- runtime state ---------------------------------------------------
+# The SQLite database and the signed mandates are produced by running the
+# app. `data/.gitkeep` keeps the directory; nothing inside it is committed.
+data/*
+!data/.gitkeep
+missions/*_mandate.json
 *.log
-events.log
+*.err
+
+# --- editors / os ----------------------------------------------------
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 node_modules/
-data/*
-!data/.gitkeep
-missions/*_mandate.json
-video_submission.txt
-*.err
-server.log
-server.err
-uvicorn*.log
+
+# --- scratch -----------------------------------------------------------
+# Ad-hoc probe scripts written while debugging. If one earns a place it
+# becomes a test under tests/, which is the only directory pytest collects.
+scratch/
 live_demo.py
 smoke_*.py
 dbg_*.py
-
-
-.venv/
 docs/generated/*.tmp
 
-artifacts/
-
-# Delivery artifacts written into the working copy by the update tooling.
-# They are not part of the project.
+# --- delivery artifacts written into the working copy by tooling -------
+# Not part of the project; a 13 MB git bundle in the repo root is noise.
 *.bundle
-PUSH_TO_GITHUB.bat
-PUSH_TO_GITHUB.md
+PUSH*.bat
+PUSH*.md
 Claude outputs/
+artifacts/
+video_submission.txt

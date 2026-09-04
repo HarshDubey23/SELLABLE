@@ -28,9 +28,11 @@ Three rules follow from this and are enforced below:
   2. The merchant's own catalog entry is NEVER injected into `listings`.
      It is returned separately as `merchant_offer`. A storefront quoting
      itself as a discovered market listing is circular evidence.
-  3. Search status is derived from the live providers alone. If every
-     provider failed, the status is SEARCH_UNAVAILABLE — even when the
-     merchant catalog has a perfectly good match to sell.
+  3. Search status is derived from the live RETAIL providers alone. If
+     every provider failed, the status is SEARCH_UNAVAILABLE — even when
+     the merchant catalog has a perfectly good match to sell. If only the
+     synthetic mock APIs answered, it is MOCK_SOURCES_ONLY, never
+     LIVE_SEARCH_SUCCESS.
 
 Rule 3 is the one that matters most. The previous implementation
 appended the merchant's own SKU to the results list, so a run in which
@@ -183,7 +185,8 @@ class DiscoveryPipelineResult(BaseModel):
     budget_paise: int
     # Derived from the LIVE providers alone. A merchant catalog match can
     # never turn a failed search into a successful one.
-    search_engine_status: str  # LIVE_SEARCH_SUCCESS | ZERO_RESULTS | SEARCH_UNAVAILABLE
+    # LIVE_SEARCH_SUCCESS | MOCK_SOURCES_ONLY | ZERO_RESULTS | SEARCH_UNAVAILABLE
+    search_engine_status: str
     providers_queried: list[str] = Field(default_factory=list)
     providers_hit: list[str] = Field(default_factory=list)
     provider_errors: list[str] = Field(default_factory=list)
@@ -472,9 +475,28 @@ def _query_bing_rss(clean_q: str, tokens: list[str], primary_nouns: list[str],
         with urllib.request.urlopen(req_b, timeout=4) as r:
             xml_data = r.read()
 
+        if not xml_data.strip():
+            # An empty body is a broken endpoint, not an empty market. The
+            # two must never be reported the same way: one means "nobody
+            # sells this", the other means "we could not look".
+            return [], None, ("Live web search: the search endpoint returned "
+                              "an empty response body")
+
         root = ET.fromstring(xml_data)
+        feed_items = root.findall(".//item")
+        if not feed_items:
+            # Parsed cleanly and contained no results at all. Bing has been
+            # observed serving a well-formed but resultless feed for every
+            # query, which is indistinguishable from a genuine miss unless
+            # we say so here.
+            return [], None, ("Live web search: the feed parsed but carried "
+                              "no result items at all, which usually means "
+                              "the endpoint is no longer serving results")
+
         listings = []
-        for it in root.findall(".//item"):
+        rejected_domain = 0
+        rejected_intent = 0
+        for it in feed_items:
             title = it.find("title").text if it.find("title") is not None else ""
             link = it.find("link").text if it.find("link") is not None else ""
             desc = it.find("description").text if it.find("description") is not None else ""
@@ -487,11 +509,13 @@ def _query_bing_rss(clean_q: str, tokens: list[str], primary_nouns: list[str],
             seller = next((name for d, name in VERIFIED_RETAIL_DOMAINS.items()
                            if domain == d or domain.endswith("." + d)), None)
             if seller is None:
+                rejected_domain += 1
                 continue
 
             # 2. the listing must actually be about what was asked for
             if not _matches_query_intent(f"{clean_title} {clean_desc}",
                                          tokens, primary_nouns):
+                rejected_intent += 1
                 continue
 
             price = _extract_price_from_text(f"{clean_title} {clean_desc}")
@@ -520,9 +544,19 @@ def _query_bing_rss(clean_q: str, tokens: list[str], primary_nouns: list[str],
             if len(listings) >= 6:
                 break
 
-        hit_msg = (f"Live web search (Bing RSS): {len(listings)} whitelisted "
-                   f"storefront result(s)") if listings else None
-        return listings, hit_msg, None
+        if listings:
+            hit_msg = (f"Live web search: {len(listings)} whitelisted "
+                       f"storefront result(s) from {len(feed_items)} raw "
+                       f"result(s); {rejected_domain} rejected as non-retail "
+                       f"domains, {rejected_intent} as off-intent")
+            return listings, hit_msg, None
+
+        # Results came back and every one of them was filtered out. That is
+        # the whitelist working, not a failure, and it is reported as such.
+        return [], (f"Live web search: {len(feed_items)} raw result(s), none "
+                    f"from a whitelisted retailer matching the query "
+                    f"({rejected_domain} off-domain, {rejected_intent} "
+                    f"off-intent)"), None
     except Exception as e:
         return [], None, f"Live web search: {type(e).__name__}: {str(e)[:80]}"
 
@@ -705,10 +739,28 @@ def run_real_product_discovery(query: str,
     external, providers_hit, errors = search_live_web_providers(
         sanitized_query, max_results=10)
 
-    # ---- status is a function of the live providers, nothing else ----
-    if external:
+    # ---- status is a function of the RETAIL providers, nothing else ----
+    # A run in which only the synthetic mock APIs answered is not a
+    # successful retail search, and saying LIVE_SEARCH_SUCCESS would be the
+    # same class of lie rule 3 was written to stop: it would let a demo
+    # with no real market evidence read as a working discovery pipeline.
+    retail = [x for x in external if x.provider_kind != PROVIDER_MOCK_API]
+    if retail:
         status = "LIVE_SEARCH_SUCCESS"
         error_message = " | ".join(errors) if errors else None
+    elif errors:
+        # A retail provider failed. Whether the market is empty is now
+        # unknown, and "unknown" outranks "we found some synthetic records"
+        # — the mock APIs were never market evidence in the first place.
+        status = "SEARCH_UNAVAILABLE"
+        error_message = " | ".join(errors)
+    elif external:
+        status = "MOCK_SOURCES_ONLY"
+        error_message = (
+            "no whitelisted retail source returned a usable listing; only "
+            "synthetic mock-API records were retrieved, and those are "
+            "excluded from market comparison"
+            + (" | " + " | ".join(errors) if errors else ""))
     elif errors and len(errors) >= len(providers_queried):
         status = "SEARCH_UNAVAILABLE"
         error_message = " | ".join(errors)

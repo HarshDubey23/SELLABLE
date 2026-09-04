@@ -150,14 +150,42 @@ def reconcile(execution_id: str):
                                 "response was lost, not the order"),
                 "execution": _public(updated)}
 
+    # Absence is only evidence of failure once the provider's listing has
+    # had time to become consistent. Concluding FAILED from a read taken
+    # seconds after the attempt is how a live order gets written off — we
+    # did exactly that against the real test API before this guard existed.
+    age = int(time.time()) - int(row["updated_at"] or 0)
+    if (provider.name == provider_mod.LIVE_TEST
+            and age < provider_mod.ABSENCE_QUIET_PERIOD_SECONDS):
+        wait = provider_mod.ABSENCE_QUIET_PERIOD_SECONDS - age
+        chain.append("reconciler", "reconcile_inconclusive",
+                     {"execution_id": execution_id, "age_seconds": age},
+                     error_code="ABSENCE_NOT_YET_CONCLUSIVE",
+                     review_state="reconciliation_required")
+        raise HTTPException(202, detail={
+            "ok": False,
+            "error": {
+                "error_code": "ABSENCE_NOT_YET_CONCLUSIVE",
+                "message": ("the authoritative read found no matching order, "
+                            "but the provider's order listing is not "
+                            "read-your-writes consistent; this soon after the "
+                            "attempt, absence is not evidence of failure"),
+                "execution_id": execution_id,
+                "execution_state": ex.RECONCILIATION_REQUIRED,
+                "retry_after_seconds": wait,
+                "retryable": True,
+            }})
+
     updated = ex.transition(execution_id, ex.FAILED,
                             remote_error_code="NO_REMOTE_ORDER",
-                            last_error="authoritative read found no matching order")
+                            last_error="authoritative read found no matching "
+                                       "order after the consistency window")
     chain.append("reconciler", "reconciled_failed",
                  {"execution_id": execution_id},
                  error_code="NO_REMOTE_ORDER", review_state="reconciled")
     return {"execution_id": execution_id, "state": ex.FAILED,
             "resolution": "NO_REMOTE_ORDER",
-            "explanation": ("the provider has no matching order; the request "
-                            "never took effect and no money moved"),
+            "explanation": ("the provider has no matching order after its "
+                            "listing had time to become consistent; the "
+                            "request never took effect and no money moved"),
             "execution": _public(updated)}

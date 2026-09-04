@@ -11,15 +11,15 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from .agent.runner import router as agent_router
 from .attack import router as attack_router
+from .attack_custom import router as attack_custom_router
 from .audit import chain as audit_chain
-from .audit.timeline import router as timeline_router
-from .chaos import ChaosFaultBusMiddleware, chaos_api_router, chaos_ui_router
+from .audit_demo import router as audit_demo_router
+from .chaos import ChaosFaultBusMiddleware, chaos_api_router
 from .checkout_route import router as checkout_router
 from .config import status_summary
-from .dashboard.mission_explain import router as mission_dashboard_router
 from .demo import router as demo_router
 from .demo_capture import router as capture_router
-from .demo_ui import router as demo_ui_router
+from .demo_kill import router as kill_router
 from .discovery import discovery_router
 from .execution import recover_stranded
 from .execution_api import router as execution_router
@@ -33,13 +33,15 @@ from .protocols.acp import router as acp_router
 from .protocols.ap2 import router as ap2_router
 from .protocols.uap import router as uap_router
 from .protocols.x402 import router as x402_router
+from .receipt import router as receipt_router
 from .status_router import router as status_router
 from .store import db as store
 from .tools import orders, quotes
 from .tools import router as tools_router
-from .ui import router as ui_router
-from .web.product_page import router as product_router
 from .web.judge_page import router as judge_page_router
+from .web.product_page import router as product_router
+from .web.redirects import router as redirect_router
+from .web.trace_page import router as trace_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
 
@@ -62,27 +64,30 @@ app.include_router(manifest_router)
 app.include_router(tools_router)
 app.include_router(webhook_router)
 app.include_router(demo_router)
-app.include_router(demo_ui_router)
-app.include_router(timeline_router)
-app.include_router(mission_dashboard_router)
 app.include_router(mission_router)
 app.include_router(status_router)
 app.include_router(metrics_router)
 app.include_router(checkout_router)
 app.include_router(agent_router)
 app.include_router(capture_router)
-app.include_router(product_router)      # owns GET / — the product
-app.include_router(judge_page_router)   # owns GET /judge — technical evidence
-app.include_router(ui_router)           # the console and the other surfaces
+# Three HTML surfaces, and nothing else. Everything the retired pages
+# showed now lives inside one of them; `redirect_router` keeps their old
+# paths pointing at wherever the capability moved to.
+app.include_router(trace_router)        # GET /trace/{ref} one purchase, end to end
+app.include_router(judge_page_router)   # GET /judge       the evidence console
+app.include_router(redirect_router)     # retired paths -> the three above
 app.include_router(chaos_api_router)
-app.include_router(chaos_ui_router)
-print("[BOOT] product page: GET /   |  console: GET /console")
+print("[BOOT] pages: GET /trace/{ref}  |  GET /judge")
 print("[BOOT] capture demo: enabled (POST /demo/capture)")
-print("[BOOT] chaos monkey engine: enabled at GET /chaos and GET /architecture")
 app.include_router(negotiation_router)
 print("[BOOT] negotiation engine: enabled (max_turns=5, floor/ceiling gated)")
 app.include_router(attack_router)
+app.include_router(attack_custom_router)   # reviewer-authored attacks
+app.include_router(audit_demo_router)      # block preimage + tamper cascade
+app.include_router(receipt_router)
+app.include_router(kill_router)
 print("[BOOT] attack lab: enabled (8 scenarios, real gateway, money-call invariant)")
+print("[BOOT] reviewer attack sandbox: POST /attack/custom, POST /attack/gauntlet")
 app.include_router(acp_router)
 app.include_router(ap2_router)
 app.include_router(uap_router)
@@ -93,6 +98,7 @@ print("[BOOT] merchant growth & market intelligence engine: live at /growth")
 app.include_router(discovery_router)
 print("[BOOT] discovery pipeline: live at /discovery")
 app.include_router(execution_router)
+app.include_router(product_router)      # GET /            the shop (included last so / takes precedence)
 
 # Crash recovery: any execution still sitting in REMOTE_ATTEMPTED means the
 # process died with a payment in flight. We cannot know the outcome, so it

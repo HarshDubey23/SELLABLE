@@ -8,7 +8,6 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from ..gateway.mission_verify import dumps as _dumps
@@ -16,18 +15,8 @@ from ..gateway.mission_verify import sign_mission
 from ..tools import ProposalReq, tool_submit_proposal
 from .engine import GrowthEvaluationResult, evaluate_merchant_growth
 from .intelligence import get_all_market_radar
-from .ui import render_growth_studio_page
 
 router = APIRouter(prefix="/growth", tags=["growth"])
-
-
-@router.get("", response_class=HTMLResponse)
-@router.get("/", response_class=HTMLResponse)
-@router.get("/ui", response_class=HTMLResponse)
-async def growth_studio_ui():
-    """Interactive Merchant Growth & Market Intelligence Studio."""
-    return render_growth_studio_page()
-
 
 
 class GrowthEvaluateReq(BaseModel):

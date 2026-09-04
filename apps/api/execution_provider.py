@@ -37,6 +37,30 @@ from .execution import AmbiguousRemoteOutcome, DefiniteRemoteFailure
 LIVE_TEST = "razorpay_test"
 SIMULATED = "simulated"
 
+# Reconciliation reads a list endpoint, so it pages rather than assuming
+# one page holds everything. An account busier than one page would
+# otherwise hide a live order and make it look like a missing one.
+_RECONCILE_PAGE_SIZE = 100
+_RECONCILE_MAX_PAGES = 5
+
+# THE BUG THIS CONSTANT EXISTS FOR
+# --------------------------------
+# We injected a lost response against the real Razorpay test API, let the
+# execution land in RECONCILIATION_REQUIRED, and reconciled seventeen
+# seconds later. `/v1/orders` did not list the order yet, so the reconciler
+# concluded NO_REMOTE_ORDER and marked the execution FAILED. The order
+# existed the whole time; it appeared in the same listing minutes later.
+#
+# A list endpoint is not read-your-writes consistent. "I did not see it"
+# and "it is not there" are different statements, and only the second one
+# justifies calling a payment failed. Absence within this window leaves
+# the execution in RECONCILIATION_REQUIRED and asks the caller to come
+# back — which is the same refusal-to-guess the ambiguous outcome itself
+# gets. Enforced in execution_api.reconcile and asserted in
+# tests/test_payment_state_and_reconciliation.py.
+LIST_IS_NOT_READ_YOUR_WRITES = True
+ABSENCE_QUIET_PERIOD_SECONDS = 120
+
 
 def _is_real(value: str) -> bool:
     """A credential counts only when it is neither empty nor a placeholder."""
@@ -61,7 +85,16 @@ class MoneyProvider(Protocol):
 
 
 class LiveRazorpayProvider:
-    """Real test-mode calls against api.razorpay.com."""
+    """Real test-mode calls against api.razorpay.com.
+
+    Fault injection here simulates *the client's view* of a call, never
+    Razorpay itself. `remote_timeout` really dispatches the order to
+    api.razorpay.com and then discards the response, which is exactly what
+    a lost reply looks like from this side: the order exists at Razorpay,
+    and only an authoritative read can discover that. That makes the
+    recovery demo real rather than theatrical — reconciliation genuinely
+    pages Razorpay's order list and genuinely finds the order it made.
+    """
 
     name = LIVE_TEST
 
@@ -70,10 +103,35 @@ class LiveRazorpayProvider:
                      idempotency_key: str) -> dict[str, Any]:
         from . import razorpay_client as rp
 
+        fault = str(notes.get("_fault") or "").strip()
+        # Underscore-prefixed keys are ours; they never leave the process.
+        clean_notes = {k: v for k, v in notes.items() if not k.startswith("_")}
+
+        if fault == "remote_lost":
+            # The request never left the client. Nothing was dispatched, so
+            # an authoritative read must find nothing and resolve to FAILED.
+            raise AmbiguousRemoteOutcome(
+                "simulated connection reset before the request was dispatched "
+                "to api.razorpay.com")
+        if fault == "remote_reject":
+            # Do not send a deliberately malformed request to a real API to
+            # manufacture a 4xx; raise the same classification it would.
+            raise DefiniteRemoteFailure(
+                "BAD_REQUEST_ERROR",
+                "simulated definitive provider rejection (no request sent)")
+
         try:
-            return rp.create_order(
-                amount_paise=amount_paise, receipt=receipt, notes=notes,
+            created = rp.create_order(
+                amount_paise=amount_paise, receipt=receipt, notes=clean_notes,
                 idempotency_key=idempotency_key)
+            if fault == "remote_timeout":
+                # The order WAS created at Razorpay. Dropping the response
+                # is the whole point: the caller must now be unable to tell
+                # whether it exists, and must refuse to guess.
+                raise AmbiguousRemoteOutcome(
+                    "simulated loss of Razorpay's response after the order "
+                    "request was dispatched; the order may exist at Razorpay")
+            return created
         except rp.RazorpayAPIError as exc:
             # 4xx is Razorpay telling us it did NOT do the thing.
             # 5xx means the request may have been applied before it failed.
@@ -101,16 +159,30 @@ class LiveRazorpayProvider:
         Razorpay exposes no public "fetch by idempotency key" lookup, so
         we do not pretend one exists. We page recent orders and match on
         the correlation fields we wrote into `notes` at creation time.
+
+        Paging matters: `/v1/orders` returns a bounded page, and an
+        account with more recent orders than one page would otherwise
+        hide the one we are looking for and make a live order look like a
+        missing one. We walk a bounded number of pages and stop early.
+
+        Absence is NOT proof of failure. See `LIST_IS_NOT_READ_YOUR_WRITES`
+        below and the quiet period in execution_api.reconcile.
         """
         from . import razorpay_client as rp
 
         money.record("list_orders_for_reconciliation")
-        data = rp._get("/v1/orders?count=100")
-        for item in data.get("items", []):
-            notes = item.get("notes") or {}
-            if (notes.get("proposal_hash") == proposal_hash
-                    and int(item.get("amount", -1)) == amount_paise):
-                return item
+        for page in range(_RECONCILE_MAX_PAGES):
+            skip = page * _RECONCILE_PAGE_SIZE
+            data = rp._get(
+                f"/v1/orders?count={_RECONCILE_PAGE_SIZE}&skip={skip}")
+            items = data.get("items", [])
+            for item in items:
+                notes = item.get("notes") or {}
+                if (notes.get("proposal_hash") == proposal_hash
+                        and int(item.get("amount", -1)) == amount_paise):
+                    return item
+            if len(items) < _RECONCILE_PAGE_SIZE:
+                break  # last page
         return None
 
 

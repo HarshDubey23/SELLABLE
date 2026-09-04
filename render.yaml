@@ -6,8 +6,8 @@ services:
     startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
-      - key: GEMINI_MODEL
-        value: gemini-2.0-flash
+      - key: OPENROUTER_MODEL
+        value: openai/gpt-4o-mini
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -18,7 +18,7 @@ services:
         sync: false
       - key: USER_MANDATE_KEY
         sync: false
-      - key: GEMINI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
       - key: APP_API_KEY
         sync: false

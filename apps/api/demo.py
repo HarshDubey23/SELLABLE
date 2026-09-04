@@ -1,6 +1,10 @@
 """
 Visible attack demo: GET /demo/injection/{n} for n = I1..I8 (or 1..8)
-and GET /demo/e2e for full end-to-end purchasing flow.
+and POST /demo/e2e (API key required) for full end-to-end purchasing flow.
+
+/demo/e2e is POST + API-key gated, not GET, because it creates a real
+Razorpay order when credentials are configured — a GET must never have a
+money-moving side effect, agent or not.
 
 Demonstrates that adversarial prompt injection payloads in catalog descriptions
 cannot manipulate decision making because the policy gateway deterministically
@@ -11,10 +15,11 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from . import razorpay_client
 from .audit import chain
+from .deps import require_api_key
 from .gateway import mission_verify
 from .gateway.engine import evaluate
 from .gateway.types import (
@@ -304,7 +309,7 @@ def injection_demo(n: str) -> dict[str, Any]:
     }
 
 
-@router.get("/demo/e2e")
+@router.post("/demo/e2e", dependencies=[Depends(require_api_key)])
 def e2e_demo() -> dict[str, Any]:
     """Canonical end-to-end flow using the SAME services as the API.
 

@@ -7,6 +7,13 @@ from . import missions
 
 router = APIRouter()
 
+# A mission is finished when missions.finish() recorded one of these. Any
+# other status means work may still be in flight.
+_TERMINAL_STATUSES = frozenset({
+    "completed", "executed", "rejected", "failed", "error",
+    "no_products", "no_proposal", "mandate_error", "blocked",
+})
+
 
 @router.post("/missions/{mission_id}/start")
 def mission_start(mission_id: str, body: dict | None = None) -> dict:
@@ -49,9 +56,13 @@ def mission_trace(mission_id: str) -> dict:
     if not rec:
         return {"mission_id": mission_id, "status": "unknown",
                 "trace": [], "count": 0}
+    status = rec.get("status", "unknown")
     return {
         "mission_id": mission_id,
-        "status": rec.get("status", "unknown"),
+        "status": status,
+        # So a poller knows when to stop asking rather than guessing from
+        # the event list, which can pause mid-mission on a slow tool call.
+        "terminal": status in _TERMINAL_STATUSES,
         "ts_started": rec.get("ts_started", 0),
         "ts_ended": rec.get("ts_ended", 0),
         "trace": rec.get("trace", []),

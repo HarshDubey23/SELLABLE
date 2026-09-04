@@ -259,16 +259,45 @@ def test_failed_execution_cannot_be_retried_on_the_same_authorization(client):
 
 # ------------------------------------------------------------ guardrails
 
-def test_fault_injection_is_refused_when_a_real_provider_is_configured(
+def test_unknown_fault_names_are_refused_rather_than_ignored(client):
+    """A typo in a drill must fail loudly, not silently run the happy path."""
+    auth = _authorize(client, "m-faultname")
+    r = client.post("/tools/create_order", json=_order_body(auth),
+                    headers={**_headers("idem-fn"),
+                             "X-Sellable-Fault": "remote_timeuot"})
+    assert r.status_code == 400
+    body = r.json()["detail"]["error"]
+    assert body["error_code"] == "UNKNOWN_FAULT"
+    assert "remote_timeout" in body["injectable"]
+
+
+def test_undispatched_fault_makes_no_money_call_on_the_real_provider(
         client, monkeypatch):
+    """`remote_lost` models a request that never left the client.
+
+    With real credentials configured the live provider is selected, so this
+    also proves the injected fault is handled *before* the Razorpay boundary
+    rather than by fabricating a response after it: the boundary counter
+    must not move, and the execution must land in RECONCILIATION_REQUIRED
+    rather than being guessed either way.
+    """
+    from apps.api import money
+
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_realish")
     monkeypatch.setenv("RAZORPAY_KEY_SECRET", "realish_secret")
     auth = _authorize(client, "m-faultguard")
+    before = money.snapshot()["boundary_calls"]
+
     r = client.post("/tools/create_order", json=_order_body(auth),
                     headers={**_headers("idem-fg"),
-                             "X-Sellable-Fault": "remote_timeout"})
-    assert r.status_code == 400
-    assert r.json()["detail"]["error"]["error_code"] == "FAULT_INJECTION_REFUSED"
+                             "X-Sellable-Fault": "remote_lost"})
+
+    assert r.status_code == 202
+    err = r.json()["detail"]["error"]
+    assert err["error_code"] == "RECONCILIATION_REQUIRED"
+    assert err["execution_state"] == "RECONCILIATION_REQUIRED"
+    assert money.snapshot()["boundary_calls"] == before, \
+        "an undispatched fault must not touch the Razorpay boundary"
 
 
 def test_placeholder_credentials_are_not_treated_as_configured(monkeypatch):

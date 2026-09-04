@@ -106,3 +106,43 @@ def test_bad_signature_rejected():
     with pytest.raises(MandateError) as exc_info:
         verify_intent(blob, now=now)
     assert exc_info.value.code == "MANDATE_BAD_SIGNATURE"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Ported from the root-level `tests_mandates.py` scratch script before it
+# was deleted. That file sat outside `testpaths = ["tests"]`, so pytest
+# never collected it and these two checks had never actually run. The
+# rest of its list was already covered above; only version and currency
+# were missing.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_an_unsupported_mandate_version_is_refused():
+    """Version is checked before the signature, and fails closed.
+
+    A mandate schema change must never be accepted by an old verifier that
+    happens to find the signature valid over fields it does not understand.
+    """
+    now = int(time.time())
+    m = IntentMandate(mission_id="m1", user_id="u1",
+                      ceiling_paise=100000, expires_at=now + 3600)
+    blob = sign_intent(m, _key())
+    blob["payload"]["version"] = 99
+
+    with pytest.raises(MandateError) as exc:
+        verify_intent(blob, now=now, order_total_paise=50000,
+                      expected_mission_id="m1")
+    assert exc.value.code == "MANDATE_BAD_VERSION"
+
+
+def test_an_unsupported_currency_is_refused():
+    """INR only. An unknown currency is a refusal, not a conversion."""
+    now = int(time.time())
+    m = IntentMandate(mission_id="m1", user_id="u1",
+                      ceiling_paise=100000, expires_at=now + 3600)
+    blob = sign_intent(m, _key())
+    blob["payload"]["currency"] = "XAU"
+
+    with pytest.raises(MandateError) as exc:
+        verify_intent(blob, now=now, order_total_paise=50000,
+                      expected_mission_id="m1")
+    assert exc.value.code == "MANDATE_BAD_CURRENCY"
