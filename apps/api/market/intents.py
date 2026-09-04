@@ -133,6 +133,12 @@ class OfferIntent(BaseModel):
         }
 
 
+# The buyer's whole vocabulary for pushing back. Note what is not in it:
+# there is no way to ask for a number, only for a direction.
+BuyerAsk = Literal["FASTER_DELIVERY", "LOWER_PRICE", "LONGER_WARRANTY",
+                   "FREE_SHIPPING", "MORE_INCLUDED"]
+
+
 class BuyerCounter(BaseModel):
     """One targeted request from the buyer to exactly one merchant.
 
@@ -146,8 +152,7 @@ class BuyerCounter(BaseModel):
     model_config = {"extra": "forbid", "frozen": True}
 
     merchant_id: str = Field(min_length=1, max_length=64)
-    ask: Literal["FASTER_DELIVERY", "LOWER_PRICE", "LONGER_WARRANTY",
-                 "FREE_SHIPPING", "MORE_INCLUDED"]
+    ask: BuyerAsk
     round: int = Field(ge=1, le=10)
     note: str = Field(default="", max_length=200)
 
