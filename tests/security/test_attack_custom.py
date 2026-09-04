@@ -312,6 +312,9 @@ def test_every_unauthenticated_mutating_route_is_accounted_for():
                                     "machine, none of which it bypasses",
         "/{negotiation_id}/override": "re-runs a mission under new weights; "
                                       "rate-limited, spends nothing",
+        "/{negotiation_id}/probe": "reviewer probe; evaluated by the real "
+                                   "policy engine but never written to the "
+                                   "offers table, so it cannot be paid",
     }
 
     unaccounted = []

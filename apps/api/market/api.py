@@ -69,6 +69,12 @@ class CounterReq(BaseModel):
     note: str = Field(default="", max_length=200)
 
 
+class ProbeReq(BaseModel):
+    merchant_id: str
+    # None means "just over this merchant's own cap", which is the point.
+    line_discount_pct: int | None = Field(default=None, ge=0, le=100)
+
+
 class OverrideReq(BaseModel):
     weights: dict[str, int] | None = None
     preset: str = "cheapest"
@@ -271,6 +277,84 @@ async def market_override(negotiation_id: str, req: OverrideReq,
     nid = row["negotiation_id"]
     await neg.run_round(nid, allow_llm=llm_available())
     return {"ok": True, "override_of": negotiation_id, **_public(nid)}
+
+
+@router.post("/{negotiation_id}/probe")
+async def market_probe(negotiation_id: str, req: ProbeReq,
+                       request: Request) -> dict[str, Any]:
+    """Send a deliberately out-of-policy offer and watch it be refused.
+
+    A reviewer's probe, not a merchant's offer, and the difference is
+    kept honest: this is evaluated by the real MerchantPolicyEngine
+    against the real signed manifest and written to the real audit chain,
+    but it is never inserted into the offers table. It cannot join a
+    transcript, cannot be ranked, cannot be accepted and cannot be paid.
+    What it demonstrates is the refusal, and the refusal is genuine.
+
+    The default asks for a line discount above the chosen merchant's cap.
+    Nothing clamps it to the cap; it is turned down with a reason.
+    """
+    _guard(request, "market_round", _ROUND_LIMIT)
+    from ..audit import chain as audit_chain
+    from ..products import CATALOG
+    from . import policy as policy_mod
+    from .intents import OfferIntent
+
+    row = neg.get(negotiation_id)
+    if row is None:
+        raise HTTPException(404, detail=f"unknown negotiation {negotiation_id}")
+
+    merchants_mod.seed()
+    manifest = merchants_mod.get(req.merchant_id)
+    if manifest is None:
+        raise HTTPException(404, detail=f"unknown merchant {req.merchant_id}")
+
+    import json as _json
+    basket = tuple(_json.loads(row["basket_json"]))
+    asked = (req.line_discount_pct
+             if req.line_discount_pct is not None
+             else manifest.max_line_discount_pct + 7)
+
+    intent = OfferIntent(
+        merchant_id=manifest.merchant_id, basket_sku_set=basket,
+        line_discount_pct=asked, bundle_discount_pct=0, shipping="FREE",
+        delivery_days=manifest.min_delivery_days, warranty_years=0,
+        round=row["current_round"] or 1,
+        offer_id=f"probe_{negotiation_id[-8:]}_{asked}",
+        rationale="reviewer probe: an offer outside the signed manifest")
+
+    verdict = policy_mod.evaluate(intent=intent, manifest=manifest,
+                                  catalog=CATALOG)
+    audit_chain.append("market", "policy_probe", {
+        "negotiation_id": negotiation_id,
+        "merchant_id": manifest.merchant_id,
+        "asked_line_discount_pct": asked,
+        "manifest_cap_pct": manifest.max_line_discount_pct,
+        "decision": verdict.decision, "reason": verdict.reason,
+        "recorded_as_offer": False},
+        error_code=verdict.reason,
+        review_state="market_probe")
+
+    return {
+        "ok": True,
+        "probe": {
+            "merchant_id": manifest.merchant_id,
+            "asked_line_discount_pct": asked,
+            "manifest_cap_pct": manifest.max_line_discount_pct,
+            "decision": verdict.decision,
+            "reason": verdict.reason,
+            "reason_human": verdict.reason_human,
+            "breach": verdict.breach,
+            "total_paise": verdict.total_paise,
+            "clamped": False,
+            "recorded_as_offer": False,
+            "note": ("evaluated by the real policy engine against the real "
+                     "signed manifest, and written to the audit chain. It is "
+                     "not inserted into the offers table, so it can never be "
+                     "ranked, accepted or paid."),
+        },
+        "mode": _mode(),
+    }
 
 
 @router.get("")

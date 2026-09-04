@@ -235,6 +235,85 @@ def runtime_facts() -> dict:
     }
 
 
+def market_facts() -> dict:
+    """Run a real keyless negotiation and report what it produced.
+
+    Keyless on purpose. These numbers have to be the ones a reviewer sees
+    on a fresh clone, and a figure measured against a paid provider is
+    not reproducible by the person reading it. With a key the merchants
+    are language models and the offers differ every run, which is exactly
+    why nothing here is quoted from that path.
+    """
+    import asyncio
+    import json as _json
+
+    from apps.api.market import intents
+    from apps.api.market import merchants as merchants_mod
+    from apps.api.market import negotiation as neg
+    from apps.api.market import settle as settle_mod
+
+    merchants_mod.seed()
+    mission = "A complete cricket setup under Rs 6,000"
+
+    async def go() -> str:
+        row = await neg.open_negotiation(mission_text=mission,
+                                         allow_llm=False)
+        await neg.run_round(row["negotiation_id"], allow_llm=False)
+        return str(row["negotiation_id"])
+
+    nid = asyncio.run(go())
+    offers = neg.offers_for(nid)
+    ranking = neg.rank(nid)
+    neg.claim_winner(nid)
+    settled = asyncio.run(settle_mod.settle(nid))
+
+    # Reproducibility, measured rather than asserted: the same mission run
+    # again keyless must produce the same offers.
+    second = asyncio.run(go())
+    same = ([(o["merchant_id"], o["total_paise"], o["reason"])
+             for o in offers]
+            == [(o["merchant_id"], o["total_paise"], o["reason"])
+                for o in neg.offers_for(second)])
+
+    return {
+        "merchants": len(merchants_mod.all_manifests()),
+        "manifest_version": merchants_mod.MANIFEST_VERSION,
+        "max_rounds": neg.MAX_ROUNDS,
+        "offer_intent_fields": sorted(intents.OfferIntent.model_fields),
+        # Measured off the live schema, not asserted. If someone ever adds
+        # a price field to what a merchant may send, this flips to true in
+        # the generated file and the README claim contradicts itself in
+        # public, which is the only kind of check that stays true.
+        "offer_intent_money_shaped_fields": sorted(
+            f for f in intents.OfferIntent.model_fields
+            if any(bad in f.lower()
+                   for bad in intents.FORBIDDEN_FIELD_SUBSTRINGS)),
+        "mission": mission,
+        "offers_made": len(offers),
+        "offers_priced": sum(1 for o in offers if o["accepted"]),
+        "offers_refused_by_policy": sum(1 for o in offers
+                                        if not o["accepted"]),
+        "winner": ranking["winner"]["merchant_id"],
+        "winning_total_paise": settled["amount_paise"],
+        "transcript_hash_bits": len(settled["transcript_hash"] or "") * 4,
+        "binding_pins_merchant": bool(settled["merchant_id"]),
+        "keyless_run_is_reproducible": same,
+        "settled_execution_state": settled["order"].get("execution_state"),
+        "settled_provider": settled["order"].get("provider"),
+        "merchants_measured_with": (
+            "allow_llm=False, so these are the scripted fallback merchants "
+            "a keyless clone gets. The offers above are what a reviewer "
+            "sees on a fresh clone with no keys at all."),
+        "settlement_measured_with": (
+            "whatever payment provider this generating machine had "
+            "configured, reported above as settled_provider. A keyless "
+            "clone settles the same negotiation through the simulated "
+            "provider and gets an order_sim_ id instead."),
+        "_transcript_sample": _json.dumps(
+            [e["kind"] for e in neg.canonical_transcript(nid)]),
+    }
+
+
 NOT_MEASURED_HERE = {
     "live_razorpay_order_creation": (
         "requires RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and outbound network "
@@ -243,12 +322,22 @@ NOT_MEASURED_HERE = {
         "depends on a third-party search endpoint being reachable; result "
         "counts are not reproducible and are therefore never quoted as a "
         "metric. The pipeline reports SEARCH_UNAVAILABLE when providers fail."),
+    "live_llm_merchant_offers": (
+        "with an OpenRouter key the three merchants are language models and "
+        "their offers differ on every run. Nothing in this file is measured "
+        "from that path, because a reviewer on a fresh clone could not "
+        "reproduce it. The market numbers here are the keyless ones."),
     "live_llm_agent_behaviour": (
         "requires an LLM API key. With none configured the buyer agent uses a "
         "deterministic picker; either way it holds no money authority."),
 }
 
 KNOWN_LIMITATIONS = [
+    "The market's merchants are language models with real strategies, but "
+    "what they may offer is bounded by a signed manifest and priced by a "
+    "pure engine. They have no vocabulary for an amount, so \"the LLM never "
+    "sets a price\" is a property of the schema, not a policy anyone has to "
+    "keep enforcing.",
     "Missions and user mandates are signed out-of-band by scripts/sign_mission.py "
     "and scripts/mandate.py. The browser demo path signs them in-process via "
     "apps/api/issuer.py, which proves integrity but not custody; this is "
@@ -280,6 +369,8 @@ def main() -> int:
     latency = gateway_latency_facts()
     print("[truth] running adversarial scenarios ...")
     attacks = attack_facts()
+    print("[truth] running a keyless market negotiation ...")
+    market = market_facts()
     print("[truth] running the test suite (this takes a moment) ...")
     tests = test_facts()
 
@@ -293,6 +384,7 @@ def main() -> int:
         "codebase": codebase,
         "gateway_latency": latency,
         "adversarial": attacks,
+        "market": market,
         "runtime": runtime_facts(),
         "not_measured_in_this_run": NOT_MEASURED_HERE,
         "known_limitations": KNOWN_LIMITATIONS,
