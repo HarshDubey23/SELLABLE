@@ -214,3 +214,17 @@ def mode_label(mode: str) -> str:
         LLM_MALFORMED: "scripted fallback merchant (LLM output rejected)",
         LLM_DISABLED: "scripted fallback merchant (no API key configured)",
     }.get(mode, "scripted fallback merchant")
+
+
+def provider_configured() -> bool:
+    """Is a usable provider key present?
+
+    A placeholder counts as absent. The point of this is the badge the
+    page shows, and a badge that says "live LLM merchants" because
+    someone left `your-key-here` in a .env would be a lie told by
+    omission.
+    """
+    from ...config import is_placeholder
+    from ...llm.gemini import _get_keys
+
+    return any(k and not is_placeholder(k) for k in _get_keys())

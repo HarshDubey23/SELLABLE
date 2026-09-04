@@ -207,6 +207,31 @@ def refresh() -> Config:
     return _CONFIG
 
 
+def mask_secret(value: str) -> str:
+    """Show enough to identify an environment, never enough to use.
+
+    Keeps a recognisable prefix (rzp_test_, sk-or-) so a reader can tell
+    test from live at a glance, and replaces everything that identifies
+    the particular account.
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    # Structural, not a list of known prefixes. Vendors separate their
+    # structured prefix from the random part with _ or -, so keeping only
+    # up to the last separator near the front shows the environment and
+    # none of the entropy: rzp_test_**** , sk-or-v1-**** . A key with no
+    # such separator gets nothing at all rather than a lucky guess.
+    #
+    # Enumerating literal vendor prefixes here would also put credential-
+    # shaped strings in the source, which the architecture guard forbids
+    # outright -- correctly, since it cannot tell a masking table from a
+    # pasted credential, and should not have to.
+    head = v[:12]
+    cut = max(head.rfind("_"), head.rfind("-"))
+    return f"{head[:cut + 1]}****" if cut > 0 else "****"
+
+
 def status_summary() -> dict:
     """Human-readable boot status. The UI's Command Center reads this."""
     cfg = get()
@@ -220,5 +245,11 @@ def status_summary() -> dict:
         "policy_version": cfg.policy_version,
         "mandate_version": cfg.mandate_version,
         "razorpay_mode": "test" if cfg.payment_configured else "unconfigured",
-        "razorpay_key_id": cfg.razorpay_key_id,
+        # Masked. This is a diagnostic surface -- it goes to stdout at boot
+        # and out over an HTTP status route -- and nothing reading it needs
+        # more than "which environment, and is a key present". The checkout
+        # page is the one place the full key_id is genuinely required,
+        # because Razorpay's own browser SDK takes it, and it is served
+        # only there.
+        "razorpay_key_id": mask_secret(cfg.razorpay_key_id),
     }

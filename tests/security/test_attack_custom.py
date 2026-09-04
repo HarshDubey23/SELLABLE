@@ -296,6 +296,22 @@ def test_every_unauthenticated_mutating_route_is_accounted_for():
         "/transact": "growth: gateway verdict only, never creates an order",
         "/loop/approve/{action_id}": "merchant growth loop; no money boundary",
         "/loop/execute/{action_id}": "merchant growth loop; no money boundary",
+        # The market. Driven from a page in a browser, which cannot hold
+        # the API key -- the only way to give it one would be to write the
+        # credential into the HTML, publishing it to everyone who can load
+        # /judge. So these take the ceiling the storefront checkout already
+        # established for exactly this situation.
+        "/open": "browser-driven negotiation; rate-limited, spends nothing",
+        "/{negotiation_id}/round": "browser-driven; rate-limited, spends nothing",
+        "/{negotiation_id}/counter": "browser-driven; rate-limited, spends nothing",
+        "/{negotiation_id}/accept": "chooses a winner; rate-limited, and the "
+                                    "conditional UPDATE makes it exactly-once",
+        "/{negotiation_id}/settle": "the one that spends; rate-limited, and it "
+                                    "still has to pass the gateway, the "
+                                    "approval binding and the execution "
+                                    "machine, none of which it bypasses",
+        "/{negotiation_id}/override": "re-runs a mission under new weights; "
+                                      "rate-limited, spends nothing",
     }
 
     unaccounted = []

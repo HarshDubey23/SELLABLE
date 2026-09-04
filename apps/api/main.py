@@ -26,6 +26,7 @@ from .execution_api import router as execution_router
 from .gateway.proof import compute_proof
 from .growth import growth_router
 from .manifest import router as manifest_router
+from .market.api import router as market_router
 from .metrics.api import router as metrics_router
 from .mission_router import router as mission_router
 from .negotiation.api import router as negotiation_router
@@ -86,6 +87,7 @@ app.include_router(attack_custom_router)   # reviewer-authored attacks
 app.include_router(audit_demo_router)      # block preimage + tamper cascade
 app.include_router(receipt_router)
 app.include_router(kill_router)
+app.include_router(market_router)      # /market/* the negotiation
 print("[BOOT] attack lab: enabled (8 scenarios, real gateway, money-call invariant)")
 print("[BOOT] reviewer attack sandbox: POST /attack/custom, POST /attack/gauntlet")
 app.include_router(acp_router)
