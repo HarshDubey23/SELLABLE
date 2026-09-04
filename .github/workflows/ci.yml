@@ -1,11 +1,15 @@
 name: CI & Zero-Excuse Reliability Gate
 on: [push, pull_request]
 
+# A failing job that only says "exit code 1" costs an hour of guessing.
+# Every gate below surfaces its own summary as a GitHub annotation, which
+# is readable on the run page without opening the log.
 jobs:
   test:
     name: Build & Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false      # one runner's failure must not hide the others'
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ['3.10', '3.12']
@@ -23,11 +27,47 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
 
+      - name: Record the resolved environment
+        shell: bash
+        run: |
+          echo "::notice title=Environment::$(python -V) on ${{ matrix.os }}"
+          python -m pip freeze > pip-freeze.txt
+          echo "--- resolved dependency versions ---"
+          cat pip-freeze.txt
+
       - name: Run Doctor Preflight Audit
         run: python scripts/doctor.py
 
       - name: Run Pytest Test Suite
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q --tb=short -rf > pytest-out.txt 2>&1
+          status=$?
+          cat pytest-out.txt
+          if [ $status -ne 0 ]; then
+            # Surface the failures as annotations so the reason is visible on
+            # the run page. Without this a red job says only "exit code 1",
+            # and anyone without log access is reduced to guessing.
+            echo "::error title=pytest failed on ${{ matrix.os }} py${{ matrix.python-version }}::$(grep -c '^FAILED\|^ERROR' pytest-out.txt) test(s) failed"
+            grep -E '^(FAILED|ERROR)' pytest-out.txt | while read -r line; do
+              echo "::error title=pytest::$line"
+            done
+            grep -E '^E ' pytest-out.txt | head -40 | while read -r line; do
+              echo "::error title=assertion::$line"
+            done
+          fi
+          exit $status
+
+      - name: Upload pytest output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            pytest-out.txt
+            pip-freeze.txt
+          retention-days: 7
 
       - name: Gateway Purity & Static Analysis
         run: |
@@ -38,4 +78,15 @@ jobs:
         run: python scripts/verify_readme.py
 
       - name: Run Master Verification Gate
-        run: python scripts/final_verify.py --strict
+        shell: bash
+        run: |
+          set +e
+          python scripts/final_verify.py --strict > verify-out.txt 2>&1
+          status=$?
+          cat verify-out.txt
+          if [ $status -ne 0 ]; then
+            grep -E 'FAIL|Traceback|Error' verify-out.txt | head -20 | while read -r line; do
+              echo "::error title=final_verify::$line"
+            done
+          fi
+          exit $status
