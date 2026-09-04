@@ -44,3 +44,8 @@ PUSH*.md
 Claude outputs/
 artifacts/
 video_submission.txt
+
+# --- personal recording notes, not part of the submission ---------------
+# The demo script is written for whoever is holding the camera, not for a
+# reviewer. Kept on disk, out of the repo.
+docs/submission/DEMO_RECORDING_SCRIPT.docx
