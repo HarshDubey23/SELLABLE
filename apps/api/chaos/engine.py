@@ -40,10 +40,24 @@ class ChaosEngine:
         return new_time
 
     def check_safety(self) -> tuple[bool, str]:
-        """Safety check: refuse to arm unless Razorpay key starts with rzp_test_."""
-        key_id = os.environ.get("RAZORPAY_KEY_ID", "rzp_test_TSttLNvLt9yUPI")
+        """Refuse to arm unless we can prove this is Razorpay test mode.
+
+        This used to default to a real test key when the environment had
+        none, which was wrong twice over. It embedded an actual account
+        credential in source that ships in a public repository, and --
+        worse -- it made the check pass in an environment whose credential
+        state was entirely unknown. A safety check that answers "SAFE"
+        when it has nothing to look at is not a safety check.
+
+        No key now means no proof, and no proof means no arming.
+        """
+        key_id = (os.environ.get("RAZORPAY_KEY_ID") or "").strip()
+        if not key_id:
+            return False, ("SAFETY_REFUSAL: RAZORPAY_KEY_ID is not set, so "
+                           "test mode cannot be confirmed; refusing to arm")
         if not key_id.startswith("rzp_test_"):
-            return False, "SAFETY_REFUSAL: Chaos Monkey refused to arm in Razorpay LIVE mode!"
+            return False, ("SAFETY_REFUSAL: Chaos Monkey refused to arm in "
+                           "Razorpay LIVE mode!")
         return True, "SAFE"
 
     def arm_fault(self, fault_id: str, type_str: str, target_route: str, params: dict[str, Any] | None = None, duration_ms: int = 60000) -> tuple[bool, str, FaultConfig | None]:
