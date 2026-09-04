@@ -16,6 +16,7 @@ import hmac
 import json
 import os
 import time
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -39,6 +40,9 @@ from .products import search as catalog_search
 from .store import db as store
 from .upsell.crosssell import find_cross_sell_candidates
 from .upsell.engine import generate_upsell_offers
+
+if TYPE_CHECKING:  # settlement is in-process only; no runtime import cycle
+    from .market.settle import NegotiatedSettlement
 
 router = APIRouter()
 
@@ -77,7 +81,7 @@ def _load_persisted_state() -> None:
 
     for row in store.query(
         "SELECT quote_id, mission_id, items, total_paise, expires_at, "
-        "signature FROM quotes"
+        "signature, negotiated_json FROM quotes"
     ):
         quotes[row["quote_id"]] = {
             "quote_id": row["quote_id"],
@@ -87,6 +91,12 @@ def _load_persisted_state() -> None:
             "expires_at": row["expires_at"],
             "signature": row["signature"],
         }
+        # A market quote carries the merchant and transcript its binding
+        # is pinned to. Losing it on restart would leave a settlement
+        # unable to prove itself and stuck at MERCHANT_MISMATCH.
+        if row["negotiated_json"]:
+            quotes[row["quote_id"]]["negotiated"] = json.loads(
+                row["negotiated_json"])
 
     for row in store.query(
         "SELECT order_id, idempotency_key, amount_paise, status, quote_id, "
@@ -239,6 +249,24 @@ async def tool_submit_proposal(req: ProposalReq):
     """Gateway evaluate() — the ONLY path an agent has toward money.
     Prices in the proposal are filled from CATALOG here; the client cannot
     inject a price even if it tries."""
+    return await evaluate_proposal(req)
+
+
+async def evaluate_proposal(req: ProposalReq, *,
+                            settlement: "NegotiatedSettlement | None" = None):
+    """The gateway evaluation, shared by the HTTP route and the market.
+
+    `settlement` is reachable only in-process. The HTTP route never passes
+    one, so nothing a client can send changes the amount that gets bound —
+    which is the property the price-injection defence rests on. The market
+    passes one because its amount is also server-computed, just by the
+    merchant policy engine rather than by the catalog directly.
+
+    Rule evaluation is identical either way. A negotiated purchase is
+    approved against the same R1-R12 the client path is, on the same
+    catalog list prices, and the settlement only ever narrows what the
+    resulting binding will authorize.
+    """
     m = req.mission or {}
     try:
         mission = Mission(
@@ -335,16 +363,48 @@ async def tool_submit_proposal(req: ProposalReq):
 
     # REGISTER APPROVAL BINDING (exact, multi-field) on APPROVE.
     if decision_str == "APPROVE":
+        list_total = sum(i.price_paise * i.qty for i in items)
+        bind_amount = list_total
+        if settlement is not None:
+            # THE NEGOTIATION MAY ONLY EVER MOVE THE PRICE DOWN.
+            #
+            # The gateway has just approved this basket at catalog list
+            # price against the shopper's signed budget. Binding a larger
+            # amount than that would mean the negotiation layer had
+            # authorized a spend the deterministic rules never saw, which
+            # is precisely the hole three bargaining language models
+            # should not be given.
+            #
+            # So the ceiling the gateway approved is the ceiling, and a
+            # negotiated settlement above it is refused outright rather
+            # than trimmed to fit.
+            if settlement.amount_paise > list_total:
+                raise HTTPException(409, detail={
+                    "ok": False,
+                    "error": {
+                        "error_code": "SETTLEMENT_ABOVE_APPROVED_CEILING",
+                        "rule_id": None,
+                        "message": (
+                            f"negotiated total {settlement.amount_paise} "
+                            f"exceeds the approved list ceiling {list_total}"),
+                        "retryable": False,
+                        "hint": "the negotiation may only lower the price",
+                    }})
+            bind_amount = settlement.amount_paise
+
         register_binding(
             seq,
             mission_id=mission.mission_id,
             proposal_hash=proposal_hash or "",
             cart_hash=proposal_hash or "",
             quote_id="",
-            amount_paise=sum(i.price_paise * i.qty for i in items),
+            amount_paise=bind_amount,
             currency="INR",
             skus=[(i.sku, i.qty) for i in items],
             mandate_version=MANDATE_VERSION,
+            merchant_id=settlement.merchant_id if settlement else "",
+            negotiation_transcript_hash=(
+                settlement.transcript_hash if settlement else ""),
         )
         approved_bindings[seq] = proposal_hash or ""
 
@@ -489,6 +549,13 @@ async def tool_create_order(req: CreateOrderReq,
 
     quote_skus = [(item["sku"], int(item["qty"])) for item in q["items"]]
 
+    # A negotiated quote knows which merchant won and over which
+    # transcript. Both are read from the server's own quote record, never
+    # from the request -- a client cannot mint a quote, so it cannot
+    # assert a merchant either. An ordinary quote has neither, and a
+    # binding with neither pinned skips the check.
+    negotiated = q.get("negotiated") or {}
+
     # ---- STEP 2: binding gate (atomic single-use consumption) ---------
     if not resuming:
         ok, code, _binding = verify_binding(
@@ -500,6 +567,9 @@ async def tool_create_order(req: CreateOrderReq,
             amount_paise=q["total_paise"],
             currency="INR",
             skus=quote_skus,
+            merchant_id=str(negotiated.get("merchant_id", "")),
+            negotiation_transcript_hash=str(
+                negotiated.get("transcript_hash", "")),
         )
         if not ok:
             chain.append(

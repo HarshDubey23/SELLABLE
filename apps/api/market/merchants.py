@@ -198,6 +198,16 @@ def seed(force: bool = False) -> list[str]:
     A row whose version differs from MANIFEST_VERSION is replaced rather
     than left alongside, so the store can never hold two generations of
     the same merchant's limits.
+
+    A row whose signature no longer verifies is also replaced. That is
+    what happens when MISSION_HMAC_KEY is rotated, or when a database
+    seeded by the test key is opened by the real one: the version still
+    matches, so a purely version-keyed check would skip the row and leave
+    a market whose every offer is refused as MANIFEST_SIGNATURE_INVALID,
+    with no way out short of deleting the database. Re-signing our own
+    seed data is safe -- the signature exists to stop a manifest being
+    edited underneath the policy engine, and this is the one place the
+    manifests legitimately come from.
     """
     import time as _time
 
@@ -205,9 +215,11 @@ def seed(force: bool = False) -> list[str]:
     written: list[str] = []
     for manifest in _SEED:
         row = store.query_one(
-            "SELECT version FROM market_merchants WHERE merchant_id = ?",
+            "SELECT version, manifest_json, signature "
+            "FROM market_merchants WHERE merchant_id = ?",
             (manifest.merchant_id,))
-        if row is not None and row["version"] == MANIFEST_VERSION and not force:
+        if (row is not None and row["version"] == MANIFEST_VERSION
+                and not force and _signature_holds(row)):
             continue
         s = manifest.signed()
         store.execute(
@@ -219,6 +231,18 @@ def seed(force: bool = False) -> list[str]:
              s.signature, int(_time.time())))
         written.append(s.merchant_id)
     return written
+
+
+def _signature_holds(row: dict[str, Any]) -> bool:
+    """Does the stored signature still verify under the current key?"""
+    # The same shape signed() hands to sign_mission: the canonical JSON
+    # *string*, not the parsed object. They must match exactly or every
+    # row would look tampered with and be needlessly re-signed.
+    try:
+        return bool(mission_verify.verify_mission(
+            row["manifest_json"], row["signature"]))
+    except (ValueError, TypeError):
+        return False
 
 
 def _from_row(row: dict[str, Any]) -> CapabilityManifest:

@@ -265,7 +265,6 @@ def attack_gauntlet(request: Request) -> dict[str, Any]:
     """
     _guard(request, "attack_gauntlet", _GAUNTLET_LIMIT)
 
-    money_before = money.snapshot()["boundary_calls"]
     results: list[dict[str, Any]] = []
     t_wall = time.perf_counter()
 
@@ -313,7 +312,15 @@ def attack_gauntlet(request: Request) -> dict[str, Any]:
             "blocked": blocked,
             "total": len(results),
             "block_rate": round(blocked / max(1, len(results)), 3),
-            "money_boundary_calls": money.snapshot()["boundary_calls"] - money_before,
+            # Summed per scenario, not differenced against the global
+            # counter. `attack_run` zeroes that counter as it starts each
+            # scenario, so a difference taken across the whole gauntlet
+            # measures only the last scenario minus whatever the process
+            # had done beforehand -- which reads as a negative number of
+            # money calls the moment anything else in the process has
+            # touched the boundary. Each row's count is already scoped to
+            # its own scenario and is the honest thing to add up.
+            "money_boundary_calls": sum(r["money_calls"] for r in results),
             "wall_time_ms": wall_ms,
         },
         "measured_on": "this machine, this run",
