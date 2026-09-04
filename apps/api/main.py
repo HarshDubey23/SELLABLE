@@ -39,6 +39,7 @@ from .tools import orders, quotes
 from .tools import router as tools_router
 from .ui import router as ui_router
 from .web.product_page import router as product_router
+from .web.judge_page import router as judge_page_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
 
@@ -70,8 +71,9 @@ app.include_router(metrics_router)
 app.include_router(checkout_router)
 app.include_router(agent_router)
 app.include_router(capture_router)
-app.include_router(product_router)   # owns GET / — the product
-app.include_router(ui_router)        # the console and the other surfaces
+app.include_router(product_router)      # owns GET / — the product
+app.include_router(judge_page_router)   # owns GET /judge — technical evidence
+app.include_router(ui_router)           # the console and the other surfaces
 app.include_router(chaos_api_router)
 app.include_router(chaos_ui_router)
 print("[BOOT] product page: GET /   |  console: GET /console")
