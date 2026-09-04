@@ -143,16 +143,34 @@ def keyword_plan(mission_text: str, catalog: dict[str, Any],
 
     scored: list[tuple[int, int, str]] = []
     for sku, item in catalog.items():
-        blob = " ".join([
-            str(item.get("name", "")), str(item.get("category", "")),
+        # WHAT A THING IS vs WHAT IS SAID ABOUT IT.
+        #
+        # Only the name and the category can qualify an item. Asked for
+        # "camera and lens for travel", matching anywhere in the text
+        # returned a 65W charger, because its description says "compact
+        # travel size" -- a real catalog row, honestly labelled, and
+        # completely wrong. Three merchants then bid on a charger as
+        # though the request had been served.
+        #
+        # A word in a description says something about a product. The
+        # name and category say what it *is*, and only that can make it
+        # an answer. Description and attributes still count, but only to
+        # order items that already qualified.
+        identity = " ".join([str(item.get("name", "")),
+                             str(item.get("category", ""))]).lower()
+        blurb = " ".join([
             str(item.get("description", "")),
             " ".join(str(v) for v in (item.get("attributes") or {}).values()),
         ]).lower()
-        hits = sum(1 for w in words if w in blob)
-        if hits:
-            # Cheaper first among equal matches, so a fallback basket has a
-            # chance of fitting the budget.
-            scored.append((-hits, item["price_paise"], sku))
+
+        identity_hits = sum(1 for w in words if w in identity)
+        if not identity_hits:
+            continue
+        blurb_hits = sum(1 for w in words if w in blurb)
+        # Cheaper first among equal matches, so a fallback basket has a
+        # chance of fitting the budget.
+        scored.append((-(identity_hits * 10 + blurb_hits),
+                       item["price_paise"], sku))
 
     scored.sort()
     picked: list[str] = []
