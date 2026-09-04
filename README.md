@@ -227,6 +227,75 @@ those look like approvals:
 | Stale approval | `approval_binding/BINDING_EXPIRED` |
 | Cart mutation | `gateway/R1_BUDGET` + binding SKU-set check |
 
+## The market: three merchants who cannot name a price
+
+Three language models compete for one order. NOVATECH plays margin,
+GEARHUB chases new customers, BYTECART clears inventory. They behave
+differently because their strategies differ, not because anything
+rewrites their output — and not one of them can tell you what something
+costs.
+
+That is not a rule someone remembered to enforce. A merchant replies with
+an `OfferIntent`, and the schema has **no amount field**:
+
+```
+merchant_id  basket_sku_set  line_discount_pct  bundle_discount_pct
+shipping     delivery_days   addon_skus         warranty_years
+round        in_reply_to     offer_id           rationale
+```
+
+A prompt-injected model that decides to grant 90% off has nowhere to
+write it down. The server prices the terms; the model only proposes them.
+`docs/generated/truth.json` reads the live schema and reports
+`[]` money-shaped fields among them,
+so if anyone ever adds one, the published claim contradicts itself.
+
+**Nothing is clamped.** A 15% discount against an 8% cap is not quietly
+reduced to 8%; it is refused with `MERCHANT_POLICY_LINE_DISCOUNT_EXCEEDED`
+and comes back with no price at all. A system that silently corrects an
+illegal offer behaves identically whether its merchants are honest or
+not, which means nobody ever finds out that one is not. Press **Try an
+illegal offer** in the market scene and watch it happen against the real
+signed manifest.
+
+**The winner is arithmetic.** A pure integer scorer ranks the offers on
+the table by the mission's weights. The models write offers and read
+priorities; they never pick the winner. Change the weights and re-run and
+you get a controlled experiment rather than a re-roll — the override
+opens a new negotiation and never edits the old one.
+
+**Settlement trusts none of it.** The policy engine re-prices the stored
+intent, so editing `total_paise` in the database changes a number that is
+displayed and nothing that is charged. The transcript is re-hashed
+against the hash pinned into the approval binding. And the gateway
+re-approves the basket at catalog list price, with the rule that the
+negotiated total may only ever be *at or below* that ceiling — the
+bargaining layer can move a price down and has no way to move one up.
+
+Then it goes through the R1–R12 gateway, the approval binding, the
+execution machine and Razorpay: all pre-existing, all unmodified, all
+shared with every other purchase here. The market added no payment path,
+because a second way to move money is a second thing to get wrong.
+
+Measured on a keyless run — the market a reviewer gets with no
+configuration at all:
+
+| | |
+|---|---|
+| merchants | 3, each with a signed capability manifest (v4) |
+| rounds | up to 3, merchants queried concurrently |
+| offers priced by the server | 3 of 3 |
+| money-shaped fields a merchant may send | 0 |
+| transcript hash pinned into the binding | 256-bit |
+| two keyless runs produce identical offers | true |
+
+With keys, the same three commands give you live LLM merchants and real
+Razorpay test-mode orders. Both modes are labelled everywhere they
+appear — boot banner, every API response, every badge — and the label is
+read from the provider machinery rather than written by hand.
+
+Full design: [docs/architecture/market.md](docs/architecture/market.md).
+
 ## Discovery: evidence, not shopping
 
 The agent gathers live market evidence to justify a price. It cannot buy
@@ -266,6 +335,12 @@ apps/api/
   ├── webhook/receiver.py     raw-body HMAC, RECEIVED → APPLIED lifecycle
   ├── audit/chain.py          append-only SHA-256 chain, boot-verified
   ├── discovery/              market evidence, provenance-tagged
+  ├── market/                 three merchant LLMs; none can name a price
+  │   ├── intents.py          the schema with no amount field
+  │   ├── policy.py           pure merchant policy engine. Never clamps
+  │   ├── negotiation.py      durable state machine, canonical transcript
+  │   ├── score.py            pure scorer. The LLM never picks the winner
+  │   └── settle.py           recompute, re-hash, re-approve, then the gateway
   ├── agent/                  buyer agent. Zero money authority
   ├── attack_custom.py        reviewer's attack sandbox. Imports no executor
   ├── audit_demo.py           block preimage + in-memory tamper cascade
@@ -273,7 +348,7 @@ apps/api/
   ├── recovery/               executor-side payment recovery (NOT under agent/)
   ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
-tests/                        463 tests
+tests/                        542 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents

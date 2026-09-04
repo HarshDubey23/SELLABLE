@@ -366,6 +366,14 @@ table.t td{color:var(--text-mid)}
 .mk-weight{font-family:var(--mono);font-size:10.5px;color:var(--text-lo)}
 .mk-weight b{color:var(--text-hi);font-weight:700}
 
+.mk-probe{background:var(--bg-panel);border:1px solid rgba(255,77,94,.42);
+  border-left:3px solid var(--red);border-radius:var(--r-panel);
+  padding:15px 17px;margin:16px 0}
+.mk-probe .code{font-family:var(--mono);font-size:13px;font-weight:700;
+  color:var(--red)}
+.mk-probe .ask{font-family:var(--mono);font-size:12px;color:var(--text-mid);
+  margin:8px 0}
+.mk-probe .ask b{color:var(--text-hi)}
 .mk-settled{background:var(--bg-inset);border:1px solid var(--teal);
   border-radius:var(--r-panel);padding:15px 17px;margin:16px 0}
 .mk-settled .amt{font-family:var(--mono);font-size:24px;font-weight:700;
@@ -822,6 +830,7 @@ def _scene_market() -> str:
 <div class="row-actions" style="margin-top:16px">
   <button class="btn" id="mk-round" disabled>Run a round</button>
   <button class="btn" id="mk-counter" disabled>Counter</button>
+  <button class="btn" id="mk-probe" disabled>Try an illegal offer</button>
   <button class="btn" id="mk-override" disabled>Override: cheapest instead</button>
   <button class="btn" id="mk-accept" disabled>Accept the winner</button>
   <button class="btn btn-primary" id="mk-settle" disabled>Pay for real</button>
@@ -835,6 +844,7 @@ def _scene_market() -> str:
   basket through the same gateway, the same approval binding and the same execution
   machine as every other purchase here.</p>
 
+<div id="mk-probe-out"></div>
 <div id="mk-settled"></div>
 """
 
@@ -1742,6 +1752,7 @@ function mkRender(d){
   $('mk-accept').disabled = d.state !== 'ROUND_COMPLETE';
   $('mk-override').disabled = !(open || d.state === 'ACCEPTED');
   $('mk-settle').disabled = d.state !== 'ACCEPTED' || d.settled;
+  $('mk-probe').disabled = !(d.offers && d.offers.length);
   $('mk-counter').textContent = winner
     ? 'Ask ' + winner + ' for faster delivery' : 'Counter';
 }
@@ -1805,6 +1816,30 @@ async function mkOverride(){
   if(d){ $('mk-settled').innerHTML = ''; mkRender(d); }
 }
 
+async function mkProbe(){
+  const w = (MK.ranking && MK.ranking.winner && MK.ranking.winner.merchant_id)
+            || (MK.offers[0] && MK.offers[0].merchant_id);
+  if(!w) return;
+  const box = $('mk-probe-out');
+  loading(box, 'sending an offer outside ' + w + "'s signed manifest");
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/probe', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({merchant_id:w})
+  });
+  if(!d){ box.innerHTML = ''; return; }
+  const p = d.probe;
+  box.innerHTML = '<div class="mk-probe">' +
+    '<div class="code">' + esc(p.reason || p.decision) + '</div>' +
+    '<div class="ask">asked for <b>' + esc(p.asked_line_discount_pct) +
+      '%</b> &middot; ' + esc(p.merchant_id) + " manifest allows <b>" +
+      esc(p.manifest_cap_pct) + '%</b></div>' +
+    '<div class="panel-sub">' + esc(p.reason_human || '') + '</div>' +
+    '<div class="panel-sub" style="margin-top:9px">It was not trimmed to ' +
+      esc(p.manifest_cap_pct) + '%. A refused offer carries no price at all &mdash; ' +
+      'total_paise came back <b>' + esc(String(p.total_paise)) + '</b>. ' +
+      esc(p.note) + '</div></div>';
+}
+
 async function mkSettle(){
   const box = $('mk-settled');
   loading(box, 'gateway to approval binding to execution machine to Razorpay');
@@ -1840,6 +1875,7 @@ if($('mk-round'))    $('mk-round').addEventListener('click', mkRound);
 if($('mk-counter'))  $('mk-counter').addEventListener('click', mkCounter);
 if($('mk-accept'))   $('mk-accept').addEventListener('click', mkAccept);
 if($('mk-override')) $('mk-override').addEventListener('click', mkOverride);
+if($('mk-probe'))    $('mk-probe').addEventListener('click', mkProbe);
 if($('mk-settle'))   $('mk-settle').addEventListener('click', mkSettle);
 if($('mk-text'))     $('mk-text').addEventListener('keydown', function(e){
   if(e.key === 'Enter') mkOpen();
