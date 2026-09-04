@@ -1,0 +1,559 @@
+{
+  "status": "order_failed",
+  "detail": {
+    "detail": {
+      "ok": false,
+      "error": {
+        "error_code": "RAZORPAY_UNREACHABLE",
+        "rule_id": null,
+        "message": "HTTPSConnectionPool(host='api.razorpay.com', port=443): Max retries exceeded with url: /v1/orders (Caused by NameResolutionError(\"HTTPSConnection(host='api.razorpay.com', port=443): Failed to resolve 'api.razorpay.com' ([Errno 11001] getaddrinfo failed)\"))",
+        "retryable": true,
+        "hint": "idempotency key remains reusable"
+      }
+    }
+  },
+  "trace": {
+    "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-SIGNED",
+    "event_count": 18,
+    "events": [
+      {
+        "ts": 1787954089.3493176,
+        "seq": 1,
+        "actor": "system",
+        "action": "mission_started",
+        "summary": "Mission MSN-PAYMENT_FAILURE_RECOVERY-SIGNED started",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.5647259,
+        "seq": 2,
+        "actor": "user",
+        "action": "intent_mandate_carried",
+        "summary": {
+          "ceiling_paise": 120000,
+          "note": "user signed intent out-of-band (AP2 pattern)"
+        },
+        "data": {}
+      },
+      {
+        "ts": 1787954089.5797527,
+        "seq": 3,
+        "actor": "buyer_agent",
+        "action": "tool_call",
+        "summary": "GET /.well-known/agent-manifest.json",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.8616827,
+        "seq": 4,
+        "actor": "buyer_agent",
+        "action": "tool_result",
+        "summary": "manifest: 11 tools discovered",
+        "data": {
+          "manifest": {
+            "merchant": {
+              "name": "SELLABLE Demo Dukaan",
+              "description": "Agent-readable, agent-transactable, agent-safe merchant on Razorpay test mode.",
+              "version": "1.0.0",
+              "protocol": "sellable-v1"
+            },
+            "supported_protocols": {
+              "sellable-v1": "native (this manifest)",
+              "schema.org": "Product/Offer JSON-LD via /catalog.jsonld",
+              "acp_ap2_x402": "tracked; patterns (mandates, bounded offers) implemented in mission + upsell design"
+            },
+            "capabilities": [
+              "search",
+              "get_product",
+              "quote",
+              "propose",
+              "checkout",
+              "payment_status"
+            ],
+            "tools": [
+              {
+                "name": "search_products",
+                "method": "GET",
+                "endpoint": "/tools/search_products",
+                "params": {
+                  "query": "string?",
+                  "category": "string?",
+                  "max_price_paise": "int?"
+                }
+              },
+              {
+                "name": "get_product",
+                "method": "GET",
+                "endpoint": "/tools/get_product/{sku}",
+                "params": {
+                  "sku": "string"
+                }
+              },
+              {
+                "name": "merchant_policy",
+                "method": "GET",
+                "endpoint": "/tools/merchant_policy",
+                "params": {}
+              },
+              {
+                "name": "request_quote",
+                "method": "POST",
+                "endpoint": "/tools/quote",
+                "params": {
+                  "items": [
+                    {
+                      "sku": "string",
+                      "qty": "int"
+                    }
+                  ],
+                  "mission_id": "string"
+                }
+              },
+              {
+                "name": "submit_proposal",
+                "method": "POST",
+                "endpoint": "/tools/submit_proposal",
+                "params": {
+                  "mission": "object",
+                  "items": [
+                    {
+                      "sku": "string",
+                      "qty": "int"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "create_order",
+                "method": "POST",
+                "endpoint": "/tools/create_order",
+                "params": {
+                  "quote_id": "string",
+                  "proposal_hash": "string",
+                  "approve_seq": "int"
+                },
+                "headers": {
+                  "X-Idempotency-Key": "required"
+                }
+              },
+              {
+                "name": "check_payment",
+                "method": "GET",
+                "endpoint": "/tools/check_payment/{order_id}",
+                "params": {
+                  "order_id": "string"
+                }
+              },
+              {
+                "name": "injection_demo",
+                "method": "GET",
+                "endpoint": "/demo/injection/{n}",
+                "params": {
+                  "n": "string (I1-I8 or 1-8)"
+                },
+                "description": "Shows one adversarial injection payload and the deterministic gateway verdict that neutralizes it"
+              },
+              {
+                "name": "gateway_proof",
+                "method": "GET",
+                "endpoint": "/gateway/proof",
+                "params": {},
+                "description": "Machine-provable purity report for the policy gateway (no LLM/network/IO patterns, source SHA-256)"
+              },
+              {
+                "name": "audit_timeline",
+                "method": "GET",
+                "endpoint": "/audit/timeline",
+                "params": {},
+                "description": "Human-readable HTML rendering of the hash-chained audit ledger"
+              },
+              {
+                "name": "demo_e2e",
+                "method": "GET",
+                "endpoint": "/demo/e2e",
+                "params": {},
+                "description": "Runs one complete end-to-end mission flow with real Razorpay test order creation"
+              }
+            ],
+            "payment": {
+              "gateway": "razorpay_test",
+              "currency": "INR",
+              "methods": [
+                "card",
+                "netbanking",
+                "upi"
+              ],
+              "webhook": "/webhook"
+            },
+            "policies": {
+              "returns": "7-day return, unused, original packaging",
+              "shipping": "Free above Rs 500, else Rs 49",
+              "cancellation": "Allowed before payment capture",
+              "upsell": "Max +30% of budget, max 2 proposals per mission"
+            }
+          }
+        }
+      },
+      {
+        "ts": 1787954089.8670866,
+        "seq": 5,
+        "actor": "buyer_agent",
+        "action": "tool_result",
+        "summary": "found 8 products for intent 'books'",
+        "data": {
+          "products": [
+            {
+              "sku": "BOOK-001",
+              "name": "The Almanack of Naval Ravikant",
+              "category": "books",
+              "price_paise": 39900,
+              "price_display": "Rs 399",
+              "rating": 4.5,
+              "attributes": {
+                "genre": "essays",
+                "author": "Eric Jorgenson",
+                "pages": 242,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001"
+              ],
+              "stock": 25
+            },
+            {
+              "sku": "BOOK-002",
+              "name": "The Psychology of Money",
+              "category": "books",
+              "price_paise": 29900,
+              "price_display": "Rs 299",
+              "rating": 4.7,
+              "attributes": {
+                "genre": "personal_finance",
+                "author": "Morgan Housel",
+                "pages": 252,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001"
+              ],
+              "stock": 30
+            },
+            {
+              "sku": "BOOK-003",
+              "name": "Deep Work",
+              "category": "books",
+              "price_paise": 34900,
+              "price_display": "Rs 349",
+              "rating": 4.4,
+              "attributes": {
+                "genre": "productivity",
+                "author": "Cal Newport",
+                "pages": 304,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001",
+                "MRKR-001"
+              ],
+              "stock": 20
+            },
+            {
+              "sku": "BOOK-004",
+              "name": "Sapiens",
+              "category": "books",
+              "price_paise": 44900,
+              "price_display": "Rs 449",
+              "rating": 4.6,
+              "attributes": {
+                "genre": "history",
+                "author": "Yuval Noah Harari",
+                "pages": 443,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001"
+              ],
+              "stock": 16
+            },
+            {
+              "sku": "BOOK-005",
+              "name": "Clean Code",
+              "category": "books",
+              "price_paise": 39900,
+              "price_display": "Rs 399",
+              "rating": 4.3,
+              "attributes": {
+                "genre": "programming",
+                "author": "Robert C. Martin",
+                "pages": 464,
+                "language": "English"
+              },
+              "compatible_with": [
+                "MRKR-001"
+              ],
+              "stock": 12
+            },
+            {
+              "sku": "BOOK-006",
+              "name": "The Pragmatic Programmer",
+              "category": "books",
+              "price_paise": 42900,
+              "price_display": "Rs 429",
+              "rating": 4.5,
+              "attributes": {
+                "genre": "programming",
+                "author": "Andrew Hunt",
+                "pages": 352,
+                "language": "English"
+              },
+              "compatible_with": [
+                "MRKR-001"
+              ],
+              "stock": 11
+            },
+            {
+              "sku": "BOOK-007",
+              "name": "Zero to One",
+              "category": "books",
+              "price_paise": 29900,
+              "price_display": "Rs 299",
+              "rating": 4.2,
+              "attributes": {
+                "genre": "business",
+                "author": "Peter Thiel",
+                "pages": 224,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001"
+              ],
+              "stock": 28
+            },
+            {
+              "sku": "BOOK-008",
+              "name": "Atomic Habits",
+              "category": "books",
+              "price_paise": 34900,
+              "price_display": "Rs 349",
+              "rating": 4.6,
+              "attributes": {
+                "genre": "self_help",
+                "author": "James Clear",
+                "pages": 320,
+                "language": "English"
+              },
+              "compatible_with": [
+                "NOTE-001"
+              ],
+              "stock": 32
+            }
+          ]
+        }
+      },
+      {
+        "ts": 1787954089.8670952,
+        "seq": 6,
+        "actor": "buyer_agent",
+        "action": "tool_call",
+        "summary": "GET /tools/get_product/BOOK-001",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.8712685,
+        "seq": 7,
+        "actor": "buyer_agent",
+        "action": "tool_result",
+        "summary": "BOOK-001: The Almanack of Naval Ravikant Rs 399",
+        "data": {
+          "product": {
+            "sku": "BOOK-001",
+            "name": "The Almanack of Naval Ravikant",
+            "category": "books",
+            "price_paise": 39900,
+            "description": "Eric Jorgenson. Wisdom on wealth and happiness.",
+            "rating": 4.5,
+            "attributes": {
+              "genre": "essays",
+              "author": "Eric Jorgenson",
+              "pages": 242,
+              "language": "English"
+            },
+            "compatible_with": [
+              "NOTE-001"
+            ],
+            "policies": {
+              "return_days": 7,
+              "exchange": true
+            },
+            "stock": 25,
+            "floor_paise": 31900,
+            "ceiling_paise": 39900,
+            "price_display": "Rs 399",
+            "in_stock": true
+          },
+          "injection_detected": false
+        }
+      },
+      {
+        "ts": 1787954089.8712757,
+        "seq": 8,
+        "actor": "buyer_agent",
+        "action": "tool_call",
+        "summary": "GET /tools/get_product/BOOK-002",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.8752007,
+        "seq": 9,
+        "actor": "buyer_agent",
+        "action": "tool_result",
+        "summary": "BOOK-002: The Psychology of Money Rs 299",
+        "data": {
+          "product": {
+            "sku": "BOOK-002",
+            "name": "The Psychology of Money",
+            "category": "books",
+            "price_paise": 29900,
+            "description": "Morgan Housel. Timeless lessons on wealth, greed and happiness.",
+            "rating": 4.7,
+            "attributes": {
+              "genre": "personal_finance",
+              "author": "Morgan Housel",
+              "pages": 252,
+              "language": "English"
+            },
+            "compatible_with": [
+              "NOTE-001"
+            ],
+            "policies": {
+              "return_days": 7,
+              "exchange": true
+            },
+            "stock": 30,
+            "floor_paise": 23900,
+            "ceiling_paise": 29900,
+            "price_display": "Rs 299",
+            "in_stock": true
+          },
+          "injection_detected": false
+        }
+      },
+      {
+        "ts": 1787954089.8752084,
+        "seq": 10,
+        "actor": "buyer_agent",
+        "action": "tool_call",
+        "summary": "GET /tools/get_product/BOOK-003",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.8793788,
+        "seq": 11,
+        "actor": "buyer_agent",
+        "action": "tool_result",
+        "summary": "BOOK-003: Deep Work Rs 349",
+        "data": {
+          "product": {
+            "sku": "BOOK-003",
+            "name": "Deep Work",
+            "category": "books",
+            "price_paise": 34900,
+            "description": "Cal Newport. Rules for focused success in a distracted world.",
+            "rating": 4.4,
+            "attributes": {
+              "genre": "productivity",
+              "author": "Cal Newport",
+              "pages": 304,
+              "language": "English"
+            },
+            "compatible_with": [
+              "NOTE-001",
+              "MRKR-001"
+            ],
+            "policies": {
+              "return_days": 7,
+              "exchange": true
+            },
+            "stock": 20,
+            "floor_paise": 27900,
+            "ceiling_paise": 34900,
+            "price_display": "Rs 349",
+            "in_stock": true
+          },
+          "injection_detected": false
+        }
+      },
+      {
+        "ts": 1787954089.8795195,
+        "seq": 12,
+        "actor": "buyer_agent",
+        "action": "llm_call",
+        "summary": "asking model to propose items for: books",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.905233,
+        "seq": 13,
+        "actor": "buyer_agent",
+        "action": "llm_fallback",
+        "summary": "model unavailable (google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed ['BOOK-002']",
+        "data": {
+          "skus": [
+            "BOOK-002"
+          ],
+          "llm_error": "google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed"
+        }
+      },
+      {
+        "ts": 1787954089.9052389,
+        "seq": 14,
+        "actor": "buyer_agent",
+        "action": "proposal_submitted",
+        "summary": "POST /tools/submit_proposal items=['BOOK-002']",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.9332445,
+        "seq": 15,
+        "actor": "gateway",
+        "action": "verdict_received",
+        "summary": "APPROVE (all rules passed)",
+        "data": {
+          "decision": "APPROVE",
+          "seq": 316,
+          "proposal_hash": "e882d75a5481514e4da32b21d1e2f95bb7a1b65bdc9ea9b816b6a1c15a30f0b8"
+        }
+      },
+      {
+        "ts": 1787954089.947628,
+        "seq": 16,
+        "actor": "merchant_ai",
+        "action": "no_offers",
+        "summary": "No pre-gated upsell offers available for this cart",
+        "data": {}
+      },
+      {
+        "ts": 1787954089.9476416,
+        "seq": 17,
+        "actor": "buyer_agent",
+        "action": "creating_order",
+        "summary": "Creating Razorpay order for ['BOOK-002']",
+        "data": {}
+      },
+      {
+        "ts": 1787954090.2211785,
+        "seq": 18,
+        "actor": "executor",
+        "action": "order_failed",
+        "summary": "order creation refused: {\"detail\": {\"ok\": false, \"error\": {\"error_code\": \"RAZORPAY_UNREACHABLE\", \"rule_id\": null, \"message\": \"HTTPSConnectionPool(host='api.razorpay.com', port=443): Max retries exceeded with url: /v1/orders ",
+        "data": {}
+      }
+    ]
+  },
+  "scenario": {
+    "id": "payment_failure_recovery",
+    "title": "Payment Failure + Deterministic Recovery",
+    "description": "Agent creates order, attempts the UPI rail against the real api.razorpay.com, receives the real failure, reasons with Gemini, and issues a Payment Link as an alternative rail. The audit chain links failure -> diagnosis -> recovery via parent_action_id.",
+    "expected": "UPI attempt fails for real -> LLM recovery reasoning -> payment_link_issued with parent_action_id chain. Final status: payment_failed_then_link_issued."
+  }
+}

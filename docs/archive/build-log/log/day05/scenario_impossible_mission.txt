@@ -1,0 +1,14 @@
+Scenario impossible_mission: status=no_proposal order=None amount=None
+events=12
+1 system/mission_started: Mission MSN-IMPOSSIBLE_MISSION-SIGNED started
+2 user/intent_mandate_carried: {'ceiling_paise': 15000, 'note': 'user signed intent out-of-band (AP2 pattern)'}
+3 buyer_agent/tool_call: GET /.well-known/agent-manifest.json
+4 buyer_agent/tool_result: manifest: 11 tools discovered
+5 buyer_agent/tool_result: found 2 products for intent 'laptop'
+6 buyer_agent/tool_call: GET /tools/get_product/LAP-001
+7 buyer_agent/tool_result: LAP-001: Entry Laptop i3 8GB 256GB Rs 32,000
+8 buyer_agent/tool_call: GET /tools/get_product/LAP-002
+9 buyer_agent/tool_result: LAP-002: Gaming Laptop RTX 4050 16GB Rs 4,499
+10 buyer_agent/llm_call: asking model to propose items for: laptop
+11 buyer_agent/llm_fallback: model unavailable (google/gemini-1.5-flash: [Errno 11001] getaddrinfo failed); deterministic fallback proposed []
+12 buyer_agent/no_proposal: no affordable in-scope SKU found for this mission

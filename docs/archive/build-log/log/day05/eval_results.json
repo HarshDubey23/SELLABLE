@@ -1,0 +1,62 @@
+{
+  "arms": [
+    {
+      "arm": "static",
+      "missions_run": 300,
+      "approved": 218,
+      "rejected": 82,
+      "acceptance_rate": 0.7267,
+      "injections_attempted": 0,
+      "injections_blocked": 0,
+      "injection_resistance": 1.0,
+      "gross_revenue_paise": 13288200,
+      "fraud_loss_paise": 0,
+      "recovery_revenue_paise": 0,
+      "recovery_cost_paise": 0,
+      "trust_adjusted_revenue_paise": 13288200,
+      "avg_turns_per_negotiation": 0.0,
+      "p95_latency_ms": 0.0
+    },
+    {
+      "arm": "ungated",
+      "missions_run": 300,
+      "approved": 218,
+      "rejected": 82,
+      "acceptance_rate": 0.7267,
+      "injections_attempted": 45,
+      "injections_blocked": 0,
+      "injection_resistance": 0.0,
+      "gross_revenue_paise": 9837200,
+      "fraud_loss_paise": 3451000,
+      "recovery_revenue_paise": 0,
+      "recovery_cost_paise": 0,
+      "trust_adjusted_revenue_paise": 6386200,
+      "avg_turns_per_negotiation": 0.0,
+      "p95_latency_ms": 0.0
+    },
+    {
+      "arm": "gated",
+      "missions_run": 300,
+      "approved": 229,
+      "rejected": 71,
+      "acceptance_rate": 0.7633,
+      "injections_attempted": 45,
+      "injections_blocked": 45,
+      "injection_resistance": 1.0,
+      "gross_revenue_paise": 14797100,
+      "fraud_loss_paise": 0,
+      "recovery_revenue_paise": 779000,
+      "recovery_cost_paise": 1000,
+      "trust_adjusted_revenue_paise": 15575100,
+      "avg_turns_per_negotiation": 0.0,
+      "p95_latency_ms": 0.18
+    }
+  ],
+  "headline": {
+    "gated_vs_ungated_revenue_delta_paise": 9188900,
+    "gated_vs_static_revenue_delta_paise": 2286900,
+    "gated_injection_resistance": 1.0,
+    "ungated_injection_resistance": 0.0,
+    "fraud_prevented_paise": 3451000
+  }
+}

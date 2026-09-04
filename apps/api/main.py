@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -6,8 +7,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 
-from . import config as app_config
 from .agent.runner import router as agent_router
 from .attack import router as attack_router
 from .audit import chain as audit_chain
@@ -20,7 +21,8 @@ from .demo import router as demo_router
 from .demo_capture import router as capture_router
 from .demo_ui import router as demo_ui_router
 from .discovery import discovery_router
-from .executor import init_execution_schema
+from .execution import recover_stranded
+from .execution_api import router as execution_router
 from .gateway.proof import compute_proof
 from .growth import growth_router
 from .manifest import router as manifest_router
@@ -36,10 +38,9 @@ from .store import db as store
 from .tools import orders, quotes
 from .tools import router as tools_router
 from .ui import router as ui_router
+from .web.product_page import router as product_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
-
-from fastapi.middleware.gzip import GZipMiddleware
 
 app = FastAPI(title="SELLABLE Merchant Storefront API", version="1.0.0")
 
@@ -51,11 +52,10 @@ app.add_middleware(ChaosFaultBusMiddleware)
 
 # G6: chain self-verifies at boot; tamper halts the money path
 CHAIN_OK_AT_BOOT, _boot_reason = audit_chain.verify_strict()
-init_execution_schema()
 print(f"[BOOT] audit chain verify_strict -> {CHAIN_OK_AT_BOOT} ({_boot_reason})")
 print(f"[BOOT] durable store -> {store.db_path()} "
-       f"({len(audit_chain.entries())} chain entries, {len(orders)} orders, "
-       f"{len(quotes)} quotes, execution_log ready)")
+      f"({len(audit_chain.entries())} chain entries, {len(orders)} orders, "
+      f"{len(quotes)} quotes)")
 
 app.include_router(manifest_router)
 app.include_router(tools_router)
@@ -70,10 +70,11 @@ app.include_router(metrics_router)
 app.include_router(checkout_router)
 app.include_router(agent_router)
 app.include_router(capture_router)
-app.include_router(ui_router)
+app.include_router(product_router)   # owns GET / — the product
+app.include_router(ui_router)        # the console and the other surfaces
 app.include_router(chaos_api_router)
 app.include_router(chaos_ui_router)
-print("[BOOT] command center UI: enabled at GET /")
+print("[BOOT] product page: GET /   |  console: GET /console")
 print("[BOOT] capture demo: enabled (POST /demo/capture)")
 print("[BOOT] chaos monkey engine: enabled at GET /chaos and GET /architecture")
 app.include_router(negotiation_router)
@@ -88,9 +89,27 @@ print("[BOOT] protocol adapters: NPCI UAP/ACP/AP2 live, x402 honest 501 stub")
 app.include_router(growth_router)
 print("[BOOT] merchant growth & market intelligence engine: live at /growth")
 app.include_router(discovery_router)
-print("[BOOT] real-world web discovery pipeline: live at /discovery")
+print("[BOOT] discovery pipeline: live at /discovery")
+app.include_router(execution_router)
+
+# Crash recovery: any execution still sitting in REMOTE_ATTEMPTED means the
+# process died with a payment in flight. We cannot know the outcome, so it
+# becomes RECONCILIATION_REQUIRED rather than a guessed success or failure.
+_recovered = recover_stranded()
+if _recovered:
+    print(f"[BOOT] crash recovery: {len(_recovered)} execution(s) moved "
+          f"REMOTE_ATTEMPTED -> RECONCILIATION_REQUIRED {_recovered}")
+print("[BOOT] execution state machine: live at /executions")
 
 _boot_status = status_summary()
+if _boot_status["boot_missing_required"]:
+    # Not fatal — the server still serves its read-only surfaces — but the
+    # signing and mandate paths cannot function, so say so loudly rather
+    # than letting it look healthy.
+    print("[BOOT] *** DEGRADED: missing required configuration: "
+          f"{_boot_status['boot_missing_required']} ***")
+    print("[BOOT] *** R9 will reject every mission and INV-3 cannot verify "
+          "a mandate. Run 'python run.py' to generate them. ***")
 print(f"[BOOT] config status: {_boot_status}")
 
 
@@ -141,42 +160,60 @@ def gateway_proof():
 
 @app.get("/diagnostics")
 def diagnostics():
-    """Phase 97 FINAL DEMO CHECKLIST ENDPOINT"""
-    from apps.api.audit import chain as audit_chain
-    from apps.api.config import status_summary
-    from apps.api.store import db as store
+    """Runtime facts only.
 
-    st = status_summary()
+    Everything here is read from live state. Nothing is asserted because
+    it ought to be true — an earlier version of this endpoint returned
+    hardcoded `True` for agent reachability, checkout availability and the
+    money-call invariant, which made it worse than useless.
+    """
+    from . import execution as _ex
+    from . import execution_provider as _prov
+    from .audit import chain as _ac
+    from .config import status_summary as _status
+    from .gateway.registry import RULE_REGISTRY
+    from .store import db as _store
+    from .webhook.receiver import pending_events
+
+    st = _status()
+    chain_ok, chain_reason = _ac.verify_strict()
+    exec_summary = _ex.summary()
+
     return {
-        "CORE_SYSTEM": {
-            "API": "ok",
-            "DB": "ok" if Path(store.db_path()).exists() else "missing",
-            "Gateway": "ok",
-            "Audit": "ok" if audit_chain.verify() else "invalid"
+        "core": {
+            "database_path": _store.db_path(),
+            "database_present": Path(_store.db_path()).exists(),
+            "audit_chain_verified": chain_ok,
+            "audit_chain_reason": chain_reason,
+            "audit_entries": len(_ac.entries()),
+            "gateway_rules_registered": len(RULE_REGISTRY),
         },
-        "AI": {
-            "LLM_configured": st.get("llm_configured", False),
-            "Agent_reachable": True,
-            "Fallback_available": True
+        "ai": {
+            "llm_configured": st["llm_configured"],
+            "llm_model": st["llm_model"],
+            "note": ("with no LLM key the buyer agent falls back to a "
+                     "deterministic picker; it never gains money authority "
+                     "either way"),
         },
-        "PAYMENTS": {
-            "Razorpay_configured": st.get("payment_configured", False),
-            "Checkout_available": True,
-            "Webhook_configured": st.get("webhook_configured", False)
+        "payments": {
+            "provider": _prov.provider_name(),
+            "provider_description": _prov.mode_description(),
+            "razorpay_credentials_present": _prov.razorpay_credentials_present(),
+            "webhook_secret_configured": bool(
+                os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()),
+            "executions_by_state": exec_summary,
+            "executions_awaiting_reconciliation": exec_summary.get(
+                _ex.RECONCILIATION_REQUIRED, 0),
+            "webhook_events_pending_apply": len(pending_events()),
         },
-        "SECURITY": {
-            "Binding_persistence": Path(store.db_path()).exists(),
-            "Mandates": bool(st.get("mission_hmac_key", True)),
-            "Money_call_invariant": True,
-            "Audit_verification": audit_chain.verify()
-        }
     }
 
 
 @app.get("/api/v1/telemetry")
 def telemetry():
     """Real-time telemetry for dashboard auto-refresh. Polled every 5s by the UI."""
-    from . import config as _cfg
+    from . import execution as _ex
+    from . import execution_provider as _prov
     from . import money as _m
     from .approval import all_bindings as _ab
     from .attack import SCENARIOS as _scenarios
@@ -187,7 +224,6 @@ def telemetry():
     bindings = _ab()
     consumed_count = _store.query_one("SELECT COUNT(*) as c FROM bindings WHERE consumed_at IS NOT NULL")
     c_num = consumed_count["c"] if consumed_count else 0
-    cfg = _cfg.get()
     return {
         "ok": True,
         "audit_blocks": len(_ac.entries()),
@@ -198,43 +234,98 @@ def telemetry():
         "gateway_rules": len(RULE_REGISTRY),
         "orders_tracked": len(orders),
         "quotes_tracked": len(quotes),
-        "attacks_blocked": len(_scenarios),
-        "system_uptime": "active",
-        "razorpay_mode": "test" if cfg.payment_configured else "simulated",
+        # This is how many adversarial scenarios the Attack Lab can RUN.
+        # It is not a count of attacks blocked at runtime — that number only
+        # exists after you actually run them.
+        "attack_scenarios_available": len(_scenarios),
+        "payment_provider": _prov.provider_name(),
+        "executions_by_state": _ex.summary(),
     }
 
 
-@app.get("/api/v1/security-score")
-@app.get("/api/v1/security_score")
-@app.get("/security_score")
+@app.get("/api/v1/security-score", operation_id="security_posture")
+@app.get("/api/v1/security_score", operation_id="security_posture_snake",
+         include_in_schema=False)
+@app.get("/security_score", operation_id="security_posture_legacy",
+         include_in_schema=False)
 def security_score():
-    """Returns a 0-9 security score for the runtime posture."""
-    from . import config as _cfg
-    from . import money as _m
+    """Runtime security posture, computed from things that are actually true.
+
+    An earlier version of this endpoint scored itself with expressions like
+    `bool(cfg.razorpay_webhook_secret or True)` — which is `True` no matter
+    what — alongside hardcoded `concurrency_safe: True` and
+    `architecture_guard: True`. A score that cannot go down is not a score.
+
+    Properties that are proven by the test suite rather than observable at
+    runtime (concurrency safety, gateway purity, architecture boundaries)
+    are deliberately NOT counted here. They live in the test evidence,
+    where they can fail.
+    """
+    import os as _os
+
+    from . import execution as _ex
+    from . import execution_provider as _prov
     from .audit import chain as _ac
     from .gateway.registry import RULE_REGISTRY
     from .store import db as _store
-    _ok = _ac.verify_cached()
-    cfg = _cfg.get()
-    snap = _m.snapshot()
-    score_components = {
-        "audit_chain_valid": _ok,
-        "money_calls_authorized": snap.get("total", 0) >= 0 and snap.get("boundary_calls", 0) >= 0,
-        "gateway_rules_active": len(RULE_REGISTRY) == 12,
-        "razorpay_test_mode": cfg.payment_configured,
-        "binding_engine_active": Path(_store.db_path()).exists(),
-        "webhook_hmac_active": bool(cfg.razorpay_webhook_secret or True),
-        "mandate_signing_active": bool(cfg.mission_hmac_key or True),
-        "concurrency_safe": True,
-        "architecture_guard": True,
+    from .webhook.receiver import pending_events
+
+    chain_ok, chain_reason = _ac.verify_strict()
+    exec_summary = _ex.summary()
+
+    checks = {
+        "audit_chain_verifies": {
+            "ok": chain_ok,
+            "detail": chain_reason,
+        },
+        "twelve_policy_rules_registered": {
+            "ok": len(RULE_REGISTRY) == 12,
+            "detail": f"{len(RULE_REGISTRY)} rules in the canonical registry",
+        },
+        "mission_signing_key_configured": {
+            "ok": bool(_os.environ.get("MISSION_HMAC_KEY", "").strip()),
+            "detail": "R9 rejects every mission when this is unset (fail-closed)",
+        },
+        "user_mandate_key_configured": {
+            "ok": bool(_os.environ.get("USER_MANDATE_KEY", "").strip()),
+            "detail": "INV-3 mandates cannot be verified without it",
+        },
+        "webhook_secret_configured": {
+            "ok": bool(_os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()),
+            "detail": "POST /webhook returns 503 fail-closed when unset",
+        },
+        "durable_store_present": {
+            "ok": Path(_store.db_path()).exists(),
+            "detail": _store.db_path(),
+        },
+        "no_executions_awaiting_reconciliation": {
+            "ok": exec_summary.get(_ex.RECONCILIATION_REQUIRED, 0) == 0,
+            "detail": f"{exec_summary.get(_ex.RECONCILIATION_REQUIRED, 0)} "
+                      f"execution(s) with an unresolved outcome",
+        },
+        "no_webhook_events_awaiting_apply": {
+            "ok": len(pending_events()) == 0,
+            "detail": f"{len(pending_events())} event(s) persisted but not applied",
+        },
     }
-    score = sum(1 for v in score_components.values() if v)
+
+    passed = sum(1 for c in checks.values() if c["ok"])
+    total = len(checks)
     return {
-        "score": score,
-        "max_score": 9,
-        "components": score_components,
-        "label": f"{score}/9 Security Controls Active",
-        "status": "SECURE" if score >= 8 else "DEGRADED",
+        "score": passed,
+        "max_score": total,
+        "label": f"{passed}/{total} runtime security controls active",
+        "status": "SECURE" if passed == total else "DEGRADED",
+        "checks": checks,
+        "payment_provider": _prov.provider_name(),
+        "excluded_from_score": {
+            "reason": "verified by tests, not observable at runtime",
+            "properties": ["gateway purity (no LLM/network/IO in R1-R12)",
+                           "single-use binding under concurrency",
+                           "money-call invariant on rejection",
+                           "architecture import boundaries"],
+            "evidence": "pytest tests/invariants tests/concurrency tests/gateway",
+        },
     }
 
 

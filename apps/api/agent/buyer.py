@@ -582,7 +582,7 @@ Propose which items to buy:"""
         trace.emit("buyer_agent", "payment_initiated",
                    f"Attempting payment on {order_id} via PaymentGateway")
 
-        from .recovery import run_recovery
+        from ..recovery.engine import run_recovery
 
         # requests-based Razorpay calls are blocking; keep the loop free.
         try:

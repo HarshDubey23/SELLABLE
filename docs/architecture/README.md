@@ -1,13 +1,16 @@
-# SELLABLE Architecture & Security Documentation
+# Architecture
 
-This directory contains formal visual and technical specifications of the **SELLABLE** autonomous commerce security architecture.
+Four documents, each answering one question. They describe the code as it
+is today; where the implementation is weaker than the idea, the document
+says so rather than drawing the idea.
 
-## Visual Artifacts Index
+| Document | Question it answers |
+|---|---|
+| [system.md](system.md) | What are the parts, and which of them are trusted? |
+| [money-safety.md](money-safety.md) | Why can't the AI spend money? |
+| [execution-lifecycle.md](execution-lifecycle.md) | What happens when the payment API times out? |
+| [trust-boundary.md](trust-boundary.md) | Where exactly does untrusted data stop being dangerous? |
+| [security-claims.md](security-claims.md) | Claim-by-claim, what is proven and by what? |
 
-1. **System Architecture (`system-architecture.mmd`):** End-to-end flow from natural language intent to Razorpay test-mode settlement.
-2. **Trust Boundary (`trust-boundary.mmd`):** Strict division between untrusted probabilistic AI reasoning and deterministic financial authorization.
-3. **End-to-End Sequence (`end-to-end-sequence.mmd`):** Step-by-step cryptographic protocol sequence.
-4. **Attack Defense Flow (`attack-flow.mmd`):** Mechanics of prompt injection and budget override containment.
-5. **Recovery Flow (`recovery-flow.mmd`):** Bounded and gated payment failure recovery loop.
-6. **Data Flow (`data-flow.mmd`):** Evolution of hashes and bindings across subsystem boundaries.
-7. **Security Data Model (`security-data-model.mmd`):** Relational schema of missions, approval bindings, orders, and audit blocks.
+Diagrams are Mermaid so they render on GitHub and stay editable in the
+same file as the prose that explains them.

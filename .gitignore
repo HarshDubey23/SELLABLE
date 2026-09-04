@@ -23,4 +23,15 @@ live_demo.py
 smoke_*.py
 dbg_*.py
 
+
+.venv/
+docs/generated/*.tmp
+
+artifacts/
+
+# Delivery artifacts written into the working copy by the update tooling.
+# They are not part of the project.
+*.bundle
+PUSH_TO_GITHUB.bat
+PUSH_TO_GITHUB.md
 Claude outputs/

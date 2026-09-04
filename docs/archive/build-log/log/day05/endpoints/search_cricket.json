@@ -1,0 +1,152 @@
+{
+  "count": 8,
+  "results": [
+    {
+      "sku": "BAT-001",
+      "name": "SG Cricket Bat Kashmir Willow",
+      "category": "cricket",
+      "price_paise": 149900,
+      "price_display": "Rs 1,499",
+      "rating": 4.1,
+      "attributes": {
+        "material": "kashmir_willow",
+        "weight_g": 1150,
+        "skill_level": "intermediate",
+        "age_fit": "15+"
+      },
+      "compatible_with": [
+        "GRIP-001",
+        "BALL-001"
+      ],
+      "stock": 15
+    },
+    {
+      "sku": "BAT-002",
+      "name": "SS Ton Elite English Willow Bat",
+      "category": "cricket",
+      "price_paise": 249900,
+      "price_display": "Rs 2,499",
+      "rating": 4.6,
+      "attributes": {
+        "material": "english_willow",
+        "weight_g": 1180,
+        "skill_level": "professional",
+        "age_fit": "16+"
+      },
+      "compatible_with": [
+        "GRIP-001",
+        "BALL-001"
+      ],
+      "stock": 8
+    },
+    {
+      "sku": "BALL-001",
+      "name": "SG Test Leather Ball (Pack of 3)",
+      "category": "cricket",
+      "price_paise": 89900,
+      "price_display": "Rs 899",
+      "rating": 4.3,
+      "attributes": {
+        "material": "leather",
+        "weight_g": 156,
+        "skill_level": "professional",
+        "age_fit": "14+"
+      },
+      "compatible_with": [
+        "BAT-001",
+        "BAT-002"
+      ],
+      "stock": 22
+    },
+    {
+      "sku": "BALL-002",
+      "name": "Cosco Tennis Cricket Ball (Pack of 6)",
+      "category": "cricket",
+      "price_paise": 34900,
+      "price_display": "Rs 349",
+      "rating": 3.8,
+      "attributes": {
+        "material": "rubber",
+        "weight_g": 140,
+        "skill_level": "beginner",
+        "age_fit": "6+"
+      },
+      "compatible_with": [
+        "BAT-001",
+        "BAT-002"
+      ],
+      "stock": 34
+    },
+    {
+      "sku": "PAD-001",
+      "name": "SG Batting Pads Youth",
+      "category": "cricket",
+      "price_paise": 99900,
+      "price_display": "Rs 999",
+      "rating": 4.0,
+      "attributes": {
+        "material": "eva_foam",
+        "weight_g": 850,
+        "skill_level": "beginner",
+        "age_fit": "10-14"
+      },
+      "compatible_with": [
+        "GLOVE-001"
+      ],
+      "stock": 18
+    },
+    {
+      "sku": "GLOVE-001",
+      "name": "SG Batting Gloves Youth",
+      "category": "cricket",
+      "price_paise": 69900,
+      "price_display": "Rs 699",
+      "rating": 3.9,
+      "attributes": {
+        "material": "sheep_leather",
+        "weight_g": 320,
+        "skill_level": "beginner",
+        "age_fit": "10-14"
+      },
+      "compatible_with": [
+        "PAD-001"
+      ],
+      "stock": 25
+    },
+    {
+      "sku": "GRIP-001",
+      "name": "Chevron Bat Grip (Pack of 2)",
+      "category": "cricket",
+      "price_paise": 29900,
+      "price_display": "Rs 299",
+      "rating": 4.2,
+      "attributes": {
+        "material": "rubber",
+        "weight_g": 45,
+        "skill_level": "all",
+        "age_fit": "all"
+      },
+      "compatible_with": [
+        "BAT-001",
+        "BAT-002"
+      ],
+      "stock": 40
+    },
+    {
+      "sku": "KIT-001",
+      "name": "Premium Cricket Kit Complete",
+      "category": "cricket",
+      "price_paise": 449900,
+      "price_display": "Rs 4,499",
+      "rating": 4.3,
+      "attributes": {
+        "material": "mixed",
+        "weight_g": 2400,
+        "skill_level": "intermediate",
+        "age_fit": "12+"
+      },
+      "compatible_with": [],
+      "stock": 5
+    }
+  ]
+}

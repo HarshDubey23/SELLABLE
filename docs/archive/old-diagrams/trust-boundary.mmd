@@ -1,0 +1,25 @@
+flowchart TD
+    subgraph UntrustedZone ["⚠️ UNTRUSTED / PROBABILISTIC ZONE"]
+        LLM["LLM Agent Reasoning"]
+        Prompt["User Mission Prompt"]
+        ProductText["Product Descriptions & Injections"]
+        ToolResults["External Tool Results"]
+    end
+
+    subgraph TrustBoundary ["🛡️ TRUST BOUNDARY (DETERMINISTIC)"]
+        Gateway["12-Rule Policy Engine (R1-R12)"]
+        QuoteGen["Exact Merchant Quote Engine"]
+        BindingGen["Approval Binding (Mission + Cart + Amount + Expiry)"]
+        Mandates["Intent & Cart Mandate Verifiers"]
+        DBStore["Durable SQLite Store (Immutable Sequence)"]
+    end
+
+    subgraph MoneyZone ["💰 AUTHORIZED MONEY EXECUTION"]
+        RP["Razorpay Test Mode API (POST /v1/orders)"]
+        Webhook["HMAC-SHA256 Webhook Verification"]
+        Audit["SHA-256 Chained Ledger"]
+    end
+
+    UntrustedZone -->|Proposal Only (No Money Authority)| TrustBoundary
+    TrustBoundary -->|100% Match Exact Binding| MoneyZone
+    TrustBoundary -->|Any Mismatch / Timeout / Injection| Blocked["🛑 Blocked (0 Money Calls)"]

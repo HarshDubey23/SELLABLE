@@ -10,6 +10,6 @@ INVARIANTS:
 - External web claims never override server-side catalog prices or bypass R1-R12 rules.
 """
 from .api import router as discovery_router
-from .pipeline import run_real_product_discovery, DiscoveryPipelineResult
+from .pipeline import DiscoveryPipelineResult, run_real_product_discovery
 
 __all__ = ["discovery_router", "run_real_product_discovery", "DiscoveryPipelineResult"]

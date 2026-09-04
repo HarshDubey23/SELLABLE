@@ -381,23 +381,33 @@ async def policy():
 
 @router.post("/tools/create_order", dependencies=[Depends(require_api_key)])
 async def tool_create_order(req: CreateOrderReq,
-                            x_idempotency_key: str = Header(default="")):
-    """Create a REAL Razorpay order (test mode).
+                            x_idempotency_key: str = Header(default=""),
+                            x_sellable_fault: str = Header(default="")):
+    """Cross the money boundary — once, durably, and never ambiguously.
 
-    G1 INVARIANT (strict): requires approve_seq AND proposal_hash match
-    AND every field of the ApprovalBinding matches (mission_id, amount,
-    currency, sku set). No binding match = no order = no money.
+    Order of operations matters more than any single check here:
+
+      1. Look up the durable execution row FIRST. A replay of an intent we
+         already executed returns the original order instead of opening a
+         second payment.
+      2. Only then verify (and atomically consume) the approval binding.
+      3. Record REMOTE_ATTEMPTED on disk BEFORE the network call, so a crash
+         mid-flight is recoverable as "unknown" rather than lost.
+      4. Classify the outcome. A timeout is neither success nor failure —
+         it becomes RECONCILIATION_REQUIRED and is resolved against the
+         provider's authoritative state.
+
+    G1 INVARIANT (strict): every field of the ApprovalBinding must match
+    (mission_id, proposal_hash, cart_hash, quote_id, amount, currency, sku
+    set) and the binding must be unconsumed. No binding match = no order.
     """
+    from . import execution as ex
+    from . import execution_provider as provider_mod
     from .approval import verify as verify_binding
 
     idem = (x_idempotency_key or "").strip()
     if not idem:
         raise HTTPException(400, detail="X-Idempotency-Key header required")
-    if idem in idempotency_seen:
-        existing = orders[idempotency_seen[idem]]
-        return {"order_id": existing["order_id"],
-                "amount_paise": existing["amount_paise"],
-                "status": existing["status"], "duplicate": True}
 
     q = quotes.get(req.quote_id)
     if not q:
@@ -410,48 +420,108 @@ async def tool_create_order(req: CreateOrderReq,
                       "retryable": True,
                       "hint": "request a fresh quote"}})
 
-    # Build the sku set from the quote so the binding can compare exactly.
-    quote_skus = [(item["sku"], int(item["qty"])) for item in q["items"]]
+    # ---- STEP 1: durable business-level idempotency -------------------
+    # The execution id is derived from the authorization itself, so the
+    # same authorized intent always lands on the same row no matter what
+    # the client sends in its header.
+    execution_id = ex.derive_execution_id(
+        q["mission_id"], req.proposal_hash, req.approve_seq)
+    existing = ex.get(execution_id)
 
-    # G1 GATE (strict): every binding field must match. ONE failure = no order.
-    ok, code, _binding = verify_binding(
-        seq=req.approve_seq,
-        mission_id=q["mission_id"],
-        proposal_hash=req.proposal_hash,
-        cart_hash=req.proposal_hash,
-        quote_id=req.quote_id,
-        amount_paise=q["total_paise"],
-        currency="INR",
-        skus=quote_skus,
-    )
-    if not ok:
-        chain.append(
-            "executor", "binding_rejected",
-            {"mission_id": q["mission_id"],
-             "approve_seq": req.approve_seq,
-             "proposal_hash_prefix": req.proposal_hash[:16] if req.proposal_hash else "",
-             "code": code},
-            error_code=code,
-            review_state="blocked_binding",
-        )
-        raise HTTPException(403, detail={
+    if existing is not None and existing["state"] == ex.EXECUTED:
+        order_id = existing["remote_order_id"] or ""
+        known = orders.get(order_id, {})
+        return {"order_id": order_id,
+                "amount_paise": existing["amount_paise"],
+                "amount_display": f"Rs {existing['amount_paise']/100:,.0f}",
+                "currency": existing["currency"],
+                "status": known.get("status", "created"),
+                "execution_id": execution_id,
+                "execution_state": ex.EXECUTED,
+                "provider": existing["provider"],
+                "duplicate": True,
+                "checkout_url": f"/checkout/{order_id}"}
+
+    if existing is not None and existing["state"] in (
+            ex.REMOTE_ATTEMPTED, ex.RECONCILIATION_REQUIRED):
+        # The authorization was already spent on an attempt whose outcome
+        # is unknown. Re-attempting could double-charge. Reconcile first.
+        raise HTTPException(409, detail={
             "ok": False,
             "error": {
-                "error_code": code,
+                "error_code": "RECONCILIATION_REQUIRED",
                 "rule_id": None,
-                "message": f"approval binding failed: {code}",
+                "message": ("a previous execution of this authorization has an "
+                            "unknown outcome; resolve it before retrying"),
                 "retryable": False,
-                "hint": "binding has expired or changed; re-submit proposal",
+                "execution_id": execution_id,
+                "execution_state": existing["state"],
+                "hint": f"POST /executions/{execution_id}/reconcile",
             }})
 
-    # Legacy fallback: if the binding verifier passed but the legacy
-    # seq->hash table disagrees (shouldn't happen but defensive), refuse.
-    legacy = verify_legacy(req.approve_seq)
-    if legacy != req.proposal_hash:
-        raise HTTPException(403, detail={
+    if existing is not None and existing["state"] == ex.FAILED:
+        raise HTTPException(409, detail={
             "ok": False,
-            "error": {"error_code": "ORDER_HASH_MISMATCH",
-                      "message": "legacy binding mismatch"}})
+            "error": {
+                "error_code": "EXECUTION_ALREADY_FAILED",
+                "message": "this authorization was consumed by a failed "
+                           "execution; a new proposal and approval are required",
+                "retryable": False,
+                "execution_id": execution_id,
+                "remote_error_code": existing["remote_error_code"],
+            }})
+
+    resuming = existing is not None  # APPROVED / EXECUTION_PENDING: never dispatched
+
+    # Header-level replay of a *different* authorization still short-circuits.
+    if not resuming and idem in idempotency_seen:
+        prior = orders[idempotency_seen[idem]]
+        return {"order_id": prior["order_id"],
+                "amount_paise": prior["amount_paise"],
+                "status": prior["status"], "duplicate": True}
+
+    quote_skus = [(item["sku"], int(item["qty"])) for item in q["items"]]
+
+    # ---- STEP 2: binding gate (atomic single-use consumption) ---------
+    if not resuming:
+        ok, code, _binding = verify_binding(
+            seq=req.approve_seq,
+            mission_id=q["mission_id"],
+            proposal_hash=req.proposal_hash,
+            cart_hash=req.proposal_hash,
+            quote_id=req.quote_id,
+            amount_paise=q["total_paise"],
+            currency="INR",
+            skus=quote_skus,
+        )
+        if not ok:
+            chain.append(
+                "executor", "binding_rejected",
+                {"mission_id": q["mission_id"],
+                 "approve_seq": req.approve_seq,
+                 "proposal_hash_prefix": req.proposal_hash[:16] if req.proposal_hash else "",
+                 "code": code},
+                error_code=code,
+                review_state="blocked_binding",
+            )
+            raise HTTPException(403, detail={
+                "ok": False,
+                "error": {
+                    "error_code": code,
+                    "rule_id": None,
+                    "message": f"approval binding failed: {code}",
+                    "retryable": False,
+                    "hint": "binding has expired or changed; re-submit proposal",
+                }})
+
+        legacy = verify_legacy(req.approve_seq)
+        if legacy != req.proposal_hash:
+            raise HTTPException(403, detail={
+                "ok": False,
+                "error": {"error_code": "ORDER_HASH_MISMATCH",
+                          "message": "legacy binding mismatch"}})
+    else:
+        _binding = None
 
     # INV-3: user-signed intent + cart mandates required before any order.
     intent_blob = req.intent_mandate
@@ -485,56 +555,143 @@ async def tool_create_order(req: CreateOrderReq,
                   "amount_paise": total_paise},
                  review_state="verified")
 
-    # Deterministic idempotency key: same mission + proposal + verdict
-    # always derives the same key, so a replay is detectable end-to-end.
+    # ---- STEP 3: durable execution record ----------------------------
     idem_key = rp_client.derive_idempotency_key(
         "create_order", q["mission_id"], req.proposal_hash, req.approve_seq)
+    provider = provider_mod.get_provider()
+
+    row, _created = ex.open_execution(
+        mission_id=q["mission_id"], proposal_hash=req.proposal_hash,
+        approve_seq=req.approve_seq, quote_id=req.quote_id,
+        amount_paise=total_paise, currency="INR",
+        idempotency_key=idem_key, provider=provider.name)
+
+    if row["state"] == ex.APPROVED:
+        try:
+            ex.transition(execution_id, ex.EXECUTION_PENDING)
+        except ex.IllegalTransition:
+            pass  # another request advanced it first; the claim below decides
+
+    notes = {"quote_id": q["quote_id"],
+             "mission_id": q["mission_id"],
+             "proposal_hash": req.proposal_hash}
+    fault = (x_sellable_fault or "").strip()
+    if fault:
+        if provider.name != provider_mod.SIMULATED:
+            raise HTTPException(400, detail={
+                "ok": False,
+                "error": {"error_code": "FAULT_INJECTION_REFUSED",
+                          "message": "fault injection is only available on the "
+                                     "simulated provider"}})
+        notes["_fault"] = fault
+
+    # STEP 4: the attempt is recorded on disk BEFORE it is dispatched.
+    # If the process dies on the next line, boot recovery finds this row
+    # in REMOTE_ATTEMPTED and moves it to RECONCILIATION_REQUIRED.
+    # The REMOTE_ATTEMPTED transition IS the dispatch claim: it is a
+    # conditional UPDATE, so exactly one concurrent request can take it.
+    # Everyone else learns that an attempt is already in flight and backs
+    # off rather than firing a second payment.
+    try:
+        ex.transition(execution_id, ex.REMOTE_ATTEMPTED)
+    except ex.IllegalTransition:
+        current = ex.get(execution_id)
+        raise HTTPException(409, detail={
+            "ok": False,
+            "error": {
+                "error_code": "EXECUTION_IN_PROGRESS",
+                "message": "another request is already executing this "
+                           "authorization",
+                "execution_id": execution_id,
+                "execution_state": current["state"] if current else "UNKNOWN",
+                "retryable": False,
+            }})
+    chain.append("executor", "remote_attempted",
+                 {"execution_id": execution_id,
+                  "mission_id": q["mission_id"],
+                  "amount_paise": total_paise,
+                  "provider": provider.name},
+                 idempotency_key=idem_key,
+                 review_state="in_flight")
 
     try:
-        rp = rp_client.create_order(
-            amount_paise=q["total_paise"],
+        rp = provider.create_order(
+            amount_paise=total_paise,
             receipt=f"rcpt_{q['quote_id'][:12]}",
-            notes={"quote_id": q["quote_id"],
-                   "mission_id": q["mission_id"],
-                   "proposal_hash": req.proposal_hash},
+            notes=notes,
             idempotency_key=idem_key,
         )
-    except Exception as e:
-        raise HTTPException(503, detail={
+    except ex.DefiniteRemoteFailure as exc:
+        ex.transition(execution_id, ex.FAILED,
+                      remote_error_code=exc.code, last_error=str(exc))
+        chain.append("executor", "execution_failed",
+                     {"execution_id": execution_id, "code": exc.code},
+                     error_code=exc.code, review_state="failed")
+        raise HTTPException(502, detail={
             "ok": False,
-            "error": {"error_code": "RAZORPAY_UNREACHABLE", "rule_id": None,
-                      "message": str(e), "retryable": True,
-                      "hint": "idempotency key remains reusable"}})
+            "error": {"error_code": "REMOTE_REJECTED",
+                      "message": str(exc),
+                      "execution_id": execution_id,
+                      "execution_state": ex.FAILED,
+                      "retryable": False}})
+    except ex.AmbiguousRemoteOutcome as exc:
+        ex.transition(execution_id, ex.RECONCILIATION_REQUIRED,
+                      last_error=str(exc))
+        chain.append("executor", "execution_ambiguous",
+                     {"execution_id": execution_id, "reason": str(exc)},
+                     error_code="AMBIGUOUS_REMOTE_OUTCOME",
+                     review_state="reconciliation_required")
+        raise HTTPException(202, detail={
+            "ok": False,
+            "error": {
+                "error_code": "RECONCILIATION_REQUIRED",
+                "message": ("the provider's outcome is unknown; no success or "
+                            "failure has been assumed"),
+                "detail": str(exc),
+                "execution_id": execution_id,
+                "execution_state": ex.RECONCILIATION_REQUIRED,
+                "retryable": False,
+                "hint": f"POST /executions/{execution_id}/reconcile",
+            }})
 
+    _persist_order(rp, q, req, idem, total_paise)
+    ex.transition(execution_id, ex.EXECUTED, remote_order_id=rp["id"])
+    chain.append("executor", "order_created",
+                 {"order_id": rp["id"], "amount_paise": total_paise,
+                  "mission_id": q["mission_id"],
+                  "execution_id": execution_id,
+                  "provider": provider.name},
+                 idempotency_key=idem_key,
+                 review_state="auto_approved")
+
+    return {"order_id": rp["id"], "amount_paise": total_paise,
+            "amount_display": f"Rs {total_paise/100:,.0f}",
+            "currency": "INR", "status": "created",
+            "execution_id": execution_id,
+            "execution_state": ex.EXECUTED,
+            "provider": provider.name,
+            "razorpay_key_id": os.environ.get("RAZORPAY_KEY_ID", ""),
+            "checkout_url": f"/checkout/{rp['id']}"}
+
+
+def _persist_order(rp: dict, q: dict, req: "CreateOrderReq", idem: str,
+                   total_paise: int) -> None:
+    """Record the order locally. Called only after a definitive success."""
     orders[rp["id"]] = {
-        "order_id": rp["id"], "amount_paise": q["total_paise"],
+        "order_id": rp["id"], "amount_paise": total_paise,
         "quote_id": q["quote_id"], "mission_id": q["mission_id"],
         "proposal_hash": req.proposal_hash, "idempotency_key": idem,
         "status": "created", "created_at": int(time.time()),
     }
     idempotency_seen[idem] = rp["id"]
-
-    # PERSIST: the order (and its idempotency key) hits disk immediately.
     store.execute(
         "INSERT OR REPLACE INTO orders "
         "(order_id, idempotency_key, amount_paise, status, quote_id, "
         " mission_id, proposal_hash, approve_seq, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (rp["id"], idem, q["total_paise"], "created", q["quote_id"],
+        (rp["id"], idem, total_paise, "created", q["quote_id"],
          q["mission_id"], req.proposal_hash, req.approve_seq, int(time.time()))
     )
-
-    chain.append("executor", "order_created",
-                 {"order_id": rp["id"], "amount_paise": q["total_paise"],
-                  "mission_id": q["mission_id"]},
-                 idempotency_key=idem_key,
-                 review_state="auto_approved")
-
-    return {"order_id": rp["id"], "amount_paise": q["total_paise"],
-            "amount_display": f"Rs {q['total_paise']/100:,.0f}",
-            "currency": "INR", "status": "created",
-            "razorpay_key_id": os.environ.get("RAZORPAY_KEY_ID", ""),
-            "checkout_url": f"/checkout/{rp['id']}"}
 
 
 @router.get("/tools/check_payment/{order_id}")

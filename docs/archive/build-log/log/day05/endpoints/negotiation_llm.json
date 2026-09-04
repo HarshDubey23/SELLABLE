@@ -1,0 +1,36 @@
+{
+  "negotiation_id": "NEG-C42471B9997A",
+  "mission_id": "MSN-PROOF-LLM",
+  "sku": "BAT-001",
+  "qty": 1,
+  "floor_paise": 119900,
+  "ceiling_paise": 149900,
+  "max_turns": 2,
+  "buyer_budget_paise": 150000,
+  "status": "open",
+  "final_price_paise": null,
+  "parent_action_id": "aud_298",
+  "turns": [
+    {
+      "turn": 1,
+      "buyer_offer": {
+        "actor": "buyer",
+        "price_paise": 122900,
+        "raw_price_paise": 122900,
+        "qty": 1,
+        "rationale": "I am offering Rs. 1229.00 as it aligns with current market pricing and my procurement budget.",
+        "turn": 1
+      },
+      "merchant_offer": {
+        "actor": "merchant",
+        "price_paise": 149900,
+        "raw_price_paise": 149900,
+        "qty": 1,
+        "rationale": "Merchant offers Rs. 1499.00 (turn 1).",
+        "turn": 1
+      },
+      "gap_paise": 27000,
+      "status": "open"
+    }
+  ]
+}

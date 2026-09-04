@@ -22,9 +22,9 @@ def main():
         except Exception:
             pass
 
-    from apps.api.products import CATALOG
-    from apps.api.gateway.registry import RULE_REGISTRY
     from apps.api.attack import SCENARIOS
+    from apps.api.gateway.registry import RULE_REGISTRY
+    from apps.api.products import CATALOG
 
     skus_count = len(CATALOG)
     rules_count = len(RULE_REGISTRY)

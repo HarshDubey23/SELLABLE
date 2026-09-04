@@ -155,13 +155,14 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
            cart_hash: str, quote_id: str, amount_paise: int,
            currency: str, skus: list[tuple[str, int]],
            now_ts: int | None = None) -> tuple[bool, str, ApprovalBinding | None]:
-    """The money executor's gate — CHECK ONLY, does NOT consume.
+    """The money executor's gate.
 
     Returns (ok, error_code, binding). When ok=False, error_code names
     the failed invariant; the caller MUST reject the order.
 
-    The binding is NOT consumed here. The executor finalizes and
-    consumes it only after the remote Razorpay outcome is known.
+    Single-use enforcement: a binding is consumed the FIRST time it
+    verifies successfully. A second create_order call with the same
+    seq => BINDING_CONSUMED => no order, no money.
 
     Money boundary invariant:
         rejected verify() => money.create_order MUST NOT be called.
@@ -185,21 +186,17 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
         money_counter.record(f"binding_{reason.lower()}", seq=seq)
         return False, reason, b
 
-    return True, "OK", b
-
-
-def consume_binding(seq: int) -> bool:
-    """Atomically consume a binding (mark as used). Called by executor
-    only after the remote Razorpay outcome is known."""
-    now_ts = int(time.time())
+    # Mark as consumed atomically
+    now_ts_consumed = now_ts if now_ts is not None else int(time.time())
     affected = store.execute_rowcount(
         "UPDATE bindings SET consumed_at = ? WHERE seq = ? AND consumed_at IS NULL",
-        (now_ts, seq)
+        (now_ts_consumed, seq)
     )
     if affected != 1:
         money_counter.record("binding_concurrent_consumed", seq=seq)
-        return False
-    return True
+        return False, "BINDING_CONSUMED", b
+
+    return True, "OK", b
 
 
 def reset_consumed() -> None:

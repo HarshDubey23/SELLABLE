@@ -1,0 +1,10 @@
+flowchart LR
+    Mission["Mission Spec"] --> Agent["Buyer Agent"]
+    Agent --> Proposal["Proposal Hash"]
+    Proposal --> Gateway["Gateway Engine"]
+    Gateway --> Binding["Approval Binding"]
+    Quote["Merchant Quote"] --> Binding
+    Binding --> Order["Order Creation"]
+    Order --> Razorpay["Razorpay Order"]
+    Razorpay --> Webhook["Webhook HMAC"]
+    Webhook --> Ledger["Chained Ledger"]

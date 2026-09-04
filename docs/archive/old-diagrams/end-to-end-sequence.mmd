@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant Agent as 🤖 Buyer Agent (LLM)
+    participant Catalog as 📦 Catalog & Quoting
+    participant Gateway as 🛡️ Policy Gateway (R1-R12)
+    participant DB as 💾 Durable Store
+    participant Razorpay as 💳 Razorpay Test API
+    participant Audit as ⛓️ Audit Chain
+
+    User->>Agent: "Buy cricket bat under Rs 2,000"
+    Agent->>Catalog: GET /tools/search_products?query=cricket
+    Catalog-->>Agent: Products: BAT-001 (Rs 1,499), BAT-002 (Rs 2,499)
+    Agent->>Agent: LLM selects BAT-001 (fits Rs 2,000 budget)
+    Agent->>Gateway: POST /tools/submit_proposal (BAT-001)
+    Gateway->>Gateway: Evaluate R1-R12 (Budget, Category, Expiry, Hashes)
+    Gateway->>DB: Record ApprovalBinding #seq
+    Gateway-->>Agent: APPROVE (approve_seq, proposal_hash)
+    Agent->>Catalog: POST /tools/quote (items, mission_id)
+    Catalog-->>Agent: quote_id (total_paise=149900)
+    Agent->>Razorpay: POST /tools/create_order (binding verification)
+    Razorpay->>Razorpay: Verify Binding == Quote == Mandate == Amount
+    Razorpay->>Razorpay: Call Razorpay API (POST /v1/orders)
+    Razorpay-->>Agent: order_id: order_TX8...
+    Razorpay->>Audit: Append event: order_created
+    Agent-->>User: Open Interactive Razorpay Checkout Modal

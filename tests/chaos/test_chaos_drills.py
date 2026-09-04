@@ -1,12 +1,12 @@
 """Automated Pytest Suite for Chaos Monkey Fault-Injection & Invariants."""
 import asyncio
 import os
-import pytest
+
 from fastapi.testclient import TestClient
 
-from apps.api.main import app
 from apps.api.chaos.engine import chaos_engine
 from apps.api.chaos.scenarios import scenario_runner
+from apps.api.main import app
 
 client = TestClient(app)
 

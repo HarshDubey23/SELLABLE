@@ -1,12 +1,29 @@
-.PHONY: install run dev test smoke seed eval audit-verify audit-trace verify demo-capture clean
+.PHONY: install run check dev truth verify-readme test smoke seed eval audit-verify audit-trace verify demo-capture clean
 
 install:
 	pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
 
+# The canonical entry point. Sets up .env and dependencies, boots, health
+# checks, then prints where to go.
 run:
+	python run.py
+
+# Same, but exits with a status code instead of serving. Used by CI and by
+# "does this work on a clean checkout" verification.
+check:
+	python run.py --check --no-browser
+
+dev:
 	uvicorn apps.api.main:app --reload --port 8000
 
-dev: run
+# Regenerate docs/generated/truth.json. Every number in the README comes
+# from this file; nothing in the README is written by hand.
+truth:
+	python scripts/generate_truth.py
+
+# Fail if the README claims a number the evidence file does not support.
+verify-readme:
+	python scripts/verify_readme.py
 
 test:
 	pytest -q

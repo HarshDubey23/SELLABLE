@@ -16,13 +16,14 @@ from __future__ import annotations
 import datetime as _dt
 import time
 from typing import Any
-from pydantic import BaseModel, Field
 
+from pydantic import BaseModel
+
+from ..audit import chain as audit_chain
 from ..products import CATALOG
 from ..store import db as store
-from ..audit import chain as audit_chain
 from ..tools import ProposalReq, tool_submit_proposal
-from .intelligence import get_market_intelligence, MarketIntelligenceRecord
+from .intelligence import MarketIntelligenceRecord, get_market_intelligence
 
 
 class ObservationData(BaseModel):
@@ -214,7 +215,8 @@ async def execute_and_measure_growth_loop(action_id: str, sample_batch_size: int
     aov_lift = round(((proposed_bundle_price - baseline_aov) / baseline_aov) * 100, 1)
 
     # Run ONE canonical transaction through the Policy Gateway to prove execution validity
-    from ..gateway.mission_verify import sign_mission, dumps as _dumps
+    from ..gateway.mission_verify import dumps as _dumps
+    from ..gateway.mission_verify import sign_mission
     now_ts = int(time.time())
     mission_dict = {
         "mission_id": f"LOOP-{now_ts}",

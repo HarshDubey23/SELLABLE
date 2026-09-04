@@ -25,6 +25,7 @@ def _get_keys() -> list[str]:
 
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 

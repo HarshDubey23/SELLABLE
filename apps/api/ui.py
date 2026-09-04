@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from . import config as app_config
 from . import money as money_mod
 from .approval import all_bindings
+from .attack import SCENARIOS as _SCENARIOS
 from .audit import chain as audit_chain
 from .gateway.registry import RULE_REGISTRY
 from .products import CATALOG
@@ -29,40 +30,22 @@ router = APIRouter(tags=["ui"])
 # ---------------------------------------------------------------------------
 # / — COMMAND CENTER (Hero Page)
 # ---------------------------------------------------------------------------
-@router.get("/", response_class=HTMLResponse)
+@router.get("/console", response_class=HTMLResponse)
 async def dashboard_view():
     entries = audit_chain.entries()
     chain_valid = audit_chain.verify_cached()
     money_mod.snapshot().get("total", 0)
     bindings = all_bindings()
 
-    # Eval metrics for hero KPI band
-    eval_path = Path(__file__).resolve().parents[2] / "eval" / "report.json"
+
+    # Read from the generated evidence file rather than a hardcoded number.
+    truth_path = Path(__file__).resolve().parents[2] / "docs" / "generated" / "truth.json"
     try:
-        with eval_path.open(encoding="utf-8") as f:
-            eval_metrics = json.load(f).get("metrics", {})
-    except OSError:
-        eval_metrics = {}
-
-    def _mv(name: str, default: str = "—") -> str:
-        raw = eval_metrics.get(name)
-        v = raw.get("value") if isinstance(raw, dict) else raw
-        if v is None:
-            return default
-        try:
-            if name in {"acceptance_rate", "llm_fooled_rate", "money_loss_rate", "protocol_pass_rate"}:
-                return f"{float(v):.0%}"
-            if name == "false_block_cost":
-                return f"Rs {float(v)/100:,.0f}"
-            if name == "p95_latency":
-                return f"{float(v):.1f}ms"
-            return f"{float(v):.2f}"
-        except (ValueError, TypeError):
-            return str(v)
-
-    _mv("money_loss_rate", "0%")
-    _mv("p95_latency", "0.1ms")
-    test_count = 125  # From verified baseline
+        with truth_path.open(encoding="utf-8") as f:
+            _truth = json.load(f)
+        test_count = _truth["tests"]["passed"]
+    except (OSError, KeyError, ValueError):
+        test_count = None
 
     content = f"""
   <!-- PAGE HEADER -->
@@ -95,7 +78,7 @@ async def dashboard_view():
         &#128640; Run Live Mission
       </a>
       <a href="/attack-ui" class="btn btn-xl btn-purple" style="text-decoration:none;">
-        &#9876; Attack Lab (20 exploits)
+        &#9876; Attack Lab ({len(_SCENARIOS)} scenarios)
       </a>
     </div>
   </div>
@@ -159,7 +142,7 @@ async def dashboard_view():
       <div class="kpi-sub">passing &middot; CI matrix (py3.10/3.12)</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Attacks Blocked</div>
+      <div class="kpi-label">Attack scenarios available</div>
       <div class="kpi-value ok" id="kpi-attacks">0/0</div>
       <div class="kpi-sub">I1&ndash;I20 adversarial scenarios</div>
     </div>
@@ -259,7 +242,7 @@ async def dashboard_view():
     requestAnimationFrame(step);
   }}
   document.addEventListener('DOMContentLoaded', () => {{
-    countUp(document.getElementById('kpi-tests'), {test_count}, 900, ' passed');
+    countUp(document.getElementById('kpi-tests'), {test_count if test_count is not None else 0}, 900, ' passed');
     countUp(document.getElementById('kpi-attacks'), 20, 900, '/20 blocked');
   }});
 
@@ -492,7 +475,7 @@ async def mission_view():
           if (!summary && evt.detail) {
             summary = String(evt.detail);
           }
-          
+
           let cls = 'log-cyan';
           if (actor.includes('GATEWAY')) {
             cls = (action.includes('REJECT') || summary.includes('REJECT') || summary.includes('fail')) ? 'log-bad' : 'log-ok';
@@ -680,7 +663,7 @@ async def attack_lab_view():
   <!-- RUN ALL BUTTON -->
   <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
     <button class="btn btn-lg btn-danger" id="run-all-btn" onclick="runAllAttacks()">
-      &#9654;&#9654; Run All 20 Attacks Sequentially
+      &#9654;&#9654; Run all {len(_SCENARIOS)} scenarios
     </button>
     <button class="btn btn-sm btn-outline" onclick="clearAll()">Clear Results</button>
   </div>
@@ -780,7 +763,7 @@ async def attack_lab_view():
       await runAttack(scenario);
       await new Promise(r => setTimeout(r, 1200));
     }}
-    btn.disabled = false; btn.textContent = '&#9654;&#9654; Run All 20 Attacks Sequentially';
+    btn.disabled = false; btn.textContent = 'Run all scenarios';
     document.getElementById('verdict-banner').classList.add('show');
     addTerminalLine('<b style="color:var(--ok);font-size:14px;">&#10003; ALL 20 ATTACKS BLOCKED — MONEY LEAKED: Rs 0 — INVARIANT UPHELD</b>', 'order_created');
   }}
@@ -1176,28 +1159,21 @@ async def judge_mode_view():
 
     cfg = app_config.status_summary()
 
-    eval_path = Path(__file__).resolve().parents[2] / "eval" / "report.json"
-    try:
-        with eval_path.open(encoding="utf-8") as f:
-            eval_metrics = json.load(f).get("metrics", {})
-    except OSError:
-        eval_metrics = {}
+    from . import execution_provider as _prov
+    _provider_name = _prov.provider_name()
 
-    def _mv(name: str, default: str = "—") -> str:
-        raw = eval_metrics.get(name)
-        v = raw.get("value") if isinstance(raw, dict) else raw
-        if v is None:
-            return default
-        try:
-            if name in {"acceptance_rate", "llm_fooled_rate", "money_loss_rate", "protocol_pass_rate"}:
-                return f"{float(v):.0%}"
-            if name == "false_block_cost":
-                return f"Rs {float(v)/100:,.0f}"
-            if name == "p95_latency":
-                return f"{float(v):.1f}ms"
-            return f"{float(v):.2f}"
-        except (ValueError, TypeError):
-            return str(v)
+    truth_path = Path(__file__).resolve().parents[2] / "docs" / "generated" / "truth.json"
+    try:
+        with truth_path.open(encoding="utf-8") as f:
+            _truth = json.load(f)
+    except (OSError, ValueError):
+        _truth = {}
+
+    def _t(section: str, key: str, default: str = "—") -> str:
+        """Read a generated number. Never substitute a plausible value."""
+        value = (_truth.get(section) or {}).get(key)
+        return default if value is None else str(value)
+
 
     proof_hash = str(proof.get("source_sha256") or "not available")
     proof_hash_short = proof_hash[:28] + ("…" if len(proof_hash) > 28 else "")
@@ -1269,7 +1245,8 @@ async def judge_mode_view():
         <div>Audit chain: <span style="color:{'var(--ok)' if chain_valid else 'var(--bad)'};font-weight:700;">
           {'verified (' + str(len(entries)) + ' blocks)' if chain_valid else 'TAMPER DETECTED'}</span></div>
         <div>Gateway purity: <span style="color:var(--ok);font-weight:700;">{proof.get("llm_imports_detected", "0")} LLM imports · {proof.get("io_calls_detected", "0")} I/O calls</span></div>
-        <div>Money boundary: <span style="color:var(--ok);font-weight:700;">{total_calls} Razorpay calls recorded</span></div>
+        <div>Money boundary: <span style="color:var(--ok);font-weight:700;">{total_calls} call(s) recorded</span>
+             <span style="color:var(--muted);">via provider <code>{_provider_name}</code></span></div>
         <div>Approval bindings: <span style="color:var(--ok);font-weight:700;">{len(bindings)} issued</span></div>
         <div>Razorpay mode: <span style="color:var(--ok);font-weight:700;">{_html_escape.escape(str(cfg.get("razorpay_mode","unknown")).upper())}</span></div>
         <div>LLM model: <span style="color:var(--rzp-cyan);font-weight:700;">{_html_escape.escape(str(cfg.get("llm_model") or "deterministic fallback"))}</span></div>
@@ -1284,32 +1261,34 @@ async def judge_mode_view():
       </div>
     </div>
 
-    <!-- RIGHT: Eval Metrics Panel -->
+    <!-- RIGHT: Generated evidence panel -->
     <div class="panel">
       <div class="panel-header">
-        <div class="panel-title">&#128202; Evaluation Snapshot (300 missions)</div>
-        <span class="badge badge-cyan">eval/report.json</span>
+        <div class="panel-title">&#128202; Generated evidence</div>
+        <span class="badge badge-cyan">docs/generated/truth.json</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div style="background:var(--ok-glow);border:1px solid var(--border-ok);
-                    border-radius:10px;padding:14px;text-align:center;">
-          <div style="font-size:24px;font-weight:900;color:var(--ok);font-family:var(--font-mono);">Rs 0</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">GATED MONEY LOSS</div>
-        </div>
-        <div style="background:var(--bad-glow);border:1px solid var(--border-bad);
-                    border-radius:10px;padding:14px;text-align:center;">
-          <div style="font-size:24px;font-weight:900;color:var(--bad);font-family:var(--font-mono);">Rs 74,861</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;">NAIVE LLM LOSS</div>
-        </div>
-        <div class="kpi-card"><div class="kpi-label">Acceptance Rate</div>
-          <div class="kpi-value cyan">{_mv("acceptance_rate")}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Protocol Pass</div>
-          <div class="kpi-value ok">{_mv("protocol_pass_rate")}</div></div>
-        <div class="kpi-card"><div class="kpi-label">p95 Latency</div>
-          <div class="kpi-value cyan">{_mv("p95_latency")}</div></div>
-        <div class="kpi-card"><div class="kpi-label">False Block Cost</div>
-          <div class="kpi-value ok">{_mv("false_block_cost")}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Tests passing</div>
+          <div class="kpi-value ok">{_t("tests", "passed")}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Adversarial scenarios blocked</div>
+          <div class="kpi-value ok">{_t("adversarial", "scenarios_blocked")} / {_t("adversarial", "scenarios_total")}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Money-boundary calls during attacks</div>
+          <div class="kpi-value ok">{_t("adversarial", "money_boundary_calls_during_attacks")}</div></div>
+        <div class="kpi-card"><div class="kpi-label">Gateway p95</div>
+          <div class="kpi-value cyan">{_t("gateway_latency", "p95_ms")} ms</div></div>
       </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:14px 0 0;line-height:1.6;">
+        Produced by <code>scripts/generate_truth.py</code>, which measures this
+        repository by running it: a real pytest run, a real 2,000-iteration
+        gateway benchmark, and all {len(_SCENARIOS)} adversarial scenarios
+        actually executed. Regenerate with <code>make truth</code>.
+      </p>
+      <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;">
+        <b>Not shown here:</b> <code>eval/</code> is a seeded simulation of the
+        policy gateway over synthetic missions. It is useful for regression and
+        is not a live-model benchmark, so its figures are deliberately not
+        quoted as headline numbers.
+      </p>
     </div>
   </div>
 
@@ -1686,7 +1665,7 @@ async def why_view():
       </div>
       <div style="margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
         <a href="/judge" class="btn btn-lg btn-warn" style="text-decoration:none;">&#9654; See It Live (30 sec)</a>
-        <a href="/attack-ui" class="btn btn-lg btn-danger" style="text-decoration:none;">&#9876; Try 20 Attacks</a>
+        <a href="/attack-ui" class="btn btn-lg btn-danger" style="text-decoration:none;">&#9876; Try the attack lab</a>
         <a href="/gateway-ui" class="btn btn-lg btn-outline" style="text-decoration:none;">&#128736; View R1&ndash;R12</a>
       </div>
     </div>
@@ -1945,11 +1924,11 @@ async def protocols_view():
       btn.className = 'btn btn-lg btn-outline';
     });
     document.getElementById('tab-' + p).className = 'btn btn-lg btn-ok';
-    
+
     const badge = document.getElementById('protocol-badge');
     const title = document.getElementById('payload-title');
     const desc = document.getElementById('payload-desc');
-    
+
     if (p === 'uap') {
       badge.textContent = 'NPCI_UAP_v1.0';
       title.textContent = '📥 Inbound NPCI UAP Payload';
@@ -1990,7 +1969,7 @@ async def protocols_view():
     const status = document.getElementById('exec-status');
     status.className = 'badge badge-warn';
     status.textContent = 'PROCESSING';
-    
+
     const receiptCard = document.getElementById('receipt-card');
     receiptCard.style.display = 'none';
 
@@ -2037,7 +2016,7 @@ async def protocols_view():
           status.textContent = 'AUTHORIZED';
 
           receiptCard.style.display = 'block';
-          document.getElementById('receipt-details').innerHTML = 
+          document.getElementById('receipt-details').innerHTML =
             '<b>Protocol:</b> ' + (data.protocol || currentProtocol.toUpperCase()) + '<br>' +
             '<b>Settlement Rail:</b> ' + (data.settlement_rail || 'PSP_CANONICAL_RAZORPAY') + '<br>' +
             '<b>Status:</b> ' + (data.uap_receipt ? data.uap_receipt.status : 'AUTHORIZED') + '<br>' +

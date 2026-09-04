@@ -55,9 +55,38 @@ _CANONICAL_GEMINI_FALLBACKS = (
 )
 
 
+# Values that ship in .env.example. Treating one of these as a configured
+# credential is how a demo ends up announcing "Razorpay test mode LIVE"
+# with a fake key, or firing 700 doomed requests at an LLM provider
+# because a placeholder string looked like an API key.
+PLACEHOLDER_VALUES = frozenset({
+    "",
+    "rzp_test_xxxxxxxx",
+    "your_secret_here",
+    "your_webhook_secret_here",
+    "generate_with_python_secrets_token_hex_32",
+    "your_openrouter_keys_comma_separated",
+    "your_gemini_api_key_here",
+    "your_openrouter_key_here",
+    "changeme",
+})
+
+
+def is_placeholder(value: str) -> bool:
+    """True when a value is absent or is one of the .env.example stand-ins."""
+    return (value or "").strip() in PLACEHOLDER_VALUES
+
+
 def _env(name: str, default: str = "") -> str:
+    """Read an env var, treating placeholder values as unset.
+
+    Fail-closed on configuration: an unset credential degrades to a clearly
+    labelled mode, whereas a placeholder that passes for real produces
+    confident nonsense.
+    """
     val = os.environ.get(name, default)
-    return val if val is not None else default
+    val = val if val is not None else default
+    return "" if is_placeholder(val) else val
 
 
 def _env_int(name: str, default: int) -> int:

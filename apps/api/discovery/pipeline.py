@@ -1,25 +1,48 @@
-"""Real-World Multi-Merchant Product Discovery & Verification Pipeline.
+"""Product discovery: real network calls, honestly labelled evidence.
 
-TRUE RUNTIME LIVE WEB DISCOVERY:
-- 100% dynamic network requests at runtime to live search providers and product APIs.
-- ZERO hardcoded product registries or synthetic fallback listings.
-- Live providers executed concurrently via ThreadPoolExecutor:
-    1. Live Global Product Database API (DummyJSON dynamic search with strict noun matching)
-    2. Open Retail Storefront API (Platzi FakeStore)
-    3. Live Web Storefront Search (Bing RSS with strict verified retail domain whitelist)
-- Strict verified retail domain whitelist:
-    Amazon India, Flipkart, Croma, Decathlon, Myntra, Tata CLiQ, Reliance Digital,
-    boAt Lifestyle, Nykaa, AJIO, Apple Store, Samsung, DummyJSON, and Platzi Open Retail.
-    (Strictly rejects casino, gambling, SEO spam, and non-retail domains).
-- Strict field extraction from live responses:
-    - Product title, seller name, domain, and exact destination URL.
-    - Verified INR pricing only if explicitly returned in the live text/API response.
-    - Live rating, availability, retrieval timestamp, and verbatim evidence snippets.
-- Truthful reporting:
-    - If search yields zero verified retail products, returns `ZERO_RESULTS` / `SEARCH_FAILED`.
-    - Never fabricates prices, ratings, or listings.
-- Taint Tracking: all external data is marked `is_untrusted: True` (zero money-control authority).
-- Deterministic Policy Gateway (R1-R12) evaluation and single-use approval binding for Razorpay.
+WHAT THIS LAYER IS
+------------------
+Market evidence gathering. It queries live sources at runtime and returns
+what they actually said. It is *not* a purchasing channel: SELLABLE can
+only sell what is in the merchant catalog, so external listings exist to
+justify and pressure-test the merchant's price, never to become a
+payable amount. Nothing here can authorize money.
+
+EVIDENCE HONESTY RULES
+----------------------
+Every listing carries an `evidence_class` that says how much the field
+set can be trusted:
+
+  OBSERVED       price appeared verbatim, in INR, in the source text
+  FX_CONVERTED   price came from a non-INR source and was converted with
+                 a static reference rate — an estimate, not a quote
+  MOCK_SOURCE    the provider serves synthetic catalog data (DummyJSON).
+                 Useful for exercising the pipeline offline; it is NOT a
+                 retail listing and is never counted as market evidence
+  UNVERIFIED     the source matched the query but published no price
+
+Three rules follow from this and are enforced below:
+
+  1. `price_source_verified` is true ONLY for OBSERVED. An FX-converted
+     figure is never described as a verified INR merchant price.
+  2. The merchant's own catalog entry is NEVER injected into `listings`.
+     It is returned separately as `merchant_offer`. A storefront quoting
+     itself as a discovered market listing is circular evidence.
+  3. Search status is derived from the live providers alone. If every
+     provider failed, the status is SEARCH_UNAVAILABLE — even when the
+     merchant catalog has a perfectly good match to sell.
+
+Rule 3 is the one that matters most. The previous implementation
+appended the merchant's own SKU to the results list, so a run in which
+every network provider timed out still reported LIVE_SEARCH_SUCCESS.
+A search failure must look like a search failure.
+
+TAINT
+-----
+Everything returned from an external source is `is_untrusted: True` and
+carries zero money authority. It reaches the money path only as a SKU
+reference that the deterministic gateway re-prices from the server-side
+catalog.
 """
 from __future__ import annotations
 
@@ -32,38 +55,96 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
+
 from pydantic import BaseModel, Field
 
-from ..products import CATALOG
 from ..growth.intelligence import sanitize_web_content
+from ..products import CATALOG
+
+# A static reference rate, not a live FX quote. Any price derived from it
+# is an estimate and is labelled FX_CONVERTED, never "verified".
+USD_INR_REFERENCE_RATE = 85.0
+USD_INR_RATE_NOTE = "static reference rate; not a live FX quote"
+
+EVIDENCE_OBSERVED = "OBSERVED"
+EVIDENCE_FX_CONVERTED = "FX_CONVERTED"
+EVIDENCE_MOCK_SOURCE = "MOCK_SOURCE"
+EVIDENCE_UNVERIFIED = "UNVERIFIED"
+
+PROVIDER_WEB_SEARCH = "web_search"
+PROVIDER_MOCK_API = "mock_api"
+
 
 
 class WebProductListing(BaseModel):
+    """One piece of external market evidence, with its provenance attached."""
+
     product_name: str
+
+    # What the source actually published, before any transformation.
+    source_price: float | None = None
+    source_currency: str | None = None
+    price_present: bool = False
+
+    # The normalised INR figure we compare with. May be an estimate.
     price_paise: int | None = None
     price_inr: float | None = None
-    price_verified: bool = False
+
+    # True ONLY when an INR price was observed verbatim in the source.
+    price_source_verified: bool = False
+    fx_converted: bool = False
+    fx_rate_used: float | None = None
+
+    evidence_class: str = EVIDENCE_UNVERIFIED
+
     seller: str
     seller_domain: str
     url: str
     rating: float | None = None
     rating_verified: bool = False
-    availability: str = "available"
-    availability_verified: bool = True
+    availability: str = "unverified"
+    availability_verified: bool = False
     scraped_at: str
     raw_evidence: str
     search_provider: str = "Live Web Discovery"
+    provider_kind: str = PROVIDER_WEB_SEARCH
     is_untrusted: bool = True  # External web taint invariant
+
+    @property
+    def is_market_evidence(self) -> bool:
+        """Only real retail sources count when comparing against the market."""
+        return (self.provider_kind == PROVIDER_WEB_SEARCH
+                and self.price_paise is not None)
+
+
+class MerchantOffer(BaseModel):
+    """The merchant's own catalog match — returned separately, never as a
+    'discovered' web listing. This is the only thing SELLABLE can sell."""
+
+    sku: str
+    name: str
+    category: str
+    price_paise: int
+    price_inr: float
+    rating: float | None = None
+    in_stock: bool = True
+    url: str
+    is_untrusted: bool = False  # server-side catalog is authoritative
 
 
 class ComparisonSummary(BaseModel):
-    total_sources_searched: int
-    verified_price_listings_count: int
-    cheapest_web_option: dict[str, Any] | None = None
-    merchant_matched_sku: str | None = None
-    merchant_matched_name: str | None = None
-    merchant_matched_price_inr: float | None = None
-    savings_vs_web_inr: float | None = None
+    live_providers_queried: int
+    live_providers_responded: int
+    external_listings_count: int
+    market_evidence_count: int          # real retail listings with a price
+    mock_source_count: int              # synthetic records, excluded from comparison
+    fx_converted_count: int
+    lowest_observed_market_price_inr: float | None = None
+    lowest_observed_market_seller: str | None = None
+    lowest_observed_market_url: str | None = None
+    merchant_price_inr: float | None = None
+    delta_vs_lowest_observed_inr: float | None = None
+    comparison_basis: str
 
 
 class RecommendationDecision(BaseModel):
@@ -80,78 +161,107 @@ class RecommendationDecision(BaseModel):
     savings_vs_market_inr: float = 0.0
 
 
+class PolicyProbe(BaseModel):
+    """A real catalog SKU that would violate the signed mandate.
+
+    Offered so the gateway can be demonstrated refusing something, using
+    genuine catalog data rather than a staged rejection. Proposing this
+    is exactly what a prompt-injected agent would do: pick the expensive
+    thing and justify it convincingly.
+    """
+
+    sku: str
+    name: str
+    price_paise: int
+    price_inr: float
+    exceeds_budget_by_paise: int
+    why: str
+
+
 class DiscoveryPipelineResult(BaseModel):
     query: str
     budget_paise: int
-    search_engine_status: str  # "LIVE_SEARCH_SUCCESS" | "SEARCH_FAILED" | "ZERO_RESULTS"
+    # Derived from the LIVE providers alone. A merchant catalog match can
+    # never turn a failed search into a successful one.
+    search_engine_status: str  # LIVE_SEARCH_SUCCESS | ZERO_RESULTS | SEARCH_UNAVAILABLE
+    providers_queried: list[str] = Field(default_factory=list)
     providers_hit: list[str] = Field(default_factory=list)
+    provider_errors: list[str] = Field(default_factory=list)
     error_message: str | None = None
-    listings: list[WebProductListing]
+    listings: list[WebProductListing]          # EXTERNAL evidence only
+    merchant_offer: MerchantOffer | None = None
+    policy_probe: PolicyProbe | None = None
     comparison: ComparisonSummary | None = None
     recommendation: RecommendationDecision | None = None
     gateway_verdict: dict[str, Any]
     executed_at: str
+    evidence_legend: dict[str, str] = Field(default_factory=lambda: {
+        EVIDENCE_OBSERVED: "price appeared verbatim in INR in the source",
+        EVIDENCE_FX_CONVERTED: (
+            "price converted from another currency using a static reference "
+            "rate; an estimate, not a quote"),
+        EVIDENCE_MOCK_SOURCE: (
+            "synthetic catalog data from a mock API; not a retail listing "
+            "and excluded from market comparison"),
+        EVIDENCE_UNVERIFIED: "source matched the query but published no price",
+    })
 
 
-# STRICT VERIFIED E-COMMERCE STOREFRONT WHITELIST
-# Only authentic, trusted retail storefronts and product APIs are permitted
-VERIFIED_RETAIL_DOMAINS: dict[str, str] = {
-    "amazon.in": "Amazon India",
-    "amazon.com": "Amazon",
-    "flipkart.com": "Flipkart",
-    "croma.com": "Croma",
-    "decathlon.in": "Decathlon India",
-    "decathlon.com": "Decathlon",
-    "myntra.com": "Myntra",
-    "tatacliq.com": "Tata CLiQ",
-    "reliancedigital.in": "Reliance Digital",
-    "nykaa.com": "Nykaa",
-    "nykaafashion.com": "Nykaa Fashion",
-    "ajio.com": "AJIO",
-    "boat-lifestyle.com": "boAt Lifestyle",
-    "apple.com": "Apple Store",
-    "samsung.com": "Samsung Store",
-    "lenovo.com": "Lenovo Store",
-    "dell.com": "Dell Store",
-    "meesho.com": "Meesho",
-    "jiomart.com": "JioMart",
-    "dummyjson.com": "Global Product Catalog",
-    "escuelajs.co": "Platzi Open Storefront",
+# Non-product domains to strictly filter out from retail search
+EXCLUDED_NON_PRODUCT_DOMAINS = {
+    "wikipedia.org", "en.wikipedia.org", "en.m.wikipedia.org",
+    "cricinfo.com", "espncricinfo.com", "cricbuzz.com", "bbc.com", "bbc.co.uk",
+    "geeksforgeeks.org", "tutorialspoint.com", "w3schools.com", "computerhope.com",
+    "merriam-webster.com", "dictionary.cambridge.org", "thefreedictionary.com",
+    "dictionary.com", "britannica.com", "vocabulary.com", "thesaurus.com",
+    "oxfordlearnersdictionaries.com", "collinsdictionary.com", "moviefone.com", "imdb.com",
+    "github.com", "stackoverflow.com", "quora.com", "reddit.com", "zhihu.com", "csdn.net",
+    "medium.com", "substack.com", "bilibili.com", "weibo.com", "baidu.com",
+    "news18.com", "indiatoday.in", "timesofindia.indiatimes.com", "hindustantimes.com",
+    "microsoft.com", "support.microsoft.com", "support.google.com", "apple.com/support",
+    "airtel.in", "jio.com", "youbroadband.in", "turn2engineering.com",
+    "engineeringhulk.com", "aboutmech.com", "sih.gov.in", "indianbank.bank.in", "aao.org",
 }
 
-# Modifiers & stop words to exclude from primary noun filtering
-SEARCH_MODIFIERS = {
-    "best", "buy", "under", "cheap", "cheapest", "price", "inr", "rs", "online",
-    "india", "top", "good", "for", "with", "the", "and", "fast", "new", "latest",
-    "official", "original", "genuine", "set", "pack", "mini", "pro", "max",
+# Known verified retail platforms
+VERIFIED_RETAIL_DOMAINS = {
+    "amazon.in", "amazon.com", "flipkart.com", "croma.com", "decathlon.in",
+    "myntra.com", "tatacliq.com", "reliancedigital.in", "nykaa.com",
+    "nykaafashion.com", "ajio.com", "dummyjson.com", "boat-lifestyle.com",
+    "smartprix.com", "91mobiles.com", "meesho.com", "jiomart.com",
 }
 
 
-def _extract_tokens(q: str) -> tuple[list[str], list[str]]:
-    """Extract search tokens and primary product nouns."""
-    tokens = [t.lower() for t in re.split(r"[^\w]+", q) if len(t) > 2 and not t.isdigit()]
-    meaningful = [t for t in tokens if t not in SEARCH_MODIFIERS]
-    return tokens, meaningful if meaningful else tokens
+def _extract_price_from_text(text: str) -> dict[str, Any]:
+    """Pull a price out of source text and record exactly where it came from.
 
+    An INR figure found verbatim is OBSERVED. A USD figure is converted
+    with a static reference rate and marked FX_CONVERTED — it is an
+    estimate, and `price_source_verified` stays False for it. No price
+    means UNVERIFIED, never a guess.
+    """
+    none_result = {
+        "source_price": None, "source_currency": None, "price_present": False,
+        "price_paise": None, "price_inr": None,
+        "price_source_verified": False, "fx_converted": False,
+        "fx_rate_used": None, "evidence_class": EVIDENCE_UNVERIFIED,
+    }
 
-def _matches_query_intent(text: str, tokens: list[str], primary_nouns: list[str]) -> bool:
-    """Ensure text matches whole-word primary nouns to prevent false positives."""
-    if primary_nouns:
-        # At least one primary noun must match as a whole word
-        if not any(re.search(rf"\b{re.escape(pn)}\b", text, re.I) for pn in primary_nouns):
-            return False
-    # At least one token must match as a whole word
-    return any(re.search(rf"\b{re.escape(t)}\b", text, re.I) for t in tokens)
-
-
-def _extract_price_from_text(text: str) -> tuple[int | None, float | None, bool]:
-    """Strictly extract price from text if and only if explicitly present."""
-    m_inr = re.search(r"(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.[0-9]{2})?)", text, re.IGNORECASE)
+    m_inr = re.search(r"(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.[0-9]{2})?)", text,
+                      re.IGNORECASE)
     if m_inr:
         try:
             val_inr = float(m_inr.group(1).replace(",", "").strip())
             if 50.0 <= val_inr <= 500000.0:
-                return int(val_inr * 100), round(val_inr, 2), True
+                return {
+                    "source_price": round(val_inr, 2), "source_currency": "INR",
+                    "price_present": True,
+                    "price_paise": int(val_inr * 100),
+                    "price_inr": round(val_inr, 2),
+                    "price_source_verified": True,
+                    "fx_converted": False, "fx_rate_used": None,
+                    "evidence_class": EVIDENCE_OBSERVED,
+                }
         except ValueError:
             pass
 
@@ -159,13 +269,23 @@ def _extract_price_from_text(text: str) -> tuple[int | None, float | None, bool]
     if m_usd:
         try:
             val_usd = float(m_usd.group(1).replace(",", "").strip())
-            val_inr = val_usd * 85.0
+            val_inr = val_usd * USD_INR_REFERENCE_RATE
             if 50.0 <= val_inr <= 500000.0:
-                return int(val_inr * 100), round(val_inr, 2), True
+                return {
+                    "source_price": round(val_usd, 2), "source_currency": "USD",
+                    "price_present": True,
+                    "price_paise": int(val_inr * 100),
+                    "price_inr": round(val_inr, 2),
+                    # An estimate derived from a static rate is NOT verified.
+                    "price_source_verified": False,
+                    "fx_converted": True,
+                    "fx_rate_used": USD_INR_REFERENCE_RATE,
+                    "evidence_class": EVIDENCE_FX_CONVERTED,
+                }
         except ValueError:
             pass
 
-    return None, None, False
+    return none_result
 
 
 def _extract_rating_from_text(text: str) -> tuple[float | None, bool]:
@@ -191,129 +311,82 @@ def _extract_availability_from_text(text: str) -> tuple[str, bool]:
     return "unverified", False
 
 
-def _query_dummyjson(clean_q: str, tokens: list[str], primary_nouns: list[str], now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
-    """Provider worker: Query DummyJSON Product API."""
+def _query_dummyjson(clean_q: str, now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
+    """Provider: DummyJSON.
+
+    DummyJSON is a public *mock* product API. Its catalog is synthetic and
+    its prices are USD test data. It is included so the pipeline can be
+    exercised end-to-end without depending on a search engine being
+    reachable — not because it is a retail source.
+
+    Everything it returns is therefore tagged MOCK_SOURCE, has
+    `price_source_verified=False` and `rating_verified=False`, and is
+    excluded from market comparisons by `is_market_evidence`. Calling this
+    data a real listing would be fabricating product listings.
+    """
     try:
-        search_terms = primary_nouns[:3] if primary_nouns else tokens[:3]
-        listings: list[WebProductListing] = []
-        for term in search_terms:
-            p_url = f"https://dummyjson.com/products/search?q={urllib.parse.quote(term)}&limit=6"
-            req_p = urllib.request.Request(p_url, headers={
-                "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-LiveBuyerAgent/1.0)",
-                "Accept": "application/json"
-            })
-            with urllib.request.urlopen(req_p, timeout=4) as r:
-                data = json.loads(r.read())
+        api_kw = re.sub(r"(?:best|buy|under|cheap|cheapest|price|inr|rs|online|india|\d+)", "", clean_q, flags=re.IGNORECASE).strip()
+        if not api_kw or len(api_kw) < 2:
+            api_kw = clean_q
 
-            prods = data.get("products", [])
-            for p in prods:
-                title = p.get("title", "")
-                desc = p.get("description", "")
-                brand = p.get("brand") or "Verified"
-                cat = p.get("category", "")
-                combined = f"{title} {desc} {brand} {cat}"
+        encoded_kw = urllib.parse.quote(api_kw)
+        p_url = f"https://dummyjson.com/products/search?q={encoded_kw}&limit=8"
+        req_p = urllib.request.Request(p_url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-DiscoveryAgent/1.0)",
+            "Accept": "application/json"
+        })
+        with urllib.request.urlopen(req_p, timeout=4) as r:
+            data = json.loads(r.read())
 
-                # Strict whole-word noun matching
-                if not _matches_query_intent(combined, tokens, primary_nouns):
-                    continue
+        prods = data.get("products", [])
+        if not prods:
+            return [], None, None
 
-                usd_price = float(p.get("price", 0))
-                inr_price = round(usd_price * 85.0, 2)
-                p_paise = int(inr_price * 100)
+        listings = []
+        for p in prods:
+            usd_price = float(p.get("price", 0))
+            inr_estimate = round(usd_price * USD_INR_REFERENCE_RATE, 2)
 
-                raw_ev = f"{desc} Brand: {brand}. Stock: {p.get('stock')} units. Category: {cat}."
-                if p.get("reviews"):
-                    rev = p["reviews"][0]
-                    raw_ev += f" Verified Review: \"{rev.get('comment')}\" ({rev.get('rating')}/5★)."
+            raw_ev = (f"{p.get('description')} Brand: {p.get('brand')}. "
+                      f"Stock: {p.get('stock')} units. "
+                      f"Category: {p.get('category')}.")
 
-                listings.append(
-                    WebProductListing(
-                        product_name=f"{title} ({brand})",
-                        price_paise=p_paise,
-                        price_inr=inr_price,
-                        price_verified=True,
-                        seller=f"{brand} Store",
-                        seller_domain="dummyjson.com",
-                        url=f"https://dummyjson.com/products/{p['id']}",
-                        rating=float(p.get("rating", 4.2)),
-                        rating_verified=True,
-                        availability="in_stock" if p.get("stock", 0) > 0 else "out_of_stock",
-                        availability_verified=True,
-                        scraped_at=now_iso,
-                        raw_evidence=raw_ev[:280],
-                        search_provider="Live Product Database API (DummyJSON)",
-                        is_untrusted=True,
-                    )
+            listings.append(
+                WebProductListing(
+                    product_name=p["title"],
+                    source_price=usd_price,
+                    source_currency="USD",
+                    price_present=usd_price > 0,
+                    price_paise=int(inr_estimate * 100),
+                    price_inr=inr_estimate,
+                    price_source_verified=False,
+                    fx_converted=True,
+                    fx_rate_used=USD_INR_REFERENCE_RATE,
+                    evidence_class=EVIDENCE_MOCK_SOURCE,
+                    seller="DummyJSON (synthetic catalog, not a retailer)",
+                    seller_domain="dummyjson.com",
+                    url=f"https://dummyjson.com/products/{p['id']}",
+                    rating=float(p["rating"]) if p.get("rating") is not None else None,
+                    rating_verified=False,
+                    availability="in_stock" if p.get("stock", 0) > 0 else "out_of_stock",
+                    availability_verified=False,
+                    scraped_at=now_iso,
+                    raw_evidence=raw_ev[:280],
+                    search_provider="DummyJSON mock product API",
+                    provider_kind=PROVIDER_MOCK_API,
+                    is_untrusted=True,
                 )
-            if listings:
-                break
-
-        hit_msg = f"Live Product Database API ({len(listings)} items)" if listings else None
-        return listings, hit_msg, None
+            )
+        return listings, f"DummyJSON mock API ({len(prods)} synthetic records)", None
     except Exception as e:
-        return [], None, f"Live Product API: {type(e).__name__}: {str(e)[:80]}"
+        return [], None, f"DummyJSON mock API: {type(e).__name__}: {str(e)[:80]}"
 
 
-def _query_platzi(clean_q: str, tokens: list[str], primary_nouns: list[str], now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
-    """Provider worker: Query Platzi Open Storefront API."""
+def _query_bing_rss(clean_q: str, now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
+    """Provider worker: Query Bing RSS for retail storefront results."""
     try:
-        search_terms = primary_nouns[:2] if primary_nouns else tokens[:2]
-        listings: list[WebProductListing] = []
-        for term in search_terms:
-            p_url = f"https://api.escuelajs.co/api/v1/products/?title={urllib.parse.quote(term)}"
-            req_p = urllib.request.Request(p_url, headers={
-                "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-LiveBuyerAgent/1.0)",
-                "Accept": "application/json"
-            })
-            with urllib.request.urlopen(req_p, timeout=4) as r:
-                p_data = json.loads(r.read())
-
-            for p in p_data[:4]:
-                title = p.get("title", "")
-                desc = p.get("description", "")
-                combined = f"{title} {desc}"
-
-                if not _matches_query_intent(combined, tokens, primary_nouns):
-                    continue
-
-                usd_price = float(p.get("price", 0))
-                inr_price = round(usd_price * 85.0, 2)
-                p_paise = int(inr_price * 100)
-
-                listings.append(
-                    WebProductListing(
-                        product_name=title,
-                        price_paise=p_paise,
-                        price_inr=inr_price,
-                        price_verified=True,
-                        seller="Open Retail Catalog",
-                        seller_domain="escuelajs.co",
-                        url=f"https://api.escuelajs.co/api/v1/products/{p.get('id')}",
-                        rating=4.3,
-                        rating_verified=True,
-                        availability="in_stock",
-                        availability_verified=True,
-                        scraped_at=now_iso,
-                        raw_evidence=f"{desc} Category: {p.get('category', {}).get('name', 'Retail')}",
-                        search_provider="Open Retail Storefront API",
-                        is_untrusted=True,
-                    )
-                )
-            if listings:
-                break
-
-        hit_msg = f"Open Retail Storefront API ({len(listings)} items)" if listings else None
-        return listings, hit_msg, None
-    except Exception as e:
-        return [], None, f"Open Retail API: {type(e).__name__}: {str(e)[:80]}"
-
-
-def _query_whitelisted_web(clean_q: str, tokens: list[str], primary_nouns: list[str], now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
-    """Provider worker: Query Bing RSS with STRICT Verified Retail Domain Whitelisting."""
-    try:
-        site_filter = " OR ".join([f"site:{d}" for d in ["amazon.in", "flipkart.com", "croma.com", "decathlon.in", "myntra.com", "tatacliq.com", "reliancedigital.in", "boat-lifestyle.com", "nykaa.com", "ajio.com"]])
-        bing_q = f"{clean_q} ({site_filter})"
-        encoded_q = urllib.parse.quote(bing_q)
+        retail_q = f"{clean_q} (site:amazon.in OR site:flipkart.com OR site:croma.com OR site:myntra.com OR site:decathlon.in OR site:tatacliq.com OR site:reliancedigital.in OR buy online price)"
+        encoded_q = urllib.parse.quote(retail_q)
         bing_url = f"https://www.bing.com/search?q={encoded_q}&format=rss"
         req_b = urllib.request.Request(bing_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -325,39 +398,52 @@ def _query_whitelisted_web(clean_q: str, tokens: list[str], primary_nouns: list[
         root = ET.fromstring(xml_data)
         items = root.findall(".//item")
 
-        listings: list[WebProductListing] = []
+        listings = []
         for it in items:
-            link = it.find("link").text if it.find("link") is not None else ""
-            domain = urllib.parse.urlparse(link).netloc.replace("www.", "").lower()
-
-            # STRICT WHITELIST CHECK: Reject any domain that is NOT in VERIFIED_RETAIL_DOMAINS
-            matched_seller = None
-            for ret_dom, s_name in VERIFIED_RETAIL_DOMAINS.items():
-                if domain == ret_dom or domain.endswith("." + ret_dom):
-                    matched_seller = s_name
-                    break
-
-            if not matched_seller:
-                # Discard casino, gambling, SEO spam immediately!
-                continue
-
             title = it.find("title").text if it.find("title") is not None else ""
+            link = it.find("link").text if it.find("link") is not None else ""
             desc = it.find("description").text if it.find("description") is not None else ""
+
             clean_title = _html.unescape(re.sub(r"<[^>]+>", "", title)).strip()
             clean_desc = _html.unescape(re.sub(r"<[^>]+>", "", desc)).strip()
 
-            combined = f"{clean_title} {clean_desc}"
-            p_paise, p_inr, p_ver = _extract_price_from_text(combined)
-            r_val, r_ver = _extract_rating_from_text(combined)
-            avail, avail_ver = _extract_availability_from_text(combined)
+            domain = urllib.parse.urlparse(link).netloc.replace("www.", "").lower()
+            if any(excl in domain for excl in EXCLUDED_NON_PRODUCT_DOMAINS):
+                continue
+
+            combined_text = f"{clean_title} {clean_desc}".lower()
+            is_retail_domain = any(ret in domain for ret in VERIFIED_RETAIL_DOMAINS)
+            has_shopping_cues = any(w in combined_text for w in ["buy", "price", "rs", "₹", "inr", "order", "online", "shop", "store", "sale", "discount", "free delivery", "rating", "spec"])
+
+            if not is_retail_domain and not has_shopping_cues:
+                continue
+
+            seller = domain
+            if "amazon.in" in domain:
+                seller = "Amazon India"
+            elif "amazon.com" in domain:
+                seller = "Amazon"
+            elif "flipkart.com" in domain:
+                seller = "Flipkart"
+            elif "croma.com" in domain:
+                seller = "Croma"
+            elif "decathlon.in" in domain:
+                seller = "Decathlon India"
+            elif "myntra.com" in domain:
+                seller = "Myntra"
+            elif "tatacliq.com" in domain:
+                seller = "Tata CLiQ"
+            elif "reliancedigital.in" in domain:
+                seller = "Reliance Digital"
+
+            price = _extract_price_from_text(f"{clean_title} {clean_desc}")
+            r_val, r_ver = _extract_rating_from_text(f"{clean_title} {clean_desc}")
+            avail, avail_ver = _extract_availability_from_text(f"{clean_title} {clean_desc}")
 
             listings.append(
                 WebProductListing(
                     product_name=clean_title,
-                    price_paise=p_paise,
-                    price_inr=p_inr,
-                    price_verified=p_ver,
-                    seller=matched_seller,
+                    seller=seller,
                     seller_domain=domain,
                     url=link,
                     rating=r_val,
@@ -366,39 +452,39 @@ def _query_whitelisted_web(clean_q: str, tokens: list[str], primary_nouns: list[
                     availability_verified=avail_ver,
                     scraped_at=now_iso,
                     raw_evidence=clean_desc[:280] if clean_desc else clean_title,
-                    search_provider=f"Live Web Storefront ({matched_seller})",
+                    search_provider="Live web search (Bing RSS)",
+                    provider_kind=PROVIDER_WEB_SEARCH,
                     is_untrusted=True,
+                    **price,
                 )
             )
-            if len(listings) >= 5:
+            if len(listings) >= 6:
                 break
 
-        hit_msg = f"Live Web Storefronts ({len(listings)} verified listings)" if listings else None
+        hit_msg = (f"Live web search (Bing RSS): {len(listings)} storefront "
+                   f"result(s)") if listings else None
         return listings, hit_msg, None
     except Exception as e:
-        return [], None, f"Web Storefronts: {type(e).__name__}: {str(e)[:80]}"
+        return [], None, f"Live Web Search: {type(e).__name__}: {str(e)[:80]}"
 
 
 def search_live_web_providers(query: str, max_results: int = 10) -> tuple[list[WebProductListing], list[str], list[str]]:
-    """Execute concurrent runtime network requests to verified live search providers and product APIs.
+    """Execute concurrent runtime network requests to live search providers and product APIs.
 
     Returns: (listings, providers_hit, errors)
     """
     now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
     clean_q = sanitize_web_content(query).strip()
-    tokens, primary_nouns = _extract_tokens(clean_q)
-
     listings: list[WebProductListing] = []
     providers_hit: list[str] = []
     errors: list[str] = []
 
-    # Run all 3 verified live search providers concurrently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        f_dummy = executor.submit(_query_dummyjson, clean_q, tokens, primary_nouns, now_iso)
-        f_platzi = executor.submit(_query_platzi, clean_q, tokens, primary_nouns, now_iso)
-        f_web = executor.submit(_query_whitelisted_web, clean_q, tokens, primary_nouns, now_iso)
+    # Run both live search providers concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f_dummy = executor.submit(_query_dummyjson, clean_q, now_iso)
+        f_bing = executor.submit(_query_bing_rss, clean_q, now_iso)
 
-        for f in concurrent.futures.as_completed([f_dummy, f_platzi, f_web]):
+        for f in concurrent.futures.as_completed([f_dummy, f_bing]):
             res_items, hit_msg, err_msg = f.result()
             if res_items:
                 listings.extend(res_items)
@@ -410,184 +496,206 @@ def search_live_web_providers(query: str, max_results: int = 10) -> tuple[list[W
     # Deduplicate listings by clean title
     unique_listings: list[WebProductListing] = []
     seen_titles: set[str] = set()
-    for l in listings:
-        t_key = re.sub(r"[^\w]+", "", l.product_name.lower())[:25]
+    for item in listings:
+        t_key = re.sub(r"[^\w]+", "", item.product_name.lower())[:25]
         if t_key and t_key not in seen_titles:
             seen_titles.add(t_key)
-            unique_listings.append(l)
+            unique_listings.append(item)
 
     return unique_listings[:max_results], providers_hit, errors
 
 
-def run_real_product_discovery(query: str, budget_paise: int = 500000) -> DiscoveryPipelineResult:
-    """Execute the 6-stage true runtime product discovery pipeline.
+def _match_merchant_catalog(query: str, budget_paise: int) -> tuple[str | None, dict | None]:
+    """Token-overlap match against the server-side catalog."""
+    q_tokens = [t for t in re.split(r"[^\w]+", query.lower()) if len(t) > 2]
+    best_sku, best_item, best_score = None, None, 0
+    for sku, item in CATALOG.items():
+        text = (f"{item['name']} {item['category']} "
+                f"{item.get('description', '')}").lower()
+        score = sum(2 for token in q_tokens if token in text)
+        if score > best_score:
+            best_sku, best_item, best_score = sku, item, score
+    if best_score < 2 or best_item is None:
+        return None, None
+    if best_item["price_paise"] > budget_paise:
+        return None, None
+    return best_sku, best_item
 
-    1. Executes concurrent runtime HTTP requests to live web search providers and product APIs.
-    2. Strictly filters out non-product sites and extracts verifiable fields.
-    3. Identifies SELLABLE Merchant Direct SKU matches from local catalog.
-    4. Compares web listings against merchant catalog pricing.
-    5. Formulates winner recommendation under budget mandate.
-    6. Attaches deterministic Policy Gateway state and approval binding readiness.
+
+def _find_policy_probe(category: str | None,
+                       budget_paise: int) -> PolicyProbe | None:
+    """Cheapest catalog SKU that still breaks the budget. Real data only."""
+    candidates = [
+        (sku, item) for sku, item in CATALOG.items()
+        if item["price_paise"] > budget_paise
+        and (category is None or item["category"] == category)
+    ]
+    if not candidates:
+        candidates = [(sku, item) for sku, item in CATALOG.items()
+                      if item["price_paise"] > budget_paise]
+    if not candidates:
+        return None
+    sku, item = min(candidates, key=lambda kv: kv[1]["price_paise"])
+    over = item["price_paise"] - budget_paise
+    return PolicyProbe(
+        sku=sku,
+        name=item["name"],
+        price_paise=item["price_paise"],
+        price_inr=item["price_paise"] / 100.0,
+        exceeds_budget_by_paise=over,
+        why=(f"{item['name']} costs Rs {item['price_paise'] / 100:,.2f}, which is "
+             f"Rs {over / 100:,.2f} over the signed budget. An agent that has been "
+             f"talked into proposing it will be refused by R1_BUDGET before any "
+             f"approval binding exists."),
+    )
+
+
+def run_real_product_discovery(query: str,
+                               budget_paise: int = 500000) -> DiscoveryPipelineResult:
+    """Gather market evidence, then state plainly what was and wasn't found.
+
+    The status reported here describes the LIVE PROVIDERS ONLY. If the
+    merchant happens to stock a matching product, that is reported
+    separately as `merchant_offer` — it never launders a failed search
+    into a successful one.
     """
     now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
     sanitized_query = sanitize_web_content(query).strip()
+    providers_queried = ["Live web search (Bing RSS)", "DummyJSON mock product API"]
 
-    # 1. Execute runtime live network search
-    raw_listings, providers_hit, errors = search_live_web_providers(sanitized_query, max_results=10)
+    external, providers_hit, errors = search_live_web_providers(
+        sanitized_query, max_results=10)
 
-    # 2. Check if local SELLABLE Merchant Direct catalog has a matching item
-    matched_catalog_item = None
-    matched_sku = None
-    q_lower = sanitized_query.lower()
+    # ---- status is a function of the live providers, nothing else ----
+    if external:
+        status = "LIVE_SEARCH_SUCCESS"
+        error_message = " | ".join(errors) if errors else None
+    elif errors and len(errors) >= len(providers_queried):
+        status = "SEARCH_UNAVAILABLE"
+        error_message = " | ".join(errors)
+    elif errors:
+        status = "SEARCH_UNAVAILABLE"
+        error_message = " | ".join(errors)
+    else:
+        status = "ZERO_RESULTS"
+        error_message = "providers responded but published no matching products"
 
-    # Match tokens against local catalog
-    tokens, primary_nouns = _extract_tokens(q_lower)
-    best_cat_score = 0
-    for sku, cat_item in CATALOG.items():
-        score = 0
-        cat_text = f"{cat_item['name']} {cat_item['category']} {cat_item.get('description', '')}".lower()
-        for token in primary_nouns:
-            if re.search(rf"\b{re.escape(token)}\b", cat_text):
-                score += 3
-        for token in tokens:
-            if re.search(rf"\b{re.escape(token)}\b", cat_text):
-                score += 1
-        if score > best_cat_score:
-            best_cat_score = score
-            matched_catalog_item = cat_item
-            matched_sku = sku
+    matched_sku, matched_item = _match_merchant_catalog(
+        sanitized_query, budget_paise)
 
-    # Add local merchant direct listing if it matches query intent
-    all_listings: list[WebProductListing] = []
-    if matched_catalog_item and best_cat_score >= 3 and matched_catalog_item["price_paise"] <= budget_paise:
-        merchant_listing = WebProductListing(
-            product_name=f"SELLABLE Verified Merchant: {matched_catalog_item['name']}",
-            price_paise=matched_catalog_item["price_paise"],
-            price_inr=matched_catalog_item["price_paise"] / 100.0,
-            price_verified=True,
-            seller="SELLABLE Verified Merchant (Direct)",
-            seller_domain="sellable.store",
-            url=f"http://localhost:8000/products#{matched_sku}",
-            rating=matched_catalog_item.get("rating", 4.3),
-            rating_verified=True,
-            availability="in_stock",
-            availability_verified=True,
-            scraped_at=now_iso,
-            raw_evidence=f"{matched_catalog_item['name']} - {matched_catalog_item.get('description', '')} Authoritative merchant catalog SKU {matched_sku}. Guaranteed Razorpay settlement.",
-            search_provider="Authoritative Merchant Storefront (Direct)",
-            is_untrusted=False,  # Merchant catalog is authoritative
-        )
-        all_listings.append(merchant_listing)
-
-    all_listings.extend(raw_listings)
-
-    # Handle zero results or failed search
-    if not all_listings:
-        status = "SEARCH_FAILED" if errors else "ZERO_RESULTS"
-        err_msg = " | ".join(errors) if errors else "No live retail products found matching your search query."
-        return DiscoveryPipelineResult(
-            query=query,
-            budget_paise=budget_paise,
-            search_engine_status=status,
-            providers_hit=providers_hit,
-            error_message=err_msg,
-            listings=[],
-            comparison=None,
-            recommendation=None,
-            gateway_verdict={
-                "MONEY_PATH_ISOLATED_FROM_WEB": True,
-                "external_web_authority": "ZERO (ADVISORY ONLY)",
-                "status": "ABORTED_NO_PRODUCTS",
-                "reason": err_msg,
-            },
-            executed_at=now_iso,
+    merchant_offer = None
+    if matched_sku and matched_item:
+        merchant_offer = MerchantOffer(
+            sku=matched_sku,
+            name=matched_item["name"],
+            category=matched_item["category"],
+            price_paise=matched_item["price_paise"],
+            price_inr=matched_item["price_paise"] / 100.0,
+            rating=matched_item.get("rating"),
+            in_stock=matched_item.get("stock", 0) > 0,
+            url=f"/products#{matched_sku}",
         )
 
-    # Filter items within budget mandate
-    budget_eligible = [l for l in all_listings if l.price_paise is not None and l.price_paise <= budget_paise]
-    if not budget_eligible:
-        budget_eligible = [l for l in all_listings if l.price_paise is not None] or all_listings
+    # ---- comparison uses REAL retail evidence only ----
+    market = [x for x in external if x.is_market_evidence]
+    observed = [x for x in market if x.evidence_class == EVIDENCE_OBSERVED]
+    cheapest = min(observed, key=lambda x: x.price_paise) if observed else None
 
-    # Separate merchant direct vs external web listings
-    merchant_listings = [l for l in budget_eligible if "SELLABLE" in l.seller]
-    external_listings = [l for l in budget_eligible if "SELLABLE" not in l.seller and l.price_paise is not None]
-
-    cheapest_external = min(external_listings, key=lambda x: x.price_paise or 99999999) if external_listings else None
-    best_merchant = min(merchant_listings, key=lambda x: x.price_paise or 99999999) if merchant_listings else None
-
-    # Calculate savings
-    savings_inr = 0.0
-    if best_merchant and cheapest_external and cheapest_external.price_inr and best_merchant.price_inr:
-        savings_inr = round(cheapest_external.price_inr - best_merchant.price_inr, 2)
+    if cheapest is not None:
+        basis = ("lowest INR price observed verbatim across the searched "
+                 "retail sources")
+    elif market:
+        basis = ("no INR price was observed verbatim; remaining listings are "
+                 "FX-converted estimates and are not comparable")
+    else:
+        basis = "no external market evidence was retrieved"
 
     comparison = ComparisonSummary(
-        total_sources_searched=len(all_listings),
-        verified_price_listings_count=len([l for l in all_listings if l.price_verified]),
-        cheapest_web_option={
-            "name": cheapest_external.product_name,
-            "seller": cheapest_external.seller,
-            "price_inr": cheapest_external.price_inr,
-            "url": cheapest_external.url,
-            "raw_evidence": cheapest_external.raw_evidence,
-        } if cheapest_external else None,
-        merchant_matched_sku=matched_sku,
-        merchant_matched_name=best_merchant.product_name if best_merchant else None,
-        merchant_matched_price_inr=best_merchant.price_inr if best_merchant else None,
-        savings_vs_web_inr=savings_inr if savings_inr > 0 else 0.0,
+        live_providers_queried=len(providers_queried),
+        live_providers_responded=len(providers_hit),
+        external_listings_count=len(external),
+        market_evidence_count=len(market),
+        mock_source_count=len([x for x in external
+                               if x.provider_kind == PROVIDER_MOCK_API]),
+        fx_converted_count=len([x for x in external if x.fx_converted]),
+        lowest_observed_market_price_inr=cheapest.price_inr if cheapest else None,
+        lowest_observed_market_seller=cheapest.seller if cheapest else None,
+        lowest_observed_market_url=cheapest.url if cheapest else None,
+        merchant_price_inr=merchant_offer.price_inr if merchant_offer else None,
+        delta_vs_lowest_observed_inr=(
+            round(cheapest.price_inr - merchant_offer.price_inr, 2)
+            if cheapest and merchant_offer and cheapest.price_inr else None),
+        comparison_basis=basis,
     )
 
-    # Formulate Winner Recommendation
-    if best_merchant and (savings_inr >= 0 or not cheapest_external):
-        winner = best_merchant
-        reason = (
-            f"Recommended SELLABLE Verified Merchant SKU {matched_sku} at ₹{winner.price_inr:,.2f}. "
-            f"Matches buyer intent within budget mandate (₹{budget_paise/100:,.2f}). "
-            f"{f'Saves ₹{savings_inr:,.2f} compared to {cheapest_external.seller} (₹{cheapest_external.price_inr:,.2f}). ' if savings_inr > 0 and cheapest_external else ''}"
-            f"Backed by deterministic Policy Gateway R1–R12 compliance, HMAC mandate security, and instant Razorpay settlement."
-        )
-        decision_status = "RECOMMENDED_VERIFIED"
-    elif cheapest_external:
-        winner = cheapest_external
-        reason = (
-            f"Selected {winner.seller} as verified lowest market price at ₹{winner.price_inr:,.2f}. "
-            f"Within buyer mandate budget (₹{budget_paise/100:,.2f}). Discovered live from {winner.seller_domain}."
-        )
-        decision_status = "RECOMMENDED_VERIFIED"
-    else:
-        winner = all_listings[0]
-        reason = f"Selected {winner.product_name} as top matching option from live search."
-        decision_status = "DATA_UNVERIFIED" if not winner.price_verified else "RECOMMENDED_VERIFIED"
+    # ---- recommendation ----
+    recommendation = None
+    if merchant_offer is not None:
+        if cheapest is not None and comparison.delta_vs_lowest_observed_inr is not None:
+            delta = comparison.delta_vs_lowest_observed_inr
+            if delta > 0:
+                evidence_line = (
+                    f"Rs {delta:,.2f} below the lowest verbatim INR price "
+                    f"observed in this search ({cheapest.seller}, "
+                    f"Rs {cheapest.price_inr:,.2f}).")
+            else:
+                evidence_line = (
+                    f"Rs {abs(delta):,.2f} above the lowest verbatim INR price "
+                    f"observed in this search ({cheapest.seller}, "
+                    f"Rs {cheapest.price_inr:,.2f}).")
+            decision_status = "RECOMMENDED_WITH_MARKET_EVIDENCE"
+        else:
+            evidence_line = ("No verbatim INR market price was observed in this "
+                             "search, so no price comparison is claimed.")
+            decision_status = "RECOMMENDED_WITHOUT_MARKET_EVIDENCE"
 
-    recommendation = RecommendationDecision(
-        decision_status=decision_status,
-        winner_name=winner.product_name,
-        winner_price_inr=winner.price_inr,
-        winner_price_paise=winner.price_paise,
-        winner_seller=winner.seller,
-        winner_url=winner.url,
-        recommendation_reason=reason,
-        raw_evidence_source=winner.raw_evidence,
-        matched_merchant_sku=matched_sku,
-        matched_category=matched_catalog_item.get("category", "electronics") if matched_catalog_item else "electronics",
-        savings_vs_market_inr=savings_inr if savings_inr > 0 else 0.0,
-    )
+        recommendation = RecommendationDecision(
+            decision_status=decision_status,
+            winner_name=merchant_offer.name,
+            winner_price_inr=merchant_offer.price_inr,
+            winner_price_paise=merchant_offer.price_paise,
+            winner_seller="SELLABLE merchant catalog",
+            winner_url=merchant_offer.url,
+            recommendation_reason=(
+                f"SKU {merchant_offer.sku} at Rs {merchant_offer.price_inr:,.2f}, "
+                f"within the signed budget mandate of "
+                f"Rs {budget_paise / 100:,.2f}. {evidence_line}"),
+            raw_evidence_source=(cheapest.raw_evidence if cheapest
+                                 else "no external price evidence retrieved"),
+            matched_merchant_sku=merchant_offer.sku,
+            matched_category=merchant_offer.category,
+            savings_vs_market_inr=max(
+                comparison.delta_vs_lowest_observed_inr or 0.0, 0.0),
+        )
 
     gateway_verdict = {
-        "MONEY_PATH_ISOLATED_FROM_WEB": True,
-        "external_web_authority": "ZERO (ADVISORY ONLY)",
-        "r1_budget_check": "PASS" if (winner.price_paise or 0) <= budget_paise else "OVER_BUDGET",
+        "external_web_authority": "NONE — advisory evidence only",
+        "money_path_isolated_from_web": True,
+        "priced_from": "server-side merchant catalog, not from any listing",
         "budget_paise_limit": budget_paise,
-        "winner_price_paise": winner.price_paise,
-        "mandate_binding_ready": True,
+        "proposed_amount_paise": (merchant_offer.price_paise
+                                  if merchant_offer else None),
+        "within_budget": (merchant_offer.price_paise <= budget_paise
+                          if merchant_offer else None),
+        "note": ("this is a pre-check only; the deterministic gateway R1-R12 "
+                 "re-evaluates the proposal at /tools/submit_proposal and is "
+                 "the only thing that can authorize an amount"),
     }
+
+    probe = _find_policy_probe(
+        merchant_offer.category if merchant_offer else None, budget_paise)
 
     return DiscoveryPipelineResult(
         query=query,
         budget_paise=budget_paise,
-        search_engine_status="LIVE_SEARCH_SUCCESS",
+        search_engine_status=status,
+        providers_queried=providers_queried,
         providers_hit=providers_hit,
-        error_message=None,
-        listings=all_listings,
+        provider_errors=errors,
+        error_message=error_message,
+        listings=external,
+        merchant_offer=merchant_offer,
+        policy_probe=probe,
         comparison=comparison,
         recommendation=recommendation,
         gateway_verdict=gateway_verdict,

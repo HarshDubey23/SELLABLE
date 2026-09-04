@@ -5,6 +5,7 @@ Produces eval/report.json with the 8 required metrics.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 import random
@@ -195,19 +196,43 @@ def _arm_ungated(missions: list[dict], seed: int) -> ArmResult:
     return arm
 
 
+# Provenance counters. The report must say which arm actually produced the
+# numbers — a deterministic fallback run is a valid benchmark, but calling
+# it "powered by gemini-1.5-flash" would be a lie.
+LLM_STATS = {"attempted": 0, "succeeded": 0, "fell_back": 0, "no_key": 0}
+
+
+def _llm_key() -> str:
+    """The LLM key, ignoring .env.example placeholders."""
+    from apps.api.config import is_placeholder
+
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY",
+                 "OPENROUTER_API_KEYS"):
+        val = os.environ.get(name, "")
+        if not is_placeholder(val):
+            return val
+    return ""
+
+
 def _llm_propose(mission: Mission, sku: str, rng: random.Random) -> tuple[str, str | None]:
     """Ask the LLM to propose a product for the given mission and SKU.
-    Returns (proposed_sku, rationale_text) or (simulated_sku, None) if no key
-    or LLM unavailable. Always returns a valid result - never hangs."""
+
+    Falls back to a deterministic pick when no usable key is configured or
+    the call fails. Either way the choice is only a *proposal* — the
+    gateway re-prices and re-evaluates it, so a hallucinating or absent
+    model changes the benchmark's realism, never its money safety.
+    """
     from apps.api.llm.gemini import ask as _gemini_ask
     from apps.api.llm.gemini import parse_sku
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    key = _llm_key()
     if not key:
+        LLM_STATS["no_key"] += 1
         # No API key available - return synthetic/mock result explicitly
         product = CATALOG[sku]
         simulated_sku = sorted(CATALOG.keys())[0]  # deterministic fallback
-        rationale = f"[synthetic LLM: no GEMINI_API_KEY, using fallback {simulated_sku}]"
+        rationale = f"[deterministic fallback: no LLM key configured -> {simulated_sku}]"
         return simulated_sku, rationale
+    LLM_STATS["attempted"] += 1
     try:
         product = CATALOG[sku]
         system = (
@@ -218,10 +243,11 @@ def _llm_propose(mission: Mission, sku: str, rng: random.Random) -> tuple[str, s
         user = f"Product: {product['name']} — {product['description']}"
         resp = _gemini_ask(system, user)
         if resp.get("error"):
-            # LLM call failed - fall back to synthetic
+            LLM_STATS["fell_back"] += 1
             simulated_sku = sorted(CATALOG.keys())[0]
-            rationale = f"[synthetic: LLM error {resp['error']}]"
+            rationale = f"[deterministic fallback: LLM error {resp['error']}]"
             return simulated_sku, rationale
+        LLM_STATS["succeeded"] += 1
         text = resp.get("text", "")
         parsed = parse_sku(text)
         if parsed and parsed in CATALOG:
@@ -271,14 +297,23 @@ def _arm_behavioral_llm(missions: list[dict], seed: int,
                 proposal = _adversarial_proposal(mission, proposed_sku,
                                                  m.get("injection_pattern"))
                 price = CATALOG[proposed_sku]["price_paise"] if proposed_sku in CATALOG else INJECTION_FAKE_PRICE
-                arm.approved += 1
-                arm.gross_revenue_paise += price
-                # Check if LLM was fooled: proposed an injection SKU when it should have been rejected
+                # The agent carried an adversarial mission through to a
+                # proposal instead of refusing it. That is the interesting
+                # number: it is what the gateway then has to catch.
                 arm.llm_fooled_count = getattr(arm, "llm_fooled_count", 0) + 1
                 verdict = evaluate(mission=mission, proposal=proposal,
                                    catalog=CATALOG, verify_fn=verify_mission,
                                    state={}, now_ts=int(time.time()), chain_ok=True)
                 arm.records.append(_record_for_mission(m, verdict.decision, proposal, price))
+                # Revenue and acceptance are counted from the GATEWAY's
+                # verdict, never from the agent's proposal. Counting an
+                # agent proposal as accepted revenue inflates every
+                # downstream metric.
+                if verdict.decision == Decision.APPROVE:
+                    arm.approved += 1
+                    arm.gross_revenue_paise += price
+                else:
+                    arm.rejected += 1
                 if verdict.decision == Decision.APPROVE:
                     arm.llm_fooled_successes = getattr(arm, "llm_fooled_successes", 0) + 1
                     # If protocol was involved and gateway approved, count as protocol pass
@@ -391,13 +426,32 @@ def run(missions_count: int = 100, reps: int = 1, seed: int = 42) -> dict:
         g.protocol_passes += a.protocol_passes
 
     result = compare(list(agg.values()))
+    from apps.api.config import get as _cfg
+
+    key_present = bool(_llm_key())
+    if LLM_STATS["succeeded"] > 0:
+        llm_mode = f"live_llm:{_cfg().gemini_model}"
+    elif key_present:
+        llm_mode = "deterministic_fallback (LLM key present but every call failed)"
+    else:
+        llm_mode = "deterministic_fallback (no LLM key configured)"
+
     result["methodology"] = {
         "seed": seed,
         "missions_per_arm": missions_count,
-        "llm_mode": "mock",
+        # Says which arm actually produced these numbers. A deterministic
+        # run is a legitimate benchmark of the gateway; it is not evidence
+        # about any model's behaviour, and must not be described as such.
+        "llm_mode": llm_mode,
+        "llm_calls": dict(LLM_STATS),
+        "llm_key_configured": key_present,
         "structural_stage": True,
         "behavioral_stage": True,
-        "real_keys_required": bool(os.environ.get("GEMINI_API_KEY")),
+        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "what_these_numbers_are": (
+            "seeded simulation of the policy gateway over synthetic missions "
+            "against the local catalog. No Razorpay call and no real money is "
+            "involved in any arm."),
     }
     return result
 

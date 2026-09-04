@@ -8,8 +8,6 @@ from __future__ import annotations
 import os
 import socket
 import sys
-import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -38,7 +36,7 @@ def check_dependencies() -> tuple[bool, str]:
 def check_env_file() -> tuple[bool, str]:
     env_path = Path(__file__).resolve().parents[1] / ".env"
     if not env_path.exists():
-        return True, "NOTICE: .env file missing (run_demo.py will auto-generate)"
+        return True, "NOTICE: .env file missing (run.py will generate it)"
 
     content = env_path.read_text(encoding="utf-8")
     placeholders = [

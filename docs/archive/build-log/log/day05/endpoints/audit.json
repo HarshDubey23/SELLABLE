@@ -1,0 +1,486 @@
+{
+  "entries": [
+    {
+      "seq": 0,
+      "ts": 0,
+      "actor": "system",
+      "action": "GENESIS",
+      "payload_hash": "901131d838b17aac0f7885b81e03cbdc9f5157a00343d30ab22083685ed1416a",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "abd47b0dc9ead5a3f80c79ab9dfec857f2880909c2a1b42b4fecdb11c9cffde7"
+    },
+    {
+      "seq": 1,
+      "ts": 1787680164,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "318d76f78b95adf43d054961ecc8651f5e6da6defb4b5ad819fc194e01135240",
+      "prev_hash": "abd47b0dc9ead5a3f80c79ab9dfec857f2880909c2a1b42b4fecdb11c9cffde7",
+      "hash": "b221f48bd0c01542f56db5da8fb5a06d329c6f97f2224c6a65e625c0a2addf9e"
+    },
+    {
+      "seq": 2,
+      "ts": 1787680165,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "3427fb39c5a8895454d31d8b530a84b6213c0b9060a7daaa4944922a92356850",
+      "prev_hash": "b221f48bd0c01542f56db5da8fb5a06d329c6f97f2224c6a65e625c0a2addf9e",
+      "hash": "bf3e9a48a9747232bd96cc5e2cf1051b49b0c6c3fa526ca815e733f38783c69a"
+    },
+    {
+      "seq": 3,
+      "ts": 1787680217,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "be8e6a4285917cc96f824457a2c35b301d530a745afd8116f96a104c12568083",
+      "prev_hash": "bf3e9a48a9747232bd96cc5e2cf1051b49b0c6c3fa526ca815e733f38783c69a",
+      "hash": "2cc8c7420373afa5309695cfe1028f829102bff9f7aa066b9a06047b4f7ca5bd"
+    },
+    {
+      "seq": 4,
+      "ts": 1787680221,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "0c6c3d082aac002c4de758ba4c826fe4be52cf9d27ad37bb97bb368b6cb6c02d",
+      "prev_hash": "2cc8c7420373afa5309695cfe1028f829102bff9f7aa066b9a06047b4f7ca5bd",
+      "hash": "149bf5a564e7ae45c2b98d8954e0bf53a88653ef9e369e775a93852bd46babfe"
+    },
+    {
+      "seq": 5,
+      "ts": 1787680682,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "149bf5a564e7ae45c2b98d8954e0bf53a88653ef9e369e775a93852bd46babfe",
+      "hash": "0ed2a3e2373a63f3a29d2a2befd9046db6681daa8a4565c2fa6e5824d623f45e"
+    },
+    {
+      "seq": 6,
+      "ts": 1787680694,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "0ed2a3e2373a63f3a29d2a2befd9046db6681daa8a4565c2fa6e5824d623f45e",
+      "hash": "59b9f83d38f180161262f231f3f973580e14fb671db2cce03221eb783d7c18ea"
+    },
+    {
+      "seq": 7,
+      "ts": 1787680746,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "59b9f83d38f180161262f231f3f973580e14fb671db2cce03221eb783d7c18ea",
+      "hash": "6d110e7407ebd64e41bff150a68038f0a6d776b321773d14a3e656337e307d71"
+    },
+    {
+      "seq": 8,
+      "ts": 1787680758,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "6d110e7407ebd64e41bff150a68038f0a6d776b321773d14a3e656337e307d71",
+      "hash": "45f0b016155795431e4a5c4ef8e65a470aa53b5769e418acb3481fd8457bd701"
+    },
+    {
+      "seq": 9,
+      "ts": 1787680769,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "45f0b016155795431e4a5c4ef8e65a470aa53b5769e418acb3481fd8457bd701",
+      "hash": "bbb15a134b6161c0428931be21ecbde901b48b1bc2fcc01b4f9e3087cef7cad4"
+    },
+    {
+      "seq": 10,
+      "ts": 1787680774,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "bbe73016b1c9ce76ed10a49c72900e120e1530f011fd96b5c84f5b06e677bc84",
+      "prev_hash": "bbb15a134b6161c0428931be21ecbde901b48b1bc2fcc01b4f9e3087cef7cad4",
+      "hash": "162ebaf3041cfbf26f5b12d3bd2dbff6e0e1845849dba166fc747ff9d488010f"
+    },
+    {
+      "seq": 11,
+      "ts": 1787680775,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "422b784ea3e063f27a72a6714aeea99f8bc2c81b1a56fe1428f6c63ecade28b4",
+      "prev_hash": "162ebaf3041cfbf26f5b12d3bd2dbff6e0e1845849dba166fc747ff9d488010f",
+      "hash": "7163021eee37d19d03a6e51253cd979c27496c919468e4c851080b1fd7011db9"
+    },
+    {
+      "seq": 12,
+      "ts": 1787680775,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "7a71d86213246b66634cff2b0c034756377a935edc7392687ec6a6c5202f8a85",
+      "prev_hash": "7163021eee37d19d03a6e51253cd979c27496c919468e4c851080b1fd7011db9",
+      "hash": "0fbcd3ff573850c74729ec87fc6e87b72743b6706dccf8575a03fc6b0f5eaa7b"
+    },
+    {
+      "seq": 13,
+      "ts": 1787681196,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "0fbcd3ff573850c74729ec87fc6e87b72743b6706dccf8575a03fc6b0f5eaa7b",
+      "hash": "7d837ba18e9ded6d0bbc52664348d6ee6bacd4fc125ed8fe0a7de387a7ea0b96"
+    },
+    {
+      "seq": 14,
+      "ts": 1787681208,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "7d837ba18e9ded6d0bbc52664348d6ee6bacd4fc125ed8fe0a7de387a7ea0b96",
+      "hash": "8ac5dfe2023542c6e9e184441e440afd3ca2b2be5529947ddc5750c388025318"
+    },
+    {
+      "seq": 15,
+      "ts": 1787681219,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "8ac5dfe2023542c6e9e184441e440afd3ca2b2be5529947ddc5750c388025318",
+      "hash": "59effeb558d2e889126360c80f672d92adb364e572919720a00f78218aee350e"
+    },
+    {
+      "seq": 16,
+      "ts": 1787681232,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "d42b461cbff3d253f28db5c5c52bdacc92026068f20ce72fe959f42a71e59894",
+      "prev_hash": "59effeb558d2e889126360c80f672d92adb364e572919720a00f78218aee350e",
+      "hash": "fb758a058970ce42afb7b65baef4ecd6178480e5c5556629e9d6f2c093d357b1"
+    },
+    {
+      "seq": 17,
+      "ts": 1787681232,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "bddbf4e7a138a2535d6f663cd2a4888b68cae87f2c6083da176fa45b492799b2",
+      "prev_hash": "fb758a058970ce42afb7b65baef4ecd6178480e5c5556629e9d6f2c093d357b1",
+      "hash": "216ff08aed9106de9fe764158ffbed446a725f4e19d601ec3248386b997eb518"
+    },
+    {
+      "seq": 18,
+      "ts": 1787681239,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "6b2003763757ff5a3220a6e1bd64f3f67012a1acceeff9b95cf43d086de62ef9",
+      "prev_hash": "216ff08aed9106de9fe764158ffbed446a725f4e19d601ec3248386b997eb518",
+      "hash": "0f3f1b84f44621e4b3292fd5ac304376232b784ff9c713ec030c0d4d0c1bc889"
+    },
+    {
+      "seq": 19,
+      "ts": 1787681239,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "20161e4c23a29f18892c2b0dba5f1da3abc193bc4187fae34d5b159fe0d2e294",
+      "prev_hash": "0f3f1b84f44621e4b3292fd5ac304376232b784ff9c713ec030c0d4d0c1bc889",
+      "hash": "2a5e869f5dfb93cd61b0cc4b13de3f06205d4d90647eb1d36714552276125eaa"
+    },
+    {
+      "seq": 20,
+      "ts": 1787681341,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "e310fb35a653d8502f3898aaf5a7ace5671281a1fb8b1b44a1d2d83c4962f5c0",
+      "prev_hash": "2a5e869f5dfb93cd61b0cc4b13de3f06205d4d90647eb1d36714552276125eaa",
+      "hash": "e714c2b742b674b654ae21cf79bc5fe0de7b636d9b23c2253a14ce40010833aa"
+    },
+    {
+      "seq": 21,
+      "ts": 1787681341,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "67e38561ed70756bb6ee834b7883fc0dc22b1891cb2b766fd7bf5d98ab071bd9",
+      "prev_hash": "e714c2b742b674b654ae21cf79bc5fe0de7b636d9b23c2253a14ce40010833aa",
+      "hash": "69cc87fa6c66519aeefa270bf7bff8494e21e184ca65146be3daa6a15e84b945"
+    },
+    {
+      "seq": 22,
+      "ts": 1787681345,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "cf4b6f5481edb5a666ce4a9d078316efe575a6ac89bbe030f328fcf944382648",
+      "prev_hash": "69cc87fa6c66519aeefa270bf7bff8494e21e184ca65146be3daa6a15e84b945",
+      "hash": "1f90177184c2b90a91eb79cfb486417c97e6a12517e051c702746b2269a8d481"
+    },
+    {
+      "seq": 23,
+      "ts": 1787681346,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "2e7f19f8eab6be0454885f09994a0eb9b3a37698150fb6a7a66361043209428d",
+      "prev_hash": "1f90177184c2b90a91eb79cfb486417c97e6a12517e051c702746b2269a8d481",
+      "hash": "d88ecf1088a4322ae1b0c6cafac4827087c2e0fd5773bb66ef146e0d78d71385"
+    },
+    {
+      "seq": 24,
+      "ts": 1787681450,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "e300e7d67b07278c847ca2f3364bbc44c76097538e530827ed58450afbe2e2c4",
+      "prev_hash": "d88ecf1088a4322ae1b0c6cafac4827087c2e0fd5773bb66ef146e0d78d71385",
+      "hash": "e157232d238736c86a645c8cb549cd32e4c7b5cf7cdbbeac1d90a5e0efe64332"
+    },
+    {
+      "seq": 25,
+      "ts": 1787681450,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "b898d2e134da7d7a2608b1886e36b869ab95cd33306a95f60e63a69d3742ad8c",
+      "prev_hash": "e157232d238736c86a645c8cb549cd32e4c7b5cf7cdbbeac1d90a5e0efe64332",
+      "hash": "dd1af73588230b76df767e613b3f2194be8c01203b5c3562c743193e4891d31a"
+    },
+    {
+      "seq": 26,
+      "ts": 1787681450,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "7f524e82144b7f1f1be364dae71d215e7519775650f9b30ad155315348e9013a",
+      "prev_hash": "dd1af73588230b76df767e613b3f2194be8c01203b5c3562c743193e4891d31a",
+      "hash": "a71e36e41e3efc7fc1589e1dbbe8786f4ef7a525551dd25c9d0ecfa1aec416e7"
+    },
+    {
+      "seq": 27,
+      "ts": 1787681517,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "a71e36e41e3efc7fc1589e1dbbe8786f4ef7a525551dd25c9d0ecfa1aec416e7",
+      "hash": "aea75990756f54a2e137ddc31dfcefe07aa78dfa2f1993cb4b4e92e09beb9378"
+    },
+    {
+      "seq": 28,
+      "ts": 1787681532,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "aea75990756f54a2e137ddc31dfcefe07aa78dfa2f1993cb4b4e92e09beb9378",
+      "hash": "16dbaca348446c6e3ca64dceb7e97502929d707e537aee30717817757caaddec"
+    },
+    {
+      "seq": 29,
+      "ts": 1787681544,
+      "actor": "system",
+      "action": "PROOF_EMITTED",
+      "payload_hash": "b7d0d2c775fa1103590157bf3cbb7318c5172cab60340f7c0e3793da575b4411",
+      "prev_hash": "16dbaca348446c6e3ca64dceb7e97502929d707e537aee30717817757caaddec",
+      "hash": "4798d901232507624f7bc4b469f7ac51ababa2b5f2e37ba357b7f73f9ef59fbc"
+    },
+    {
+      "seq": 30,
+      "ts": 1787681553,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "22a941bb2b165ac8cd9ab196dc3e4bbdfb4e4ce54683c0bb4a31f91b34dba31e",
+      "prev_hash": "4798d901232507624f7bc4b469f7ac51ababa2b5f2e37ba357b7f73f9ef59fbc",
+      "hash": "a215ad74f6c8a8861a95e48bd7a6a801e43383ee6a8db881261348dee4916962"
+    },
+    {
+      "seq": 31,
+      "ts": 1787681553,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "13270c37ebb56875fa467ab820c86b164daa0dd7e7e7ef861856f11bf176014d",
+      "prev_hash": "a215ad74f6c8a8861a95e48bd7a6a801e43383ee6a8db881261348dee4916962",
+      "hash": "53c2b5f7f7fed19149d7df3491543b155278fde0917cd086eb6ce08c345754d3"
+    },
+    {
+      "seq": 32,
+      "ts": 1787681589,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "b6bf16c50542a027307221b6afff01d534e320667fde070b54813e843b2ca0d0",
+      "prev_hash": "53c2b5f7f7fed19149d7df3491543b155278fde0917cd086eb6ce08c345754d3",
+      "hash": "1fa5f6050a0f30a7c859b6131f803a260e498ac24ef9bc40178eab0cc837b739"
+    },
+    {
+      "seq": 33,
+      "ts": 1787681589,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "20f4bcf4028592803224cc943ecf46438dc9bc46351a692205dafeb5a20c9f76",
+      "prev_hash": "1fa5f6050a0f30a7c859b6131f803a260e498ac24ef9bc40178eab0cc837b739",
+      "hash": "16c89b652fd660c8fb80302b28388e071433f0c79919d2e8638c54bc386ebf20"
+    },
+    {
+      "seq": 34,
+      "ts": 1787681680,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "e2b89e9bea333d6c5f4a1b8762b89fc76abbbf0c15aaa69fd5aadaf6ab93e9d6",
+      "prev_hash": "16c89b652fd660c8fb80302b28388e071433f0c79919d2e8638c54bc386ebf20",
+      "hash": "010a1a3f2bc41c58cb59b824c3e7fa5d08925e568448d194fd7768f0cc188150"
+    },
+    {
+      "seq": 35,
+      "ts": 1787681680,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "73776e38df586120fe29a89e4758e5496d5d6aa3d21283ab0b5433ec20213b30",
+      "prev_hash": "010a1a3f2bc41c58cb59b824c3e7fa5d08925e568448d194fd7768f0cc188150",
+      "hash": "f53e305f1a99c2970e6299a50d89b7af8092a30528cd8ba5dc546a8f6e9894a9"
+    },
+    {
+      "seq": 36,
+      "ts": 1787681689,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "7a4d5a46188e74f76c6cb1222297277763fe1ba28d18824393acc914792a2a28",
+      "prev_hash": "f53e305f1a99c2970e6299a50d89b7af8092a30528cd8ba5dc546a8f6e9894a9",
+      "hash": "f616ea0d814c5b5fe0dd509bce36c9e61d31d5fae34ee8d7f12ef2df07344913"
+    },
+    {
+      "seq": 37,
+      "ts": 1787681690,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "a8fd505b527f055016b83b9d714935397c9bec4d6b06b1fbe8c5a720a1db2abc",
+      "prev_hash": "f616ea0d814c5b5fe0dd509bce36c9e61d31d5fae34ee8d7f12ef2df07344913",
+      "hash": "55b19087ab5cc5c0718cbdda3291ae94ed6f1f304630ffdccfdf90ca1eda7476"
+    },
+    {
+      "seq": 38,
+      "ts": 1787681799,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "a93692c85ab49f56a66cf8e67c64ee0cab615c051a316a1935383025ffa5ca04",
+      "prev_hash": "55b19087ab5cc5c0718cbdda3291ae94ed6f1f304630ffdccfdf90ca1eda7476",
+      "hash": "50cd03ed0b7656835297d322da47638a4b24aad41028c2a51c05e33da6329c00"
+    },
+    {
+      "seq": 39,
+      "ts": 1787681799,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "ff273ad93253c8db862bf66623dc19a426618223a713a63bbd13a70238c17374",
+      "prev_hash": "50cd03ed0b7656835297d322da47638a4b24aad41028c2a51c05e33da6329c00",
+      "hash": "a8bf1669be803e7880e5d13456ec89d9a064752ba179c8297d2b35105d0049c8"
+    },
+    {
+      "seq": 40,
+      "ts": 1787681800,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "33f8c531151d6c6be2045edf7e85f2e52b77dfe3cfaad9a1f8662f99faacacea",
+      "prev_hash": "a8bf1669be803e7880e5d13456ec89d9a064752ba179c8297d2b35105d0049c8",
+      "hash": "3a9a1a2bba7a5878fbb0edf0820c419bbda994c3aedb4a8ca2b893b14301573f"
+    },
+    {
+      "seq": 41,
+      "ts": 1787683070,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "8e0d5c0c1b4ea88357dfe95cdc0af49e193439652b7d9c66070bb1b7c4adc81e",
+      "prev_hash": "3a9a1a2bba7a5878fbb0edf0820c419bbda994c3aedb4a8ca2b893b14301573f",
+      "hash": "8697939838971592b5d989615acf6847a6f0519f07cfc2d001077d1f83c8bb66"
+    },
+    {
+      "seq": 42,
+      "ts": 1787683070,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "0b9cd0016988e109d3a51239ca0825b420667f323add4dabca2a077a4579d188",
+      "prev_hash": "8697939838971592b5d989615acf6847a6f0519f07cfc2d001077d1f83c8bb66",
+      "hash": "97c8c60b0241401ae4e0d098054665a0991d234fe2aed32b517625af1814176e"
+    },
+    {
+      "seq": 43,
+      "ts": 1787683097,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "56a54822980091d2db30b508dcf6b5129e696ab665732d25975ee99616525237",
+      "prev_hash": "97c8c60b0241401ae4e0d098054665a0991d234fe2aed32b517625af1814176e",
+      "hash": "e54c6cf5999d81d77d8f3ddc8893d0a58546b558b5c0d6d956d11f326cea0436"
+    },
+    {
+      "seq": 44,
+      "ts": 1787683153,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "74cc122efab97310383cf507083f93012b0d052fd9086a9cc67b3b7a7f14fe0e",
+      "prev_hash": "e54c6cf5999d81d77d8f3ddc8893d0a58546b558b5c0d6d956d11f326cea0436",
+      "hash": "cdadf013684ea3b9943142af821b18cdc7acb1b13671ff287bd4156177d67bcc"
+    },
+    {
+      "seq": 45,
+      "ts": 1787683153,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "fc4d331abc576f91af6faa31b6d770e45ce3c7ce68f7567be1aabf3dfa2f7c47",
+      "prev_hash": "cdadf013684ea3b9943142af821b18cdc7acb1b13671ff287bd4156177d67bcc",
+      "hash": "91d432d18f4330842f08d21bac0dc3ddb85ea667f0146741b319083d53b05b54"
+    },
+    {
+      "seq": 46,
+      "ts": 1787683169,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "07d3692d08ccfe297d6136e984bfc82ac440b736343bb2fb60fbc74ca33f498d",
+      "prev_hash": "91d432d18f4330842f08d21bac0dc3ddb85ea667f0146741b319083d53b05b54",
+      "hash": "0faf0cc867976b3eebe4225b48983b8797b1a253086da831017eade419b7fc6c"
+    },
+    {
+      "seq": 47,
+      "ts": 1787683169,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "166d2a96f03a0860292292c410d4d68e872a9a08eba0a8f7930b37b1a93adb89",
+      "prev_hash": "0faf0cc867976b3eebe4225b48983b8797b1a253086da831017eade419b7fc6c",
+      "hash": "de6a91ce28c36182d55b9e9ecb6e94ae0a3d87ce779ca81df259eebc8357936c"
+    },
+    {
+      "seq": 48,
+      "ts": 1787683673,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "4ba364b44d92e309aa5044d21bb3ba9ea4446f8cb93ab30a460d55877c5d037d",
+      "prev_hash": "de6a91ce28c36182d55b9e9ecb6e94ae0a3d87ce779ca81df259eebc8357936c",
+      "hash": "3af7da531121a720732a4ff815ca427500fa048d0fd02bdeb39a02c1860a96fa"
+    },
+    {
+      "seq": 49,
+      "ts": 1787683673,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "62edf84ffe66d19c66fa8767b0a3637690c4e62aefb254c6eec3d63a791b3d33",
+      "prev_hash": "3af7da531121a720732a4ff815ca427500fa048d0fd02bdeb39a02c1860a96fa",
+      "hash": "69f34979cd05bc127b70d5fe3aaba58778d9705fa7cacf6d7073a350529eead1"
+    },
+    {
+      "seq": 50,
+      "ts": 1787683673,
+      "actor": "executor",
+      "action": "order_created",
+      "payload_hash": "85c3b4ba6dfd4e50606859207de2de81ab072347e7e4eea97d607f4f1f21c7ab",
+      "prev_hash": "69f34979cd05bc127b70d5fe3aaba58778d9705fa7cacf6d7073a350529eead1",
+      "hash": "127704049232d970088d8522206fe7f7daa7db9760ef903d7050c15f8af98efc"
+    },
+    {
+      "seq": 51,
+      "ts": 1787683834,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "67d2f5def6ce0445e6f2d0df73ea024960e706accdea532f15aa31fd913d0ea7",
+      "prev_hash": "127704049232d970088d8522206fe7f7daa7db9760ef903d7050c15f8af98efc",
+      "hash": "37b32820915229d7594720e562a02cc84a6546d493063b70de2ab0d36479ec2c"
+    },
+    {
+      "seq": 52,
+      "ts": 1787683834,
+      "actor": "merchant_ai",
+      "action": "upsell_offered",
+      "payload_hash": "943c1eeccbe0c643bb47fece4e574f1fa1f8190c34fa220a66cfccbf00a33171",
+      "prev_hash": "37b32820915229d7594720e562a02cc84a6546d493063b70de2ab0d36479ec2c",
+      "hash": "c1e191f6f4291f3d0f5237417cbd7e5349e7a49bdb3babf4b39882185774fb97"
+    },
+    {
+      "seq": 53,
+      "ts": 1787683841,
+      "actor": "gateway",
+      "action": "verdict_emitted",
+      "payload_hash": "70aa7fb0985915df31cda8ab39417533d8375f70a2995ac285e79beddd109ed0",
+      "prev_hash": "c1e191f6f4291f3d0f5237417cbd7e5349e

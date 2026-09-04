@@ -422,11 +422,28 @@ def attack_run_all() -> dict[str, Any]:
         ok = r.get("verdict", {}).get("safe", False)
         if ok:
             safe_count += 1
+        gw_decision = r.get("gateway", {}).get("decision")
+        binding_info = r.get("binding_check") or {}
+        binding_reason = binding_info.get("reason")
+        binding_blocked = binding_info.get("blocked")
+        # Say WHICH layer refused. Some attacks are stopped by the
+        # deterministic gateway; others get past it and are stopped by the
+        # approval binding at the money boundary. Reporting only the
+        # gateway verdict makes the second kind look like an approval.
+        if gw_decision == "REJECT":
+            blocked_by = f"gateway/{r.get('gateway', {}).get('rule_id')}"
+        elif binding_blocked:
+            blocked_by = f"approval_binding/{binding_reason}"
+        else:
+            blocked_by = "NOT BLOCKED"
         results.append({
             "id": scenario["id"],
             "label": scenario["label"],
-            "decision": r.get("gateway", {}).get("decision"),
+            "decision": gw_decision,
             "rule_id": r.get("gateway", {}).get("rule_id"),
+            "binding_blocked": binding_blocked,
+            "binding_reason": binding_reason,
+            "blocked_by": blocked_by,
             "money_calls": r.get("money_calls", {}).get("total_attempted", 0),
             "safe": ok,
         })
