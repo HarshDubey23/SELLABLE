@@ -37,6 +37,67 @@ def test_no_hardcoded_live_secrets_in_source():
         assert "rzp_live_" not in content, f"Hardcoded live Razorpay key found in {py_file}"
         assert "-----BEGIN RSA PRIVATE KEY-----" not in content, f"Hardcoded private key found in {py_file}"
 
+def test_no_real_looking_api_key_is_embedded_anywhere():
+    """A test key is still somebody's actual credential.
+
+    apps/api/chaos/engine.py carried a real rzp_test_ key as the default
+    for its own safety check. It was in a public repository, and it also
+    meant that with no key configured at all the check answered "SAFE" --
+    arming chaos in an environment whose credential state was unknown. A
+    safety check that passes when it has nothing to look at is not one.
+
+    This looks for a vendor prefix followed by enough characters to be a
+    usable key. The masked form the diagnostics print, rzp_test_****, is
+    not one and passes.
+    """
+    import re
+
+    patterns = {
+        "Razorpay": re.compile(r"rzp_(?:test|live)_[A-Za-z0-9]{10,}"),
+        "OpenRouter": re.compile(r"sk-or-v1-[A-Za-z0-9]{20,}"),
+        "Google": re.compile(r"AIza[A-Za-z0-9_\-]{30,}"),
+    }
+    roots = [PROJECT_ROOT / "apps", PROJECT_ROOT / "scripts",
+             PROJECT_ROOT / "tests", PROJECT_ROOT / "docs"]
+
+    found = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in (
+                    ".py", ".md", ".json", ".yml", ".yaml", ".toml", ".txt"):
+                continue
+            try:
+                content = path.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for vendor, rx in patterns.items():
+                if rx.search(content):
+                    found.append(f"{vendor} key in {path}")
+
+    assert found == [], (
+        "a real-looking credential is embedded in the repository: "
+        + "; ".join(found))
+
+
+def test_the_chaos_safety_check_refuses_when_it_cannot_prove_test_mode():
+    """No key means no proof, and no proof means no arming."""
+    import os
+
+    from apps.api.chaos.engine import ChaosEngine
+
+    engine = ChaosEngine()
+    previous = os.environ.pop("RAZORPAY_KEY_ID", None)
+    try:
+        safe, message = engine.check_safety()
+        assert not safe, "armed with no credential to check against"
+        assert "not set" in message
+    finally:
+        if previous is not None:
+            os.environ["RAZORPAY_KEY_ID"] = previous
+
+
 def test_deterministic_gateway_has_no_llm_imports():
     """Ensure gateway engine is 100% deterministic with zero LLM/probabilistic dependencies."""
     gateway_dir = APPS_API / "gateway"

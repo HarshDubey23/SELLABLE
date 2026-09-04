@@ -19,7 +19,7 @@
 | **Pydantic** | 2.9.0+ | OK |
 | **HTTPX / Requests** | 0.27.0+ | OK |
 | **Google GenAI SDK** | google-genai (Gemini 2.5/3.5 Flash) | Configured & Live |
-| **Razorpay SDK** | Test Mode API Credentials configured (rzp_test_TSttLNvLt9yUPI) | Active (Test Mode) |
+| **Razorpay SDK** | Test Mode API Credentials configured (rzp_test_****) | Active (Test Mode) |
 | **Database** | SQLite Durable Store (data/sellable.db) | Verified Genesis & Chain |
 
 ---
