@@ -76,7 +76,9 @@ def init_schema() -> None:
                     mandate_version TEXT NOT NULL,
                     issued_at INTEGER NOT NULL,
                     expires_at INTEGER NOT NULL,
-                    consumed_at INTEGER
+                    consumed_at INTEGER,
+                    merchant_id TEXT,
+                    negotiation_transcript_hash TEXT
                 );
                 CREATE TABLE IF NOT EXISTS orders (
                     order_id TEXT PRIMARY KEY,
@@ -96,7 +98,8 @@ def init_schema() -> None:
                     total_paise INTEGER NOT NULL,
                     expires_at INTEGER NOT NULL,
                     signature TEXT NOT NULL,
-                    created_at INTEGER NOT NULL
+                    created_at INTEGER NOT NULL,
+                    negotiated_json TEXT
                 );
                 CREATE TABLE IF NOT EXISTS verdicts (
                     seq INTEGER PRIMARY KEY,
@@ -139,6 +142,76 @@ def init_schema() -> None:
                     deployed_at INTEGER,
                     created_at INTEGER NOT NULL
                 );
+                -- SELLABLE Market. Declared here with every other table so
+                -- a fresh database - a clone, a test tmpdir - has them from
+                -- the first boot. The market modules also call their own
+                -- CREATE IF NOT EXISTS, which is harmless and keeps them
+                -- usable in isolation.
+                CREATE TABLE IF NOT EXISTS market_merchants (
+                    merchant_id TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    manifest_json TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    seeded_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS market_negotiations (
+                    negotiation_id TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    mission_text TEXT NOT NULL,
+                    mission_id TEXT NOT NULL,
+                    budget_paise INTEGER NOT NULL,
+                    basket_json TEXT NOT NULL,
+                    weights_json TEXT NOT NULL,
+                    planner_json TEXT NOT NULL,
+                    current_round INTEGER NOT NULL DEFAULT 0,
+                    winner_merchant_id TEXT,
+                    winner_offer_id TEXT,
+                    transcript_hash TEXT,
+                    parent_negotiation_id TEXT,
+                    override_of TEXT,
+                    -- The settlement claim. Set once, by whichever caller
+                    -- wins the conditional UPDATE; everyone else replays
+                    -- the authorization recorded here instead of minting
+                    -- a second one.
+                    settlement_approve_seq INTEGER,
+                    settlement_quote_id TEXT,
+                    settlement_proposal_hash TEXT,
+                    settled_at INTEGER,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    last_error TEXT
+                );
+                -- offer_id is the PRIMARY KEY on purpose: it is derived
+                -- deterministically from (negotiation, merchant, round), so a
+                -- replayed round collides here and is refused by the database
+                -- rather than by a check someone can forget to write.
+                CREATE TABLE IF NOT EXISTS market_offers (
+                    offer_id TEXT PRIMARY KEY,
+                    negotiation_id TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    round INTEGER NOT NULL,
+                    intent_json TEXT NOT NULL,
+                    verdict_json TEXT NOT NULL,
+                    accepted INTEGER NOT NULL,
+                    reason TEXT,
+                    total_paise INTEGER,
+                    provenance_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS market_counters (
+                    counter_id TEXT PRIMARY KEY,
+                    negotiation_id TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    round INTEGER NOT NULL,
+                    ask TEXT NOT NULL,
+                    note TEXT,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_market_offers_neg
+                    ON market_offers(negotiation_id);
+                CREATE INDEX IF NOT EXISTS idx_market_neg_state
+                    ON market_negotiations(state);
                 CREATE INDEX IF NOT EXISTS idx_orders_idem
                     ON orders(idempotency_key);
                 CREATE INDEX IF NOT EXISTS idx_events_order
@@ -155,7 +228,31 @@ def init_schema() -> None:
     # (threading.Lock is NOT reentrant — calling it inside would deadlock).
     _migrate_audit_columns()
     _migrate_webhook_columns()
+    _migrate_binding_columns()
+    _migrate_quote_columns()
+    _migrate_market_columns()
 
+
+_MARKET_NEG_EXTRA_COLUMNS = {
+    "settlement_approve_seq": "INTEGER",
+    "settlement_quote_id": "TEXT",
+    "settlement_proposal_hash": "TEXT",
+    "settled_at": "INTEGER",
+}
+
+_QUOTE_EXTRA_COLUMNS = {
+    # The negotiated facts a market quote carries: which merchant won and
+    # the transcript hash that binding pins. NULL on every other quote.
+    "negotiated_json": "TEXT",
+}
+
+_BINDING_EXTRA_COLUMNS = {
+    # The market extension. Both stay NULL for every non-market binding,
+    # which is what keeps this additive: a flow that never negotiated has
+    # nothing to pin, and the executor skips a check it has no subject for.
+    "merchant_id": "TEXT",
+    "negotiation_transcript_hash": "TEXT",
+}
 
 _WEBHOOK_EXTRA_COLUMNS = {
     # Durable webhook lifecycle: RECEIVED -> AUDITED -> APPLIED.
@@ -189,6 +286,72 @@ def _migrate_audit_columns() -> None:
                 if col not in existing:
                     conn.execute(
                         f"ALTER TABLE audit_chain ADD COLUMN {col} {coltype}"
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _migrate_binding_columns() -> None:
+    """Add the market fields to the binding (idempotent).
+
+    A database written before the market existed keeps working: the new
+    columns read NULL, and a binding with nothing pinned is exactly what
+    a pre-market approval was.
+    """
+    with _lock:
+        conn = _connect()
+        try:
+            existing = {
+                row["name"] for row in
+                conn.execute("PRAGMA table_info(bindings)").fetchall()
+            }
+            for col, coltype in _BINDING_EXTRA_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE bindings ADD COLUMN {col} {coltype}"
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _migrate_market_columns() -> None:
+    """Add the settlement claim columns to market_negotiations (idempotent)."""
+    with _lock:
+        conn = _connect()
+        try:
+            existing = {
+                row["name"] for row in
+                conn.execute(
+                    "PRAGMA table_info(market_negotiations)").fetchall()
+            }
+            if not existing:
+                return  # table not created yet; the DDL above will carry it
+            for col, coltype in _MARKET_NEG_EXTRA_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE market_negotiations "
+                        f"ADD COLUMN {col} {coltype}"
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _migrate_quote_columns() -> None:
+    """Add the negotiated-quote column (idempotent)."""
+    with _lock:
+        conn = _connect()
+        try:
+            existing = {
+                row["name"] for row in
+                conn.execute("PRAGMA table_info(quotes)").fetchall()
+            }
+            for col, coltype in _QUOTE_EXTRA_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE quotes ADD COLUMN {col} {coltype}"
                     )
             conn.commit()
         finally:
