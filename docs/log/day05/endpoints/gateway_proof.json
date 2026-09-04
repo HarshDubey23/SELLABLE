@@ -1,9 +1,0 @@
-{
-  "files": 7,
-  "total_lines": 489,
-  "llm_imports_detected": 0,
-  "io_calls_detected": 0,
-  "forbidden_patterns_seen": [],
-  "source_sha256": "b275ea5aa973ee1f28d9f85a5f65b6305afa0887461bb9265edb5590d396f253",
-  "invariant_test": "tests/invariants/test_gateway_purity.py"
-}

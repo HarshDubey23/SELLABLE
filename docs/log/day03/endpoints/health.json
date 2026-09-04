@@ -1,9 +1,0 @@
-{
- "status": "alive",
- "events_processed": 0,
- "orders_tracked": 5,
- "ledger_entries": 0,
- "quotes_tracked": 8,
- "audit_entries": 27,
- "audit_chain_ok": true
-}
