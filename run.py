@@ -248,6 +248,27 @@ def get_json(url: str, timeout: float = 4.0) -> tuple[int, dict | None]:
         return 0, None
 
 
+def post_json(url: str, payload: dict | None = None,
+              timeout: float = 60.0) -> tuple[int, dict | None]:
+    data = json.dumps(payload or {}).encode()
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            try:
+                return resp.status, json.loads(resp.read())
+            except ValueError:
+                return resp.status, None
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read())
+        except Exception:
+            return exc.code, None
+    except Exception:
+        return 0, None
+
+
 def wait_for_health(base: str, proc: subprocess.Popen,
                     max_seconds: float = 45.0) -> bool:
     deadline = time.time() + max_seconds
@@ -270,6 +291,7 @@ SMOKE_ENDPOINTS = [
     ("/webhook/pending", "webhook lifecycle"),
     ("/", "product page"),
     ("/judge", "judge walkthrough"),
+    ("/market", "market state machine"),
 ]
 
 
@@ -283,7 +305,53 @@ def smoke(base: str) -> bool:
             ok = False
         print(f"  [ {mark} ] {path:<20s} {label}"
               + ("" if status == 200 else f"  (HTTP {status or 'no response'})"))
-    return ok
+    return smoke_market(base) and ok
+
+
+def smoke_market(base: str) -> bool:
+    """Drive a whole negotiation, end to end, whatever mode we are in.
+
+    Checking that /market answers 200 would prove almost nothing -- the
+    interesting part is whether three merchants can actually be asked for
+    offers, priced, ranked, accepted and paid on a machine with no keys
+    and no network. So this runs that, and reports which mode it ran in
+    rather than asserting a particular one.
+    """
+    status, opened = post_json(
+        f"{base}/market/open",
+        {"mission_text": "A complete cricket setup under Rs 6,000",
+         "use_llm": True})
+    if status != 200 or not opened:
+        print(f"  [ FAIL ] {'market negotiation':<20s} "
+              f"could not open (HTTP {status or 'no response'})")
+        return False
+
+    nid = opened["negotiation_id"]
+    mode = opened.get("mode", {})
+    steps: list[tuple[str, int, dict | None]] = []
+    for label, path in (("round", f"/market/{nid}/round"),
+                        ("accept", f"/market/{nid}/accept"),
+                        ("settle", f"/market/{nid}/settle")):
+        st, body = post_json(f"{base}{path}")
+        steps.append((label, st, body))
+        if st != 200:
+            print(f"  [ FAIL ] {'market ' + label:<20s} "
+                  f"HTTP {st or 'no response'}")
+            return False
+
+    settled = (steps[-1][2] or {}).get("settlement", {})
+    order = settled.get("order", {})
+    offers = (steps[0][2] or {}).get("offers", [])
+    priced = sum(1 for o in offers if o.get("accepted"))
+    print(f"  [ PASS ] {'/market negotiation':<20s} "
+          f"{priced}/{len(offers)} offers priced, "
+          f"{settled.get('merchant_id', '?')} won at "
+          f"{settled.get('amount_display', '?')}")
+    print(f"  [ PASS ] {'/market settlement':<20s} "
+          f"{order.get('execution_state', '?')} via "
+          f"{order.get('provider', '?')} "
+          f"({mode.get('merchants_label', '?')})")
+    return True
 
 
 def describe_mode(base: str) -> dict:
