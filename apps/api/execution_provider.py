@@ -112,7 +112,7 @@ class LiveRazorpayProvider:
             # an authoritative read must find nothing and resolve to FAILED.
             raise AmbiguousRemoteOutcome(
                 "simulated connection reset before the request was dispatched "
-                "to api.razorpay.com")
+                "to api.razorpay.com", dispatched=False)
         if fault == "remote_reject":
             # Do not send a deliberately malformed request to a real API to
             # manufacture a 4xx; raise the same classification it would.
@@ -221,7 +221,8 @@ class SimulatedProvider:
             # Request never reached the provider. Reconciliation must find
             # nothing and resolve to FAILED.
             raise AmbiguousRemoteOutcome(
-                "simulated connection reset before the request was applied")
+                "simulated connection reset before the request was applied",
+                dispatched=False)
         if fault == "remote_reject":
             raise DefiniteRemoteFailure(
                 "BAD_REQUEST_ERROR", "simulated definitive provider rejection")

@@ -155,7 +155,9 @@ def reconcile(execution_id: str):
     # seconds after the attempt is how a live order gets written off — we
     # did exactly that against the real test API before this guard existed.
     age = int(time.time()) - int(row["updated_at"] or 0)
+    never_dispatched = row.get("remote_error_code") == ex.NEVER_DISPATCHED
     if (provider.name == provider_mod.LIVE_TEST
+            and not never_dispatched
             and age < provider_mod.ABSENCE_QUIET_PERIOD_SECONDS):
         wait = provider_mod.ABSENCE_QUIET_PERIOD_SECONDS - age
         chain.append("reconciler", "reconcile_inconclusive",
@@ -176,16 +178,24 @@ def reconcile(execution_id: str):
                 "retryable": True,
             }})
 
-    updated = ex.transition(execution_id, ex.FAILED,
-                            remote_error_code="NO_REMOTE_ORDER",
-                            last_error="authoritative read found no matching "
-                                       "order after the consistency window")
+    updated = ex.transition(
+        execution_id, ex.FAILED,
+        remote_error_code="NO_REMOTE_ORDER",
+        last_error=("the request was never dispatched, so an empty "
+                    "authoritative read is conclusive"
+                    if never_dispatched else
+                    "authoritative read found no matching order after the "
+                    "consistency window"))
     chain.append("reconciler", "reconciled_failed",
                  {"execution_id": execution_id},
                  error_code="NO_REMOTE_ORDER", review_state="reconciled")
     return {"execution_id": execution_id, "state": ex.FAILED,
             "resolution": "NO_REMOTE_ORDER",
-            "explanation": ("the provider has no matching order after its "
-                            "listing had time to become consistent; the "
-                            "request never took effect and no money moved"),
+            "explanation": (
+                "the request was never dispatched to the provider, so there "
+                "is nothing for its listing to be behind on; no money moved"
+                if never_dispatched else
+                "the provider has no matching order after its listing had "
+                "time to become consistent; the request never took effect "
+                "and no money moved"),
             "execution": _public(updated)}

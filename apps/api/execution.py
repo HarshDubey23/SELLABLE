@@ -87,6 +87,14 @@ ALL_STATES = (
 
 TERMINAL_STATES = frozenset({EXECUTED, FAILED})
 
+# Recorded in `remote_error_code` when we have ground truth that the
+# request never left this process. Reconciliation may then treat an empty
+# authoritative read as conclusive instead of waiting out the provider's
+# consistency window — there is nothing for a listing to be behind on if
+# nothing was ever sent. Absence of this marker means "we do not know",
+# which is the safe default.
+NEVER_DISPATCHED = "NEVER_DISPATCHED"
+
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     APPROVED: frozenset({EXECUTION_PENDING, FAILED}),
     EXECUTION_PENDING: frozenset({REMOTE_ATTEMPTED, FAILED}),
@@ -107,7 +115,22 @@ class AmbiguousRemoteOutcome(Exception):
     Raised for timeouts, connection resets and unparseable responses:
     every case where the request may or may not have been executed by
     the remote system.
+
+    `dispatched` says whether the request is known to have left this
+    process. It defaults to True, which is the safe direction: if we do
+    not know, we must assume the provider may have acted on it, and
+    reconciliation has to allow for the provider's listing being
+    eventually consistent before concluding anything.
+
+    It is only False where we have ground truth that nothing was sent —
+    today that is the `remote_lost` drill, which raises before the call
+    by construction. A real ConnectionError is NOT such a case: the
+    socket may have been written before it broke.
     """
+
+    def __init__(self, message: str, *, dispatched: bool = True):
+        super().__init__(message)
+        self.dispatched = dispatched
 
 
 class DefiniteRemoteFailure(Exception):

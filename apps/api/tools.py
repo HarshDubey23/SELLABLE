@@ -653,7 +653,12 @@ async def tool_create_order(req: CreateOrderReq,
                       "execution_state": ex.FAILED,
                       "retryable": False}})
     except ex.AmbiguousRemoteOutcome as exc:
+        # Whether the request ever left matters to the reconciler: if it
+        # provably did not, an empty authoritative read is conclusive and
+        # need not wait out the provider's consistency window.
         ex.transition(execution_id, ex.RECONCILIATION_REQUIRED,
+                      remote_error_code=(None if getattr(exc, "dispatched", True)
+                                         else ex.NEVER_DISPATCHED),
                       last_error=str(exc))
         chain.append("executor", "execution_ambiguous",
                      {"execution_id": execution_id, "reason": str(exc)},

@@ -1159,24 +1159,45 @@ document.querySelectorAll('[data-fault]').forEach(b =>
     b.classList.add('on');
   }));
 
-const SM = [
+/* Not a straight line: the first three are the path every attempt walks,
+   the last three are branches. Drawing RECONCILIATION_REQUIRED as a
+   completed step on a purchase that went straight through would show a
+   recovery that never happened — the exact kind of small lie this
+   project is about. */
+const SM_PATH = [
   ['APPROVED','Authorization exists. Nothing has been dispatched.'],
   ['EXECUTION_PENDING','About to contact the provider.'],
-  ['REMOTE_ATTEMPTED','Committed to disk BEFORE the call. A crash here is recoverable.'],
+  ['REMOTE_ATTEMPTED','Committed to disk BEFORE the call. A crash here is recoverable.']
+];
+const SM_BRANCH = [
   ['RECONCILIATION_REQUIRED','Outcome unknown. Nothing is assumed and no blind retry is offered.'],
   ['EXECUTED','Resolved from authoritative provider state: the order exists.'],
   ['FAILED','Resolved from authoritative provider state: no order exists. No money moved.']
 ];
+let VIA_RECONCILIATION = false;
 function renderSM(cur){
-  const i = SM.findIndex(s => s[0] === cur);
-  $('r-sm').innerHTML = SM.map((s, ix) => {
+  const pathIx = SM_PATH.findIndex(s => s[0] === cur);
+  const terminal = cur === 'EXECUTED' || cur === 'FAILED';
+  const rows = [];
+  SM_PATH.forEach(([n, x], ix) => {
     let cls = 'smr';
-    if (ix < i && s[0] !== 'EXECUTED' && s[0] !== 'FAILED') cls += ' done';
-    else if (s[0] === cur) cls += cur === 'EXECUTED' ? ' done'
-      : cur === 'FAILED' ? ' bad' : cur === 'RECONCILIATION_REQUIRED' ? ' warn' : ' cur';
-    return '<div class="' + cls + '"><span class="d"></span>' +
-      '<span class="n">' + esc(s[0]) + '</span><span class="x">' + esc(s[1]) + '</span></div>';
-  }).join('');
+    if (cur === n) cls += ' cur';
+    else if (terminal || cur === 'RECONCILIATION_REQUIRED' || ix < pathIx) cls += ' done';
+    rows.push([cls, n, x]);
+  });
+  SM_BRANCH.forEach(([n, x]) => {
+    let cls = 'smr';
+    if (cur === n){
+      cls += n === 'EXECUTED' ? ' done' : n === 'FAILED' ? ' bad' : ' warn';
+    } else if (n === 'RECONCILIATION_REQUIRED' && VIA_RECONCILIATION && terminal){
+      cls += ' warn';
+    }
+    rows.push([cls, n, x]);
+  });
+  $('r-sm').innerHTML = rows.map(([cls, n, x]) =>
+    '<div class="' + cls + '"><span class="d"></span>' +
+    '<span class="n">' + esc(n) + '</span><span class="x">' + esc(x) + '</span></div>'
+  ).join('');
 }
 renderSM(null);
 
@@ -1191,6 +1212,7 @@ $('r-run').addEventListener('click', async function(){
       body: JSON.stringify({sku:'BAT-001', budget_paise:300000, fault:FAULT})});
     clear(st);
     const b = r.body, state = b.execution_state || (b.ok ? 'EXECUTED' : null);
+    VIA_RECONCILIATION = (state === 'RECONCILIATION_REQUIRED');
     renderSM(state);
     LAST_EXEC = b.execution_id || null;
     const L = [c('dim','POST /discovery/checkout  fault=' + FAULT), c('dim','HTTP ' + r.status), ''];

@@ -182,3 +182,59 @@ def test_the_simulated_provider_is_authoritative_immediately(monkeypatch):
     out = client.post(f"/discovery/reconcile/{body['execution_id']}").json()
     assert out["state"] == ex.FAILED
     assert out["resolution"] == "NO_REMOTE_ORDER"
+
+
+def test_a_request_that_never_left_resolves_immediately(monkeypatch):
+    """The quiet period is about a listing being behind, not about waiting.
+
+    `remote_lost` raises before the provider call by construction, so we
+    have ground truth that nothing was dispatched. There is nothing for an
+    eventually-consistent listing to be behind on, and making a reviewer
+    wait two minutes for a conclusion we can already draw would be
+    caution theatre rather than caution.
+    """
+    from fastapi.testclient import TestClient
+
+    from apps.api import execution as ex
+    from apps.api import execution_provider as provider_mod
+
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_realish")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "realish_secret")
+
+    class NeverListsAnything:
+        name = provider_mod.LIVE_TEST
+
+        def create_order(self, **kw):
+            raise ex.AmbiguousRemoteOutcome(
+                "simulated connection reset before dispatch", dispatched=False)
+
+        def find_order_by_correlation(self, **kw):
+            return None
+
+    monkeypatch.setattr(provider_mod, "get_provider", lambda: NeverListsAnything())
+
+    from apps.api.main import app
+    client = TestClient(app)
+
+    body = client.post("/discovery/checkout", json={
+        "sku": "BAT-001", "budget_paise": 300000, "fault": "remote_lost"}).json()
+    assert body["execution_state"] == ex.RECONCILIATION_REQUIRED
+
+    row = ex.get(body["execution_id"])
+    assert row["remote_error_code"] == ex.NEVER_DISPATCHED, \
+        "the executor must record that nothing was sent"
+
+    out = client.post(f"/discovery/reconcile/{body['execution_id']}").json()
+    assert out["state"] == ex.FAILED, \
+        "an undispatched request resolves on the first ask, not after a wait"
+    assert "never dispatched" in out["explanation"]
+
+
+def test_an_unknown_dispatch_state_still_waits(monkeypatch):
+    """The default is caution: a real reset may have written the socket."""
+    from apps.api import execution as ex
+
+    exc = ex.AmbiguousRemoteOutcome("ConnectionError: may have reached Razorpay")
+    assert exc.dispatched is True, (
+        "AmbiguousRemoteOutcome must default to 'possibly dispatched'; a real "
+        "connection error is not evidence that nothing was sent")
