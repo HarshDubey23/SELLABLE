@@ -188,3 +188,99 @@ def test_search_endpoint_exposes_provenance(client):
     assert set(data["evidence_legend"]) == {
         EVIDENCE_OBSERVED, EVIDENCE_FX_CONVERTED,
         EVIDENCE_MOCK_SOURCE, EVIDENCE_UNVERIFIED}
+
+
+# ------------------------------------------- whitelist + intent matching
+# Ported from commit ed163a7. These lock in the behaviour so a later
+# refactor cannot quietly reintroduce substring matching or a blocklist.
+
+def test_only_whitelisted_retail_domains_count_as_evidence():
+    from apps.api.discovery.pipeline import VERIFIED_RETAIL_DOMAINS
+
+    assert isinstance(VERIFIED_RETAIL_DOMAINS, dict)
+    assert VERIFIED_RETAIL_DOMAINS["amazon.in"] == "Amazon India"
+    # A whitelist, not a blocklist: the open web cannot be enumerated, so
+    # anything unknown must be excluded rather than the reverse.
+    for hostile in ("casino-bonus-india.xyz", "buy-cheap-seo-spam.top",
+                    "wikipedia.org", "reddit.com"):
+        assert hostile not in VERIFIED_RETAIL_DOMAINS
+
+
+def test_primary_nouns_are_separated_from_shopping_modifiers():
+    from apps.api.discovery.pipeline import _extract_tokens
+
+    tokens, nouns = _extract_tokens("best cricket shoes under 3000 online india")
+    assert "cricket" in nouns and "shoes" in nouns
+    for modifier in ("best", "under", "online", "india"):
+        assert modifier not in nouns
+    assert "cricket" in tokens
+
+
+def test_intent_matching_is_whole_word():
+    """The bug this fixes: 'cricket shoes' used to return a cricket bat."""
+    from apps.api.discovery.pipeline import _extract_tokens, _matches_query_intent
+
+    tokens, nouns = _extract_tokens("cricket shoes")
+
+    assert _matches_query_intent("Nivia Cricket Shoes for men", tokens, nouns)
+    assert not _matches_query_intent("SG Cricket Bat Kashmir Willow", tokens, nouns), \
+        "a bat must not satisfy a search for shoes"
+
+
+def test_intent_matching_rejects_substring_false_positives():
+    from apps.api.discovery.pipeline import _extract_tokens, _matches_query_intent
+
+    tokens, nouns = _extract_tokens("cricket bat")
+    assert not _matches_query_intent("AA batteries pack of 10", tokens, nouns), \
+        "'bat' must not match 'batteries'"
+
+
+def test_query_with_only_modifiers_still_matches_something():
+    """Degenerate input must not make every listing unmatchable."""
+    from apps.api.discovery.pipeline import _extract_tokens, _matches_query_intent
+
+    tokens, nouns = _extract_tokens("best cheapest online")
+    assert nouns == tokens, "with no nouns left, fall back to all tokens"
+    assert _matches_query_intent("best deals online", tokens, nouns)
+
+
+def test_platzi_is_labelled_a_mock_source_not_a_retailer():
+    """escuelajs.co is a teaching sandbox, not an 'Open Retail Storefront'."""
+    import inspect
+
+    from apps.api.discovery.pipeline import _query_platzi
+
+    src = inspect.getsource(_query_platzi)
+    assert "EVIDENCE_MOCK_SOURCE" in src
+    assert "PROVIDER_MOCK_API" in src
+    assert "price_source_verified=False" in src
+    assert "rating_verified=False" in src
+
+
+def test_no_provider_defaults_availability_to_verified():
+    """Availability must be observed, never assumed.
+
+    An earlier revision changed the model default to
+    availability='available', availability_verified=True — claiming a
+    verification that nothing performed.
+    """
+    from apps.api.discovery.pipeline import WebProductListing
+
+    listing = WebProductListing(
+        product_name="x", seller="s", seller_domain="d", url="u",
+        scraped_at="t", raw_evidence="e")
+    assert listing.availability == "unverified"
+    assert listing.availability_verified is False
+    assert listing.price_source_verified is False
+    assert listing.rating_verified is False
+
+
+def test_head_noun_is_required_not_merely_any_noun():
+    """"cricket shoes" is a kind of shoe, not a kind of cricket."""
+    from apps.api.discovery.pipeline import _extract_tokens, _matches_query_intent
+
+    tokens, nouns = _extract_tokens("cricket shoes")
+    assert nouns[-1] == "shoes", "the head noun is the last one"
+    assert _matches_query_intent("Nivia Cricket Shoes size 9", tokens, nouns)
+    assert not _matches_query_intent("Cricket Bat English Willow", tokens, nouns)
+    assert not _matches_query_intent("Cricket World Cup highlights", tokens, nouns)

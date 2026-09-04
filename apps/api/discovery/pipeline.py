@@ -208,28 +208,82 @@ class DiscoveryPipelineResult(BaseModel):
 
 
 # Non-product domains to strictly filter out from retail search
-EXCLUDED_NON_PRODUCT_DOMAINS = {
-    "wikipedia.org", "en.wikipedia.org", "en.m.wikipedia.org",
-    "cricinfo.com", "espncricinfo.com", "cricbuzz.com", "bbc.com", "bbc.co.uk",
-    "geeksforgeeks.org", "tutorialspoint.com", "w3schools.com", "computerhope.com",
-    "merriam-webster.com", "dictionary.cambridge.org", "thefreedictionary.com",
-    "dictionary.com", "britannica.com", "vocabulary.com", "thesaurus.com",
-    "oxfordlearnersdictionaries.com", "collinsdictionary.com", "moviefone.com", "imdb.com",
-    "github.com", "stackoverflow.com", "quora.com", "reddit.com", "zhihu.com", "csdn.net",
-    "medium.com", "substack.com", "bilibili.com", "weibo.com", "baidu.com",
-    "news18.com", "indiatoday.in", "timesofindia.indiatimes.com", "hindustantimes.com",
-    "microsoft.com", "support.microsoft.com", "support.google.com", "apple.com/support",
-    "airtel.in", "jio.com", "youbroadband.in", "turn2engineering.com",
-    "engineeringhulk.com", "aboutmech.com", "sih.gov.in", "indianbank.bank.in", "aao.org",
+# STRICT RETAIL WHITELIST — domain -> the seller name we will display.
+#
+# A whitelist, not a blocklist. Blocklists lose: the previous version
+# enumerated ~50 non-retail domains to exclude and still let casino pages
+# and SEO keyword-stuffing farms through, because you cannot enumerate the
+# open web. Anything not named here is simply not market evidence.
+#
+# Ported from HarshDubey23's commit ed163a7, which is the right call.
+VERIFIED_RETAIL_DOMAINS: dict[str, str] = {
+    "amazon.in": "Amazon India",
+    "amazon.com": "Amazon",
+    "flipkart.com": "Flipkart",
+    "croma.com": "Croma",
+    "decathlon.in": "Decathlon India",
+    "decathlon.com": "Decathlon",
+    "myntra.com": "Myntra",
+    "tatacliq.com": "Tata CLiQ",
+    "reliancedigital.in": "Reliance Digital",
+    "nykaa.com": "Nykaa",
+    "nykaafashion.com": "Nykaa Fashion",
+    "ajio.com": "AJIO",
+    "boat-lifestyle.com": "boAt Lifestyle",
+    "apple.com": "Apple Store",
+    "samsung.com": "Samsung Store",
+    "lenovo.com": "Lenovo Store",
+    "dell.com": "Dell Store",
+    "meesho.com": "Meesho",
+    "jiomart.com": "JioMart",
 }
 
-# Known verified retail platforms
-VERIFIED_RETAIL_DOMAINS = {
-    "amazon.in", "amazon.com", "flipkart.com", "croma.com", "decathlon.in",
-    "myntra.com", "tatacliq.com", "reliancedigital.in", "nykaa.com",
-    "nykaafashion.com", "ajio.com", "dummyjson.com", "boat-lifestyle.com",
-    "smartprix.com", "91mobiles.com", "meesho.com", "jiomart.com",
+# Words that describe how to shop rather than what to buy. Stripping them
+# leaves the product nouns, which is what a listing actually has to match.
+SEARCH_MODIFIERS = {
+    "best", "buy", "under", "cheap", "cheapest", "price", "inr", "rs", "online",
+    "india", "top", "good", "for", "with", "the", "and", "fast", "new", "latest",
+    "official", "original", "genuine", "set", "pack", "mini", "pro", "max",
+    "reviews", "rating", "quality",
 }
+
+
+def _extract_tokens(query: str) -> tuple[list[str], list[str]]:
+    """Split a query into all tokens and the product nouns among them."""
+    tokens = [t.lower() for t in re.split(r"[^\w]+", query)
+              if len(t) > 2 and not t.isdigit()]
+    nouns = [t for t in tokens if t not in SEARCH_MODIFIERS]
+    return tokens, (nouns or tokens)
+
+
+def _whole_word(term: str, text: str) -> bool:
+    return re.search(rf"\b{re.escape(term)}\b", text, re.I) is not None
+
+
+def _matches_query_intent(text: str, tokens: list[str],
+                          primary_nouns: list[str]) -> bool:
+    """Does this listing actually match what was asked for?
+
+    Two rules, in order of how much they matter:
+
+    1. **Whole words only.** Substring matching makes "bat" match
+       "batteries". Commit ed163a7 introduced this fix and it is right.
+
+    2. **The head noun must match.** ed163a7 accepted a listing if *any*
+       primary noun matched, which still let a search for "cricket shoes"
+       return a cricket bat — "cricket" matched and nothing checked the
+       thing being bought. In an English noun phrase the last noun is the
+       head: "cricket shoes" is a kind of shoe, not a kind of cricket. So
+       the head noun is required, and the qualifiers are a bonus.
+
+    With a single noun the two rules collapse into the same check.
+    """
+    if primary_nouns:
+        head = primary_nouns[-1]
+        if not _whole_word(head, text):
+            return False
+        return True
+    return any(_whole_word(t, text) for t in tokens)
 
 
 def _extract_price_from_text(text: str) -> dict[str, Any]:
@@ -311,7 +365,8 @@ def _extract_availability_from_text(text: str) -> tuple[str, bool]:
     return "unverified", False
 
 
-def _query_dummyjson(clean_q: str, now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
+def _query_dummyjson(clean_q: str, tokens: list[str], primary_nouns: list[str],
+                     now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
     """Provider: DummyJSON.
 
     DummyJSON is a public *mock* product API. Its catalog is synthetic and
@@ -325,120 +380,124 @@ def _query_dummyjson(clean_q: str, now_iso: str) -> tuple[list[WebProductListing
     data a real listing would be fabricating product listings.
     """
     try:
-        api_kw = re.sub(r"(?:best|buy|under|cheap|cheapest|price|inr|rs|online|india|\d+)", "", clean_q, flags=re.IGNORECASE).strip()
-        if not api_kw or len(api_kw) < 2:
-            api_kw = clean_q
+        # Search per product noun rather than on the whole phrase, and stop
+        # at the first term that returns anything (from commit ed163a7).
+        listings: list[WebProductListing] = []
+        for term in (primary_nouns[:3] or tokens[:3]):
+            p_url = ("https://dummyjson.com/products/search?q="
+                     + urllib.parse.quote(term) + "&limit=6")
+            req_p = urllib.request.Request(p_url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-DiscoveryAgent/1.0)",
+                "Accept": "application/json"
+            })
+            with urllib.request.urlopen(req_p, timeout=4) as r:
+                data = json.loads(r.read())
 
-        encoded_kw = urllib.parse.quote(api_kw)
-        p_url = f"https://dummyjson.com/products/search?q={encoded_kw}&limit=8"
-        req_p = urllib.request.Request(p_url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-DiscoveryAgent/1.0)",
-            "Accept": "application/json"
-        })
-        with urllib.request.urlopen(req_p, timeout=4) as r:
-            data = json.loads(r.read())
+            prods = data.get("products", [])
+            for p in prods:
+                if not _matches_query_intent(
+                        f"{p.get('title','')} {p.get('description','')} "
+                        f"{p.get('brand','')} {p.get('category','')}",
+                        tokens, primary_nouns):
+                    continue
+                usd_price = float(p.get("price", 0))
+                inr_estimate = round(usd_price * USD_INR_REFERENCE_RATE, 2)
 
-        prods = data.get("products", [])
-        if not prods:
-            return [], None, None
+                raw_ev = (f"{p.get('description')} Brand: {p.get('brand')}. "
+                          f"Stock: {p.get('stock')} units. "
+                          f"Category: {p.get('category')}.")
 
-        listings = []
-        for p in prods:
-            usd_price = float(p.get("price", 0))
-            inr_estimate = round(usd_price * USD_INR_REFERENCE_RATE, 2)
-
-            raw_ev = (f"{p.get('description')} Brand: {p.get('brand')}. "
-                      f"Stock: {p.get('stock')} units. "
-                      f"Category: {p.get('category')}.")
-
-            listings.append(
-                WebProductListing(
-                    product_name=p["title"],
-                    source_price=usd_price,
-                    source_currency="USD",
-                    price_present=usd_price > 0,
-                    price_paise=int(inr_estimate * 100),
-                    price_inr=inr_estimate,
-                    price_source_verified=False,
-                    fx_converted=True,
-                    fx_rate_used=USD_INR_REFERENCE_RATE,
-                    evidence_class=EVIDENCE_MOCK_SOURCE,
-                    seller="DummyJSON (synthetic catalog, not a retailer)",
-                    seller_domain="dummyjson.com",
-                    url=f"https://dummyjson.com/products/{p['id']}",
-                    rating=float(p["rating"]) if p.get("rating") is not None else None,
-                    rating_verified=False,
-                    availability="in_stock" if p.get("stock", 0) > 0 else "out_of_stock",
-                    availability_verified=False,
-                    scraped_at=now_iso,
-                    raw_evidence=raw_ev[:280],
-                    search_provider="DummyJSON mock product API",
-                    provider_kind=PROVIDER_MOCK_API,
-                    is_untrusted=True,
+                listings.append(
+                    WebProductListing(
+                        product_name=p["title"],
+                        source_price=usd_price,
+                        source_currency="USD",
+                        price_present=usd_price > 0,
+                        price_paise=int(inr_estimate * 100),
+                        price_inr=inr_estimate,
+                        price_source_verified=False,
+                        fx_converted=True,
+                        fx_rate_used=USD_INR_REFERENCE_RATE,
+                        evidence_class=EVIDENCE_MOCK_SOURCE,
+                        seller="DummyJSON (synthetic catalog, not a retailer)",
+                        seller_domain="dummyjson.com",
+                        url=f"https://dummyjson.com/products/{p['id']}",
+                        rating=(float(p["rating"])
+                                if p.get("rating") is not None else None),
+                        rating_verified=False,
+                        availability=("in_stock" if p.get("stock", 0) > 0
+                                      else "out_of_stock"),
+                        availability_verified=False,
+                        scraped_at=now_iso,
+                        raw_evidence=raw_ev[:280],
+                        search_provider="DummyJSON mock product API",
+                        provider_kind=PROVIDER_MOCK_API,
+                        is_untrusted=True,
+                    )
                 )
-            )
-        return listings, f"DummyJSON mock API ({len(prods)} synthetic records)", None
+            if listings:
+                break
+
+        hit_msg = (f"DummyJSON mock API ({len(listings)} synthetic records)"
+                   if listings else None)
+        return listings, hit_msg, None
     except Exception as e:
         return [], None, f"DummyJSON mock API: {type(e).__name__}: {str(e)[:80]}"
 
 
-def _query_bing_rss(clean_q: str, now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
-    """Provider worker: Query Bing RSS for retail storefront results."""
+def _query_bing_rss(clean_q: str, tokens: list[str], primary_nouns: list[str],
+                    now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
+    """Provider: Bing RSS, restricted to whitelisted retail storefronts.
+
+    Two filters, both from commit ed163a7 and both worth keeping:
+
+      1. The domain must be in VERIFIED_RETAIL_DOMAINS. Previously a
+         result was accepted if it merely contained a "shopping cue" word
+         like "buy" or "price", which is how casino pages and SEO
+         keyword-stuffing farms got in.
+      2. The title/description must match the query's primary nouns as
+         whole words, so a search for cricket *shoes* stops returning a
+         cricket *bat*.
+    """
     try:
-        retail_q = f"{clean_q} (site:amazon.in OR site:flipkart.com OR site:croma.com OR site:myntra.com OR site:decathlon.in OR site:tatacliq.com OR site:reliancedigital.in OR buy online price)"
-        encoded_q = urllib.parse.quote(retail_q)
+        site_filter = " OR ".join(f"site:{d}" for d in VERIFIED_RETAIL_DOMAINS)
+        encoded_q = urllib.parse.quote(f"{clean_q} ({site_filter})")
         bing_url = f"https://www.bing.com/search?q={encoded_q}&format=rss"
         req_b = urllib.request.Request(bing_url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0.0.0 Safari/537.36",
             "Accept": "application/rss+xml, application/xml, text/xml",
         })
         with urllib.request.urlopen(req_b, timeout=4) as r:
             xml_data = r.read()
 
         root = ET.fromstring(xml_data)
-        items = root.findall(".//item")
-
         listings = []
-        for it in items:
+        for it in root.findall(".//item"):
             title = it.find("title").text if it.find("title") is not None else ""
             link = it.find("link").text if it.find("link") is not None else ""
             desc = it.find("description").text if it.find("description") is not None else ""
 
             clean_title = _html.unescape(re.sub(r"<[^>]+>", "", title)).strip()
             clean_desc = _html.unescape(re.sub(r"<[^>]+>", "", desc)).strip()
-
             domain = urllib.parse.urlparse(link).netloc.replace("www.", "").lower()
-            if any(excl in domain for excl in EXCLUDED_NON_PRODUCT_DOMAINS):
+
+            # 1. whitelist only — anything not a known retailer is not evidence
+            seller = next((name for d, name in VERIFIED_RETAIL_DOMAINS.items()
+                           if domain == d or domain.endswith("." + d)), None)
+            if seller is None:
                 continue
 
-            combined_text = f"{clean_title} {clean_desc}".lower()
-            is_retail_domain = any(ret in domain for ret in VERIFIED_RETAIL_DOMAINS)
-            has_shopping_cues = any(w in combined_text for w in ["buy", "price", "rs", "₹", "inr", "order", "online", "shop", "store", "sale", "discount", "free delivery", "rating", "spec"])
-
-            if not is_retail_domain and not has_shopping_cues:
+            # 2. the listing must actually be about what was asked for
+            if not _matches_query_intent(f"{clean_title} {clean_desc}",
+                                         tokens, primary_nouns):
                 continue
-
-            seller = domain
-            if "amazon.in" in domain:
-                seller = "Amazon India"
-            elif "amazon.com" in domain:
-                seller = "Amazon"
-            elif "flipkart.com" in domain:
-                seller = "Flipkart"
-            elif "croma.com" in domain:
-                seller = "Croma"
-            elif "decathlon.in" in domain:
-                seller = "Decathlon India"
-            elif "myntra.com" in domain:
-                seller = "Myntra"
-            elif "tatacliq.com" in domain:
-                seller = "Tata CLiQ"
-            elif "reliancedigital.in" in domain:
-                seller = "Reliance Digital"
 
             price = _extract_price_from_text(f"{clean_title} {clean_desc}")
             r_val, r_ver = _extract_rating_from_text(f"{clean_title} {clean_desc}")
-            avail, avail_ver = _extract_availability_from_text(f"{clean_title} {clean_desc}")
+            avail, avail_ver = _extract_availability_from_text(
+                f"{clean_title} {clean_desc}")
 
             listings.append(
                 WebProductListing(
@@ -461,11 +520,79 @@ def _query_bing_rss(clean_q: str, now_iso: str) -> tuple[list[WebProductListing]
             if len(listings) >= 6:
                 break
 
-        hit_msg = (f"Live web search (Bing RSS): {len(listings)} storefront "
-                   f"result(s)") if listings else None
+        hit_msg = (f"Live web search (Bing RSS): {len(listings)} whitelisted "
+                   f"storefront result(s)") if listings else None
         return listings, hit_msg, None
     except Exception as e:
-        return [], None, f"Live Web Search: {type(e).__name__}: {str(e)[:80]}"
+        return [], None, f"Live web search: {type(e).__name__}: {str(e)[:80]}"
+
+
+def _query_platzi(clean_q: str, tokens: list[str], primary_nouns: list[str],
+                  now_iso: str) -> tuple[list[WebProductListing], str | None, str | None]:
+    """Provider: Platzi FakeStore.
+
+    Added in commit ed163a7 as an "Open Retail Storefront". It is not one —
+    api.escuelajs.co is a teaching sandbox with invented products and USD
+    test prices, in the same category as DummyJSON. So it is kept for
+    offline coverage and tagged MOCK_SOURCE, with nothing marked verified
+    and no contribution to market comparison.
+    """
+    try:
+        listings: list[WebProductListing] = []
+        for term in (primary_nouns[:2] or tokens[:2]):
+            url = ("https://api.escuelajs.co/api/v1/products/?title="
+                   + urllib.parse.quote(term))
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SELLABLE-DiscoveryAgent/1.0)",
+                "Accept": "application/json",
+            })
+            with urllib.request.urlopen(req, timeout=4) as r:
+                data = json.loads(r.read())
+
+            for item in data[:4]:
+                title = item.get("title", "")
+                desc = item.get("description", "")
+                if not _matches_query_intent(f"{title} {desc}", tokens, primary_nouns):
+                    continue
+
+                usd = float(item.get("price", 0))
+                inr_estimate = round(usd * USD_INR_REFERENCE_RATE, 2)
+                category = (item.get("category") or {}).get("name", "unknown")
+
+                listings.append(
+                    WebProductListing(
+                        product_name=title,
+                        source_price=usd,
+                        source_currency="USD",
+                        price_present=usd > 0,
+                        price_paise=int(inr_estimate * 100),
+                        price_inr=inr_estimate,
+                        price_source_verified=False,
+                        fx_converted=True,
+                        fx_rate_used=USD_INR_REFERENCE_RATE,
+                        evidence_class=EVIDENCE_MOCK_SOURCE,
+                        seller="Platzi FakeStore (teaching sandbox, not a retailer)",
+                        seller_domain="escuelajs.co",
+                        url=f"https://api.escuelajs.co/api/v1/products/{item.get('id')}",
+                        rating=None,
+                        rating_verified=False,
+                        availability="unverified",
+                        availability_verified=False,
+                        scraped_at=now_iso,
+                        raw_evidence=f"{desc} Category: {category}"[:280],
+                        search_provider="Platzi FakeStore mock API",
+                        provider_kind=PROVIDER_MOCK_API,
+                        is_untrusted=True,
+                    )
+                )
+            if listings:
+                break
+
+        hit_msg = (f"Platzi FakeStore mock API ({len(listings)} synthetic records)"
+                   if listings else None)
+        return listings, hit_msg, None
+    except Exception as e:
+        return [], None, f"Platzi mock API: {type(e).__name__}: {str(e)[:80]}"
 
 
 def search_live_web_providers(query: str, max_results: int = 10) -> tuple[list[WebProductListing], list[str], list[str]]:
@@ -479,12 +606,20 @@ def search_live_web_providers(query: str, max_results: int = 10) -> tuple[list[W
     providers_hit: list[str] = []
     errors: list[str] = []
 
-    # Run both live search providers concurrently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        f_dummy = executor.submit(_query_dummyjson, clean_q, now_iso)
-        f_bing = executor.submit(_query_bing_rss, clean_q, now_iso)
+    tokens, primary_nouns = _extract_tokens(clean_q)
 
-        for f in concurrent.futures.as_completed([f_dummy, f_bing]):
+    # Run the providers concurrently. Each returns (listings, hit, error);
+    # a provider that fails contributes an error string and nothing else,
+    # which is what lets the caller distinguish "found nothing" from
+    # "could not look".
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [
+            executor.submit(_query_bing_rss, clean_q, tokens, primary_nouns, now_iso),
+            executor.submit(_query_dummyjson, clean_q, tokens, primary_nouns, now_iso),
+            executor.submit(_query_platzi, clean_q, tokens, primary_nouns, now_iso),
+        ]
+
+        for f in concurrent.futures.as_completed(futures):
             res_items, hit_msg, err_msg = f.result()
             if res_items:
                 listings.extend(res_items)
@@ -561,7 +696,11 @@ def run_real_product_discovery(query: str,
     """
     now_iso = _dt.datetime.now(_dt.timezone.utc).isoformat()
     sanitized_query = sanitize_web_content(query).strip()
-    providers_queried = ["Live web search (Bing RSS)", "DummyJSON mock product API"]
+    providers_queried = [
+        "Live web search (Bing RSS, whitelisted retail domains)",
+        "DummyJSON mock product API",
+        "Platzi FakeStore mock API",
+    ]
 
     external, providers_hit, errors = search_live_web_providers(
         sanitized_query, max_results=10)
