@@ -183,10 +183,10 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **322 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **330 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
-| Gateway latency | p50 0.020 ms · p95 0.038 ms · p99 0.056 ms, over 2,000 in-process evaluations |
+| Gateway latency | p50 0.018 ms · p95 0.029 ms · p99 0.041 ms, over 2,000 in-process evaluations |
 | Catalog | 40 SKUs |
 
 Test coverage by area — the shape matters more than the total:
@@ -257,7 +257,7 @@ apps/api/
   ├── agent/                  buyer agent. Zero money authority
   ├── recovery/               executor-side payment recovery (NOT under agent/)
   └── issuer.py               in-process signer for the browser demo (disclosed)
-tests/                        322 tests
+tests/                        330 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents
