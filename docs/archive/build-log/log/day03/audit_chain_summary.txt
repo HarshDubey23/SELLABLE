@@ -1,0 +1,6 @@
+verified: True  entries: 59
+executor/order_created: 13
+gateway/verdict_emitted: 21
+merchant_ai/upsell_offered: 12
+system/GENESIS: 1
+system/PROOF_EMITTED: 12

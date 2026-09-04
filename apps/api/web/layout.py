@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
 from .icons import render_icon
 
 _THEME_PATH = Path(__file__).resolve().parent / "theme.css"

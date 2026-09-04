@@ -7,25 +7,20 @@ with cryptographic single-use approval bindings.
 """
 from __future__ import annotations
 
-import datetime as _dt
-import hashlib
-import json
 import time
+import uuid
 from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .. import config as app_config
-from .. import razorpay_client
-from ..approval import register as register_binding
 from ..audit import chain as audit_chain
-from ..gateway.types import Decision, Mission, Proposal, ProposalItem, Verdict
-from ..gateway.engine import evaluate as gateway_evaluate
-from ..gateway.mission_verify import sign_mission, verify_mission, dumps as _dumps
 from ..products import CATALOG
+from ..store import db as store
 from ..web.layout import render_page
-from .pipeline import run_real_product_discovery, DiscoveryPipelineResult
+from .pipeline import DiscoveryPipelineResult, run_real_product_discovery
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -36,11 +31,14 @@ class DiscoverySearchReq(BaseModel):
 
 
 class DiscoveryCheckoutReq(BaseModel):
-    sku: str = Field("EAR-001", description="Matched product SKU")
-    product_name: str = Field("TWS Earbuds 42H Playback", description="Product title")
-    amount_paise: int = Field(129900, gt=0, description="Exact order amount in paise")
-    budget_paise: int = Field(500000, gt=0, description="Buyer mandate budget limit")
-    category: str = Field("electronics", description="Product category")
+    sku: str = Field("EAR-001", description="Merchant SKU to buy")
+    budget_paise: int = Field(500000, gt=0, description="Signed mandate budget ceiling")
+    # Accepted for readability of client payloads and IGNORED by the server:
+    # the amount and category always come from the catalog.
+    product_name: str = Field("", description="ignored; server uses the catalog")
+    amount_paise: int = Field(1, description="ignored; server uses the catalog price")
+    category: str = Field("", description="ignored; server uses the catalog category")
+    fault: str = Field("", description="simulated-provider fault injection only")
 
 
 class DiscoveryConfirmReq(BaseModel):
@@ -59,145 +57,168 @@ async def api_search_products(req: DiscoverySearchReq) -> DiscoveryPipelineResul
 
 @router.post("/checkout")
 async def api_discovery_checkout(req: DiscoveryCheckoutReq) -> dict[str, Any]:
-    """Execute Policy Gateway validation, approval binding minting, and Razorpay test order creation."""
+    """Buy the merchant SKU — through the SAME executor the API path uses.
+
+    This route used to be a second money path: it signed its own mission,
+    registered a binding it never verified, called razorpay_client
+    directly, and on failure invented an order id and reported success.
+    That is exactly the "demo architecture vs real architecture" split a
+    reviewer should assume is there until proven otherwise.
+
+    It is now an orchestration over the canonical steps and nothing else:
+
+        issuer.issue_mission
+          -> tools.tool_quote            (server-side pricing)
+          -> tools.tool_submit_proposal  (gateway R1-R12 + approval binding)
+          -> issuer.issue_mandates       (user wallet stand-in)
+          -> tools.tool_create_order     (binding verify + execution machine)
+
+    If any step rejects, this route surfaces that rejection. It never
+    manufactures an order id and never reports a payment that did not
+    happen.
+    """
+    from .. import issuer
+    from .. import tools as tools_mod
+
     now_ts = int(time.time())
-    mission_id = f"msn_disc_{now_ts}"
+    mission_id = f"msn_disc_{now_ts}_{uuid.uuid4().hex[:8]}"
 
-    # Determine SKU & catalog price
-    sku = req.sku if req.sku in CATALOG else "EAR-001"
-    catalog_item = CATALOG.get(sku, CATALOG["EAR-001"])
-    category = catalog_item.get("category", req.category or "electronics")
-    amount_paise = catalog_item["price_paise"] if sku in CATALOG else (req.amount_paise or 129900)
+    if req.sku not in CATALOG:
+        raise HTTPException(400, detail={
+            "ok": False,
+            "error": {"error_code": "SKU_NOT_FOUND",
+                      "message": f"{req.sku} is not in the merchant catalog; "
+                                 f"SELLABLE can only sell what it stocks"}})
 
-    # 1. Deterministic Policy Gateway Evaluation (R1-R12)
-    m_dict = {
-        "mission_id": mission_id,
-        "intent": f"Buy {req.product_name} under Rs {req.budget_paise // 100}",
-        "budget_paise": req.budget_paise,
-        "allowed_categories": (category, "cricket", "electronics", "books", "apparel"),
-        "forbidden_categories": (),
-        "upsell_cap": 1.2,
-        "expires_at": now_ts + 3600,
-    }
-    sig = sign_mission(_dumps(m_dict))
-    mission = Mission(
-        mission_id=m_dict["mission_id"],
-        intent=m_dict["intent"],
-        budget_paise=m_dict["budget_paise"],
-        allowed_categories=m_dict["allowed_categories"],
-        forbidden_categories=m_dict["forbidden_categories"],
-        upsell_cap=m_dict["upsell_cap"],
-        expires_at=m_dict["expires_at"],
-        signature=sig,
-    )
+    catalog_item = CATALOG[req.sku]
+    category = catalog_item["category"]
 
-    proposal = Proposal(
+    # The amount is ALWAYS the server-side catalog price. Whatever the
+    # client (or a web listing, or an LLM) claimed is discarded; the quote
+    # below re-derives it from the catalog.
+
+    mission = issuer.issue_mission(
         mission_id=mission_id,
-        items=(ProposalItem(sku=sku, qty=1, price_paise=amount_paise),),
-        justification=f"Selected best product {req.product_name} via Discovery Pipeline",
-    )
-
-    verdict = gateway_evaluate(
-        mission=mission,
-        proposal=proposal,
-        catalog=CATALOG,
-        verify_fn=verify_mission,
-        state={},
+        intent=f"buy {catalog_item['name']} within Rs {req.budget_paise // 100}",
+        allowed_categories=(category,),
+        budget_paise=req.budget_paise,
+        upsell_cap=1.0,
         now_ts=now_ts,
     )
 
-    if verdict.decision != Decision.APPROVE:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "POLICY_GATEWAY_REJECT",
-                "rule_id": verdict.rule_id,
-                "reason": verdict.reason,
-            }
-        )
+    quote = await tools_mod.tool_quote(tools_mod.QuoteReq(
+        items=[{"sku": req.sku, "qty": 1}], mission_id=mission_id))
 
-    # 2. Mint Single-Use Cryptographic Approval Binding in SQLite
-    proposal_hash = hashlib.sha256(f"{mission_id}:{sku}:{amount_paise}".encode()).hexdigest()
-    binding = register_binding(
-        seq=now_ts,
+    proposal = await tools_mod.tool_submit_proposal(tools_mod.ProposalReq(
+        mission={k: v for k, v in mission.items() if k != "issued_by"},
+        items=[{"sku": req.sku, "qty": 1}]))
+
+    verdict = proposal["data"]
+    if verdict["decision"] != "APPROVE":
+        raise HTTPException(400, detail={
+            "ok": False,
+            "error": {"error_code": "POLICY_GATEWAY_REJECT",
+                      "rule_id": verdict["rule_id"],
+                      "message": verdict["reason"],
+                      "rule_matrix": verdict["rule_matrix"]}})
+
+    intent_blob, cart_blob = issuer.issue_mandates(
         mission_id=mission_id,
-        proposal_hash=proposal_hash,
-        cart_hash=proposal_hash,
-        quote_id=f"quote_disc_{now_ts}",
-        amount_paise=amount_paise,
-        currency="INR",
-        skus=[(sku, 1)],
+        proposal_hash=verdict["proposal_hash"],
+        amount_paise=quote["total_paise"],
+        ceiling_paise=req.budget_paise,
+        now_ts=now_ts,
     )
 
-    # 3. Create Live Razorpay Test Order
-    try:
-        order = razorpay_client.create_order(
-            amount_paise=amount_paise,
-            receipt=f"rcpt_disc_{now_ts}",
-            notes={
-                "source": "discovery_agent",
-                "sku": sku,
-                "mission_id": mission_id,
-                "binding": binding.proposal_hash[:16],
-            }
-        )
-        order_id = order.get("id", f"order_test_{now_ts}")
-    except Exception:
-        order_id = f"order_test_{now_ts}"
-
-    # 4. Record to Tamper-Evident SHA-256 Audit Ledger
-    audit_chain.append(
-        actor="buyer_agent",
-        action="DISCOVERY_PURCHASE_ORDER_CREATED",
-        payload={
-            "mission_id": mission_id,
-            "sku": sku,
-            "amount_paise": amount_paise,
-            "razorpay_order_id": order_id,
-            "binding_hash": binding.proposal_hash,
-            "gateway_verdict": str(verdict.decision),
-        }
+    order = await tools_mod.tool_create_order(
+        tools_mod.CreateOrderReq(
+            quote_id=quote["quote_id"],
+            proposal_hash=verdict["proposal_hash"],
+            approve_seq=proposal["seq"],
+            intent_mandate=intent_blob,
+            cart_mandate=cart_blob,
+        ),
+        x_idempotency_key=f"disc_{mission_id}",
+        x_sellable_fault=req.fault or "",
     )
-    block_hash = audit_chain._head_hash()
-
-    key_id = app_config.get().razorpay_key_id
 
     return {
         "ok": True,
-        "status": "ORDER_CREATED_READY_FOR_PAYMENT",
-        "order_id": order_id,
-        "amount_paise": amount_paise,
-        "amount_inr": amount_paise / 100.0,
+        "status": "ORDER_CREATED_AWAITING_PAYMENT",
+        "authorization_issued_by": issuer.ISSUER_LABEL,
+        "mission_id": mission_id,
+        "sku": req.sku,
+        "product_name": catalog_item["name"],
+        "amount_paise": order["amount_paise"],
+        "amount_inr": order["amount_paise"] / 100.0,
         "currency": "INR",
-        "product_name": req.product_name,
-        "sku": sku,
-        "razorpay_key_id": key_id,
-        "binding_hash": binding.proposal_hash,
-        "audit_block_hash": block_hash,
-        "gateway_verdict": str(verdict.decision),
+        "priced_from": "server-side merchant catalog",
+        "order_id": order["order_id"],
+        "execution_id": order["execution_id"],
+        "execution_state": order["execution_state"],
+        "provider": order["provider"],
+        "proposal_hash": verdict["proposal_hash"],
+        "approve_seq": proposal["seq"],
+        "gateway_decision": verdict["decision"],
+        "policy_version": verdict["policy_version"],
+        "audit_head_hash": audit_chain._head_hash(),
+        "razorpay_key_id": app_config.get().razorpay_key_id,
     }
 
 
-@router.post("/confirm-payment")
-async def api_discovery_confirm_payment(req: DiscoveryConfirmReq) -> dict[str, Any]:
-    """Settle test payment and record cryptographic receipt in audit chain."""
-    payment_id = req.payment_id or f"pay_test_{int(time.time())}"
-    audit_chain.append(
-        actor="razorpay_webhook",
-        action="DISCOVERY_PAYMENT_CAPTURED",
-        payload={
-            "order_id": req.order_id,
-            "payment_id": payment_id,
-            "status": "captured",
-            "settled_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-        }
-    )
+@router.post("/reconcile/{execution_id}")
+async def api_discovery_reconcile(execution_id: str) -> dict[str, Any]:
+    """Storefront-side recovery action, delegating to the one reconciler.
+
+    Same code path as POST /executions/{id}/reconcile — this exists only
+    because that endpoint sits behind the agent API key, and recovery on
+    the storefront is a customer-facing action rather than an agent one.
+    There is no second reconciliation implementation.
+    """
+    from ..execution_api import reconcile
+
+    return reconcile(execution_id)
+
+
+@router.get("/payment-status/{order_id}")
+async def api_discovery_payment_status(order_id: str) -> dict[str, Any]:
+    """Report what is actually known about a payment. Nothing is asserted.
+
+    This replaces a route that accepted a payment_id from the caller and
+    wrote a `captured` entry into the audit chain — manufacturing a
+    settlement that no payment system had confirmed. Settlement facts come
+    from one of exactly two places: a signature-verified webhook, or an
+    authoritative read from the provider.
+    """
+    from ..webhook.receiver import payment_ledger
+
+    order = store.query_one("SELECT * FROM orders WHERE order_id = ?", (order_id,))
+    if order is None:
+        raise HTTPException(404, detail=f"unknown order {order_id}")
+
+    exec_row = store.query_one(
+        "SELECT * FROM payment_executions WHERE remote_order_id = ?", (order_id,))
+    ledger_entry = payment_ledger.get(order_id)
+
+    if ledger_entry and ledger_entry.get("status") == "captured":
+        settlement = "CAPTURED_CONFIRMED_BY_SIGNED_WEBHOOK"
+    elif ledger_entry:
+        settlement = f"WEBHOOK_REPORTED_{ledger_entry['status'].upper()}"
+    else:
+        settlement = "NO_SETTLEMENT_EVENT_RECEIVED"
+
     return {
-        "ok": True,
-        "status": "PAID_AND_SETTLED",
-        "order_id": req.order_id,
-        "payment_id": payment_id,
-        "audit_block_hash": audit_chain._head_hash(),
+        "order_id": order_id,
+        "amount_paise": order["amount_paise"],
+        "local_order_status": order["status"],
+        "execution_state": exec_row["state"] if exec_row else None,
+        "execution_id": exec_row["execution_id"] if exec_row else None,
+        "provider": exec_row["provider"] if exec_row else None,
+        "settlement": settlement,
+        "webhook_events": (ledger_entry or {}).get("events", []),
+        "note": ("settlement is reported only from signature-verified webhook "
+                 "events or an authoritative provider read; this endpoint "
+                 "never asserts a payment on its own"),
     }
 
 
@@ -278,7 +299,7 @@ async def discovery_ui():
           <label style="display:block;font-size:11px;font-weight:700;color:var(--text-2);margin-bottom:4px;text-transform:uppercase;">
             Product Search Query (Intent)
           </label>
-          <input type="text" id="query-input" value="bluetooth wireless headphones under 5000" 
+          <input type="text" id="query-input" value="bluetooth wireless headphones under 5000"
                  style="width:100%;background:var(--bg-canvas);border:1px solid var(--border-subtle);
                         border-radius:6px;padding:10px 14px;color:#fff;font-size:13px;" required />
         </div>
@@ -386,8 +407,8 @@ async def discovery_ui():
           <button class="btn btn-primary" id="btn-open-rzp-popup" onclick="openRazorpayPopup()">
             &#128179; Open Official Razorpay Checkout Modal (Popup)
           </button>
-          <button class="btn btn-outline" style="border-color:var(--border-cyan);color:var(--rzp-cyan);" onclick="simulateTestPayment()">
-            &#9889; Simulate Instant Test Payment Success
+          <button class="btn btn-outline" style="border-color:var(--border-cyan);color:var(--rzp-cyan);" onclick="refreshPaymentStatus()">
+            &#128269; Read authoritative payment state
           </button>
         </div>
 
@@ -513,7 +534,7 @@ async def discovery_ui():
         const ratingHtml = it.rating_verified && it.rating ?
           ('<span style="color:#f59e0b;">&#9733; ' + it.rating + '</span> &middot; ') : '';
 
-        div.innerHTML = 
+        div.innerHTML =
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
             '<div style="flex:1;">' +
               '<div style="font-weight:700;font-size:14px;color:#fff;">' + (idx+1) + '. ' + it.product_name + '</div>' +
@@ -528,7 +549,7 @@ async def discovery_ui():
               priceHtml +
             '</div>' +
           '</div>' +
-          
+
           '<div style="margin-top:8px;background:rgba(0,0,0,0.3);border-left:3px solid var(--rzp-cyan);padding:8px 10px;border-radius:4px;">' +
             '<div style="font-size:9.5px;font-weight:700;color:var(--rzp-cyan);text-transform:uppercase;margin-bottom:3px;">Live Source Evidence (' + it.search_provider + '):</div>' +
             '<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-2);line-height:1.4;">"' + it.raw_evidence + '"</div>' +
@@ -615,8 +636,8 @@ async def discovery_ui():
       document.getElementById('razorpay-order-terminal').style.display = 'block';
       document.getElementById('order-id-display').textContent = data.order_id;
       document.getElementById('order-amount-display').innerHTML = '&#8377;' + data.amount_inr.toFixed(2);
-      document.getElementById('order-binding-display').textContent = data.binding_hash.slice(0, 20) + '...';
-      document.getElementById('order-audit-display').textContent = data.audit_block_hash.slice(0, 20) + '...';
+      document.getElementById('order-binding-display').textContent = (data.proposal_hash || '').slice(0, 20) + '...';
+      document.getElementById('order-audit-display').textContent = (data.audit_head_hash || '').slice(0, 20) + '...';
 
     } catch (err) {
       btn.disabled = false;
@@ -630,7 +651,7 @@ async def discovery_ui():
       return;
     }
     if (typeof Razorpay === 'undefined') {
-      alert('Razorpay Checkout SDK is still loading or unavailable. Use the Instant Simulate button.');
+      alert('Razorpay Checkout SDK is unavailable. Use \\'Read authoritative payment state\\' to inspect what is actually known about this order.');
       return;
     }
     const options = {
@@ -641,7 +662,7 @@ async def discovery_ui():
       "description": CURRENT_ORDER.product_name,
       "order_id": CURRENT_ORDER.order_id,
       "handler": function (response) {
-        completePaymentSettlement(response.razorpay_payment_id || 'pay_test_live');
+        completePaymentSettlement();
       },
       "prefill": {
         "name": "AI Buyer Agent",
@@ -657,33 +678,26 @@ async def discovery_ui():
     rzp.open();
   }
 
-  async function simulateTestPayment() {
+  async function refreshPaymentStatus() {
     if (!CURRENT_ORDER) return;
-    const fakePayId = 'pay_sim_' + Date.now();
-    await completePaymentSettlement(fakePayId);
+    try {
+      const res = await fetch('/discovery/payment-status/' + CURRENT_ORDER.order_id);
+      const data = await res.json();
+      const banner = document.getElementById('payment-success-banner');
+      banner.style.display = 'block';
+      document.getElementById('payment-success-details').innerHTML =
+        'Execution state: <b>' + (data.execution_state || 'unknown') + '</b> &middot; ' +
+        'Settlement: <b>' + data.settlement + '</b> &middot; provider: ' + (data.provider || 'n/a') +
+        '<br><span style="opacity:.75">' + data.note + '</span>';
+    } catch (err) {
+      alert('Status read failed: ' + err.message);
+    }
   }
 
-  async function completePaymentSettlement(paymentId) {
-    try {
-      const res = await fetch('/discovery/confirm-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_id: CURRENT_ORDER.order_id,
-          payment_id: paymentId
-        })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        const banner = document.getElementById('payment-success-banner');
-        banner.style.display = 'block';
-        document.getElementById('payment-success-details').innerHTML =
-          'Order ID: <b>' + data.order_id + '</b> &middot; Payment ID: <b>' + data.payment_id + '</b> &middot; ' +
-          'Tamper-evident audit block: <span style="font-family:var(--font-mono);">' + data.audit_block_hash.slice(0, 16) + '...</span>';
-      }
-    } catch (err) {
-      alert('Settlement recording error: ' + err.message);
-    }
+  function completePaymentSettlement() {
+    // Settlement is never asserted from the browser. We re-read authoritative
+    // state instead: a signature-verified webhook or a provider read.
+    refreshPaymentStatus();
   }
 
   // Auto-run on first load

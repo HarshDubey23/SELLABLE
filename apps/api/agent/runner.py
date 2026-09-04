@@ -27,16 +27,28 @@ async def run_mission_endpoint(mission_data: dict | None = None):
             raise HTTPException(500, detail="default scenario not found")
         mission_data = scenario["mission"]
 
-    # Demo convenience: the Live Mission UI sends a placeholder signature
-    # because the browser must not hold MISSION_HMAC_KEY. The server
-    # (which does hold the key) re-signs the mission for the demo run.
-    # The custody invariant is preserved for all non-demo callers.
+    # The Live Mission UI cannot hold MISSION_HMAC_KEY, so it sends a
+    # placeholder and asks the server to issue the mission. That is the
+    # in-process issuer path: integrity without custody. It goes through
+    # apps/api/issuer.py so there is exactly ONE place in the codebase
+    # where the server signs on a user's behalf, and every response it
+    # produces is tagged authorization_issued_by.
     sig = mission_data.get("signature", "")
-    if sig == "__server_will_resign__" or sig == "__demo__":
-        from ..gateway.mission_verify import dumps as _dumps
-        from ..gateway.mission_verify import sign_mission as _sign
-        tmp = {k: v for k, v in mission_data.items() if k != "signature"}
-        mission_data["signature"] = _sign(_dumps(tmp))
+    if sig in ("__server_will_resign__", "__demo__"):
+        from ..issuer import ISSUER_LABEL, issue_mission
+        issued = issue_mission(
+            mission_id=str(mission_data.get("mission_id", "")),
+            intent=str(mission_data.get("intent", "")),
+            budget_paise=int(mission_data.get("budget_paise", 0)),
+            allowed_categories=tuple(mission_data.get("allowed_categories") or ()),
+            forbidden_categories=tuple(mission_data.get("forbidden_categories") or ()),
+            upsell_cap=float(mission_data.get("upsell_cap", 1.0)),
+            ttl_seconds=max(60, int(mission_data.get("expires_at", 0))
+                            - int(__import__("time").time())) or 3600,
+        )
+        mission_data["signature"] = issued["signature"]
+        mission_data["expires_at"] = issued["expires_at"]
+        mission_data["authorization_issued_by"] = ISSUER_LABEL
 
     for field in REQUIRED_MISSION_FIELDS:
         if field not in mission_data:
@@ -93,8 +105,7 @@ async def run_full_mission_ui(payload: dict | None = None):
     """
     import time
 
-    from ..gateway.mission_verify import dumps as _dumps
-    from ..gateway.mission_verify import sign_mission as _sign
+    from ..issuer import ISSUER_LABEL, issue_mission
 
     if not payload:
         payload = {}
@@ -109,18 +120,16 @@ async def run_full_mission_ui(payload: dict | None = None):
 
     now_ts = int(time.time())
     mission_id = f"MSN-UI-{now_ts}"
-    mission_dict = {
-        "mission_id": mission_id,
-        "intent": intent,
-        "budget_paise": budget_paise,
-        "allowed_categories": allowed_categories,
-        "forbidden_categories": [],
-        "upsell_cap": upsell_cap,
-        "expires_at": now_ts + 3600,
-    }
-
-    sig = _sign(_dumps(mission_dict))
-    mission_dict["signature"] = sig
+    mission_dict = issue_mission(
+        mission_id=mission_id,
+        intent=intent,
+        budget_paise=budget_paise,
+        allowed_categories=tuple(allowed_categories),
+        upsell_cap=upsell_cap,
+        ttl_seconds=3600,
+        now_ts=now_ts,
+    )
+    mission_dict["authorization_issued_by"] = ISSUER_LABEL
 
     res = await run_mission(mission_dict)
 

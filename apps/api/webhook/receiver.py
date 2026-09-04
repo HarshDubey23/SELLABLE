@@ -1,13 +1,30 @@
-"""Razorpay Webhook Receiver — Durable Lifecycle.
+"""
+Razorpay Webhook Receiver.
 
-Lifecycle: RECEIVED → PERSISTED → AUDITED → APPLIED
+Key behaviors:
+1. RAW body HMAC verification before json.loads().
+2. Event deduplication keyed strictly on X-Razorpay-Event-Id header,
+   backed by a DURABLE processing lifecycle (RECEIVED -> APPLIED) rather
+   than by "a row exists". A crash between persistence and audit must
+   leave the event replayable, not silently complete.
+3. Out-of-order tolerant payment status ledger (created < authorized < captured < refunded).
+4. Append-only logging to events.log and audit chain on payment.captured.
+5. Every event is persisted to SQLite; the dedup set and payment ledger
+   are rebuilt from disk at boot, so restarts lose nothing.
 
-- HMAC-first verification before any state change
-- Race-safe dedup: only skip events already APPLIED
-- Restart-safe: rebuild lifecycle from DB on boot
-- Monotonic: state only advances forward
-- Every transition audited
-- Persist before mark-as-seen: if DB fails, retry is allowed
+WHY THE LIFECYCLE COLUMN EXISTS
+-------------------------------
+The obvious implementation persists the event, then audits it, then
+returns 200 — and rebuilds the dedup set at boot from "every event_id in
+the table". That is wrong. If the process dies after the INSERT and
+before the audit append, the next boot sees the row, calls the event
+already-processed, and Razorpay's retry is answered with a cheerful
+duplicate-ack. The capture is now permanently missing from the audit
+chain and nothing ever notices.
+
+So an event is only *processed* once it reaches APPLIED. Rows stuck in
+RECEIVED are surfaced at boot and at GET /webhook/pending, and a retry
+of one is reprocessed rather than acked away.
 """
 
 import datetime
@@ -24,9 +41,10 @@ from ..store import db as store
 
 router = APIRouter()
 
-LIFECYCLE_STATES = ("RECEIVED", "PERSISTED", "AUDITED", "APPLIED")
+processed_event_ids: set[str] = set()
+payment_ledger: dict[str, dict] = {}
 
-_STATUS_RANK = {
+STATUS_RANK = {
     "created": 0,
     "authorized": 1,
     "captured": 2,
@@ -34,20 +52,7 @@ _STATUS_RANK = {
 }
 
 
-def _load_lifecycle_state() -> None:
-    """Rebuild in-memory processed set from APPLIED events in DB."""
-    global _processed_event_ids
-    rows = store.query(
-        "SELECT event_id FROM webhook_lifecycle WHERE lifecycle_state = 'APPLIED'"
-    )
-    _processed_event_ids = {row["event_id"] for row in rows}
-
-
-_processed_event_ids: set[str] = set()
-_load_lifecycle_state()
-
-
-def log_line(msg: str) -> None:
+def log_line(msg: str):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
     print(line)
@@ -58,24 +63,73 @@ def log_line(msg: str) -> None:
         pass
 
 
-def _advance_lifecycle(event_id: str, target_state: str, reason: str = "") -> None:
-    """Advance lifecycle state monotonically. Only advances forward."""
-    store.execute(
-        "UPDATE webhook_lifecycle SET lifecycle_state = ?, applied_at = ? WHERE event_id = ? AND lifecycle_state != 'APPLIED'",
-        (target_state, int(time.time()), event_id),
-    )
-    if target_state == "APPLIED":
-        _processed_event_ids.add(event_id)
+RECEIVED = "RECEIVED"
+APPLIED = "APPLIED"
 
 
-def _set_lifecycle_state(event_id: str, state: str) -> None:
-    """Set lifecycle state directly (for initialization)."""
-    store.execute(
-        "UPDATE webhook_lifecycle SET lifecycle_state = ? WHERE event_id = ?",
-        (state, event_id),
+def pending_events() -> list[dict]:
+    """Events that were persisted but never fully applied.
+
+    A non-empty list means a process died mid-handling. Razorpay retries
+    will resolve them; until then they are visible rather than hidden.
+    """
+    return store.query(
+        "SELECT event_id, event_type, order_id, payment_id, status, received_at "
+        "FROM webhook_events WHERE processing_state IS NOT ? ORDER BY received_at",
+        (APPLIED,),
     )
-    if state == "APPLIED":
-        _processed_event_ids.add(event_id)
+
+
+def _load_persisted_state() -> None:
+    """Rebuild the dedup set and payment ledger from the DB on boot.
+
+    Only APPLIED events count as processed. An event still in RECEIVED
+    was interrupted, so it stays replayable.
+    """
+    global processed_event_ids, payment_ledger
+
+    for row in store.query(
+            "SELECT event_id FROM webhook_events WHERE processing_state = ?",
+            (APPLIED,)):
+        processed_event_ids.add(row["event_id"])
+
+    stuck = pending_events()
+    if stuck:
+        print(f"[BOOT] webhook recovery: {len(stuck)} event(s) persisted but "
+              f"not applied; they remain replayable "
+              f"{[e['event_id'] for e in stuck]}")
+
+    # Rebuild ledger by replaying persisted events through the same
+    # status hierarchy the live handler uses (stale events never win).
+    for ev in store.query(
+        "SELECT order_id, event_type, payment_id, amount_paise, status "
+        "FROM webhook_events WHERE order_id IS NOT NULL "
+        "AND order_id != 'no-order' AND processing_state = ? "
+        "ORDER BY received_at", (APPLIED,)
+    ):
+        entry = payment_ledger.setdefault(ev["order_id"], {
+            "order_id": ev["order_id"],
+            "payment_id": ev["payment_id"] or "",
+            "status": "created",
+            "amount_paise": ev["amount_paise"] or 0,
+            "events": [],
+            "last_event_id": "",
+        })
+        if ev["payment_id"] and not entry.get("payment_id"):
+            entry["payment_id"] = ev["payment_id"]
+        new_rank = STATUS_RANK.get(ev["status"], -1)
+        old_rank = STATUS_RANK.get(entry["status"], -1)
+        if new_rank > old_rank:
+            entry["status"] = ev["status"]
+            entry["amount_paise"] = ev["amount_paise"] or 0
+        entry["events"].append({
+            "event": ev["event_type"], "event_id": "(persisted)",
+            "payment_id": ev["payment_id"] or "", "status": ev["status"],
+            "ts": "(pre-boot)",
+        })
+
+
+_load_persisted_state()
 
 
 @router.post("/webhook")
@@ -84,7 +138,6 @@ async def webhook(
     x_razorpay_signature: str = Header(default=""),
     x_razorpay_event_id: str = Header(default=""),
 ):
-    """Durable webhook handler with RECEIVED → PERSISTED → AUDITED → APPLIED lifecycle."""
     webhook_secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
     if not webhook_secret:
         log_line("[SECURITY] WEBHOOK_SECRET missing — failing closed (503)")
@@ -121,33 +174,21 @@ async def webhook(
             },
         )
 
-    # ---- PHASE 1: Parse event ID ----
+    # ---- PHASE 1: Idempotency (duplicate -> ack 200, NO-OP) ----
     event_id = x_razorpay_event_id.strip()
     if not event_id:
         event_id = "no-header-" + hashlib.sha256(body).hexdigest()[:16]
 
-    # ---- Race-safe dedup: only skip if already APPLIED ----
-    if event_id in _processed_event_ids:
-        log_line(f"[DUPLICATE] {event_id} already APPLIED -> ack 200, no-op")
+    if event_id in processed_event_ids:
+        log_line(f"[DUPLICATE] {event_id} already processed -> ack 200, no-op")
         return {"status": "ok", "duplicate": True, "event_id": event_id}
+
+    # Do NOT mark as seen before persistence — if DB fails, retry must be allowed
 
     # ---- PHASE 2: Parse payload ----
     try:
         event = json.loads(body)
     except Exception as e:
-        # Mark as AUDITED with error so it won't be retried endlessly
-        try:
-            store.execute(
-                "INSERT OR REPLACE INTO webhook_lifecycle "
-                "(event_id, event_type, order_id, payment_id, amount_paise, status, "
-                "lifecycle_state, hmac_valid, received_at, persisted_at, error_reason) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'AUDITED', 1, ?, ?, ?)",
-                (event_id, "malformed", "no-order", "", 0, "unknown",
-                 int(time.time()), int(time.time()), f"malformed json: {str(e)}"),
-            )
-            _set_lifecycle_state(event_id, "AUDITED")
-        except Exception:
-            pass
         raise HTTPException(
             status_code=400,
             detail={
@@ -161,7 +202,6 @@ async def webhook(
             },
         )
 
-    # ---- PHASE 3: PERSIST before any state mutation ----
     event_name = event.get("event", "unknown")
     payment = (
         event.get("payload", {}).get("payment", {}).get("entity", {})
@@ -172,18 +212,18 @@ async def webhook(
     amount = payment.get("amount", 0)
     status = payment.get("status", "unknown")
 
-    # Transition RECEIVED -> PERSISTED
+    # ---- PERSIST: the event hits disk before any state mutation ----
+    # If persistence fails, do NOT mark as seen — allow Razorpay retry
     try:
         store.execute(
-            "INSERT OR REPLACE INTO webhook_lifecycle "
+            "INSERT OR IGNORE INTO webhook_events "
             "(event_id, event_type, order_id, payment_id, amount_paise, status, "
-            "lifecycle_state, hmac_valid, received_at, persisted_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'PERSISTED', 1, ?, ?)",
+            " received_at, processing_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (event_id, event_name, order_id, payment_id, amount, status,
-             int(time.time()), int(time.time())),
+             int(time.time()), RECEIVED)
         )
     except Exception as e:
-        log_line(f"[PERSIST-FAIL] event {event_id} not persisted: {e}")
+        log_line(f"[PERSIST-FAIL] event {event_id} not persisted: {e} — will allow retry")
         raise HTTPException(
             status_code=503,
             detail={
@@ -196,25 +236,9 @@ async def webhook(
             },
         )
 
-    # Also persist to webhook_events for backward compat
-    try:
-        store.execute(
-            "INSERT OR IGNORE INTO webhook_events "
-            "(event_id, event_type, order_id, payment_id, amount_paise, status, "
-            "received_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (event_id, event_name, order_id, payment_id, amount, status,
-             int(time.time())),
-        )
-    except Exception:
-        pass
-
-    # ---- PHASE 4: Update ledger (hierarchy enforcement) ----
-    # Use in-memory ledger for runtime; rebuilt from DB on boot.
-    if not hasattr(webhook, "_ledger"):
-        webhook._ledger = {}
-    ledger = webhook._ledger
-    if order_id not in ledger:
-        ledger[order_id] = {
+    # ---- PHASE 3: Update ledger (hierarchy enforcement) ----
+    if order_id not in payment_ledger:
+        payment_ledger[order_id] = {
             "order_id": order_id,
             "payment_id": payment_id,
             "status": status,
@@ -222,9 +246,11 @@ async def webhook(
             "events": [],
             "last_event_id": event_id,
         }
-    entry = ledger[order_id]
+
+    entry = payment_ledger[order_id]
     if payment_id and not entry.get("payment_id"):
         entry["payment_id"] = payment_id
+
     entry["events"].append({
         "event": event_name,
         "event_id": event_id,
@@ -232,8 +258,10 @@ async def webhook(
         "status": status,
         "ts": datetime.datetime.now().isoformat(),
     })
-    new_rank = _STATUS_RANK.get(status, -1)
-    old_rank = _STATUS_RANK.get(entry["status"], -1)
+
+    new_rank = STATUS_RANK.get(status, -1)
+    old_rank = STATUS_RANK.get(entry["status"], -1)
+
     if new_rank > old_rank:
         entry["status"] = status
         entry["amount_paise"] = amount
@@ -241,9 +269,14 @@ async def webhook(
         log_line(
             f"[LEDGER] {order_id} -> {status} (Rs {amount/100:,.0f}) event={event_name} id={event_id}"
         )
+    else:
+        log_line(
+            f"[LEDGER-SKIP] {order_id} {event_name} (stale, current={entry['status']})"
+        )
 
-    # ---- PHASE 5: AUDIT on payment.captured ----
+    # ---- PHASE 4: Audit Chain append on payment.captured ----
     if event_name == "payment.captured" or status == "captured":
+        # PERSIST: reflect capture onto the durable order row.
         try:
             store.execute(
                 "UPDATE orders SET status = ? WHERE order_id = ?",
@@ -263,9 +296,7 @@ async def webhook(
                 },
             )
         except Exception as e:
-            log_line(f"[AUDIT-FAIL] failed to append payment_captured to chain: {e}")
-            # AUDIT failure -> mark AUDITED with error, allow reconciliation
-            _set_lifecycle_state(event_id, "AUDITED")
+            log_line(f"[AUDIT-FAIL] failed to append payment_captured to chain: {e} — failing closed")
             raise HTTPException(
                 status_code=503,
                 detail={
@@ -278,41 +309,29 @@ async def webhook(
                 },
             )
 
-    # ---- PHASE 6: Transition to APPLIED ----
-    _advance_lifecycle(event_id, "APPLIED")
+    # ---- PHASE 5: commit the lifecycle ------------------------------
+    # Persistence, ledger application and audit have all succeeded. Only
+    # now does the event become durably "processed": the APPLIED marker is
+    # what a future boot trusts, not the mere existence of the row.
+    store.execute(
+        "UPDATE webhook_events SET processing_state = ?, applied_at = ? "
+        "WHERE event_id = ?",
+        (APPLIED, int(time.time()), event_id),
+    )
+    processed_event_ids.add(event_id)
+    return {"status": "ok", "event_id": event_id, "event": event_name,
+            "order_id": order_id, "processing_state": APPLIED}
 
-    return {"status": "ok", "event_id": event_id, "event": event_name, "order_id": order_id}
+
+@router.get("/webhook/pending")
+def webhook_pending():
+    """Events persisted but not yet applied — the crash-window surface."""
+    stuck = pending_events()
+    return {"pending_count": len(stuck), "pending": stuck,
+            "applied_count": len(processed_event_ids),
+            "lifecycle": [RECEIVED, APPLIED]}
 
 
 @router.get("/ledger")
-def get_ledger() -> dict:
-    if not hasattr(webhook, "_ledger"):
-        return {}
-    return webhook._ledger
-
-
-@router.get("/webhook/lifecycle")
-def get_lifecycle() -> dict:
-    """Expose webhook lifecycle states for monitoring."""
-    rows = store.query(
-        "SELECT lifecycle_state, COUNT(*) as c FROM webhook_lifecycle GROUP BY lifecycle_state"
-    )
-    return {
-        "states": {row["lifecycle_state"]: row["c"] for row in rows},
-        "total_processed": len(_processed_event_ids),
-    }
-
-
-@router.post("/webhook/replay/{event_id}")
-async def replay_webhook(event_id: str):
-    """Replay a non-APPLIED webhook event for recovery."""
-    row = store.query_one(
-        "SELECT * FROM webhook_lifecycle WHERE event_id = ?", (event_id,)
-    )
-    if row is None:
-        raise HTTPException(404, detail="event not found")
-    if row["lifecycle_state"] == "APPLIED":
-        return {"ok": True, "event_id": event_id, "status": "already_applied"}
-    # Reset to RECEIVED for reprocessing
-    _set_lifecycle_state(event_id, "RECEIVED")
-    return {"ok": True, "event_id": event_id, "status": "reset_to_received"}
+def get_ledger():
+    return payment_ledger

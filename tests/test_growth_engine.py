@@ -1,13 +1,13 @@
 """Tests for Merchant Growth & Competitive Market Intelligence Engine."""
-import time
 from fastapi.testclient import TestClient
-from apps.api.main import app
+
+from apps.api.growth.engine import evaluate_merchant_growth
 from apps.api.growth.intelligence import (
-    get_market_intelligence,
     get_all_market_radar,
+    get_market_intelligence,
     sanitize_web_content,
 )
-from apps.api.growth.engine import evaluate_merchant_growth
+from apps.api.main import app
 
 client = TestClient(app)
 

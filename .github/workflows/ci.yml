@@ -34,5 +34,8 @@ jobs:
           ruff check apps/api/gateway/
           mypy --strict apps/api/gateway/
 
+      - name: Verify the README against the generated evidence
+        run: python scripts/verify_readme.py
+
       - name: Run Master Verification Gate
         run: python scripts/final_verify.py --strict

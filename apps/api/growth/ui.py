@@ -6,15 +6,14 @@ OBSERVE -> IDENTIFY -> RECOMMEND -> APPROVE -> EXECUTE -> MEASURE BEFORE vs AFTE
 """
 from __future__ import annotations
 
-import json
 from fastapi.responses import HTMLResponse
+
 from ..web.layout import render_page
 from .intelligence import get_all_market_radar
 
 
 def render_growth_studio_page() -> HTMLResponse:
     radar = get_all_market_radar()
-    radar_json = json.dumps([r.model_dump() for r in radar])
 
     content = f"""
   <div class="section-head">
@@ -297,7 +296,7 @@ def render_growth_studio_page() -> HTMLResponse:
               <span style="font-size:11px;color:var(--text-2);text-transform:uppercase;">{r.stock_status.replace('_', ' ')}</span>
             </td>
             <td>
-              <a href="{r.source_url}" target="_blank" rel="noopener noreferrer" 
+              <a href="{r.source_url}" target="_blank" rel="noopener noreferrer"
                  style="color:var(--rzp-indigo);text-decoration:none;font-family:var(--font-mono);font-size:11px;display:inline-flex;align-items:center;gap:4px;">
                 &#128279; {r.source_domain} &nearr;
               </a>
@@ -308,7 +307,7 @@ def render_growth_studio_page() -> HTMLResponse:
           </tr>
 """
 
-    content += f"""
+    content += """
         </tbody>
       </table>
     </div>
@@ -317,7 +316,7 @@ def render_growth_studio_page() -> HTMLResponse:
   <script>
   let activeActionId = 'ACT-GROWTH-BAT-001';
 
-  async function runLoopObserve() {{
+  async function runLoopObserve() {
     document.getElementById('loop-welcome').style.display = 'none';
     document.getElementById('loop-obs-view').style.display = 'block';
     document.getElementById('loop-opp-view').style.display = 'none';
@@ -331,16 +330,16 @@ def render_growth_studio_page() -> HTMLResponse:
     document.getElementById('obs-name').textContent = data.product_name + ' (' + data.sku + ')';
     document.getElementById('obs-aov').innerHTML = '&#8377;' + (data.baseline_aov_paise / 100).toFixed(2);
     document.getElementById('obs-rev').innerHTML = '&#8377;' + (data.historical_revenue_paise / 100).toFixed(2);
-    
+
     document.getElementById('obs-comp-name').textContent = data.competitor_intel.competitor_name;
     document.getElementById('obs-comp-bundle').innerHTML = '&#8377;' + (data.competitor_bundle_price_paise / 100).toFixed(2);
     document.getElementById('obs-comp-url').href = data.competitor_intel.source_url;
 
     document.getElementById('loop-stage-badge').className = 'badge badge-cyan';
     document.getElementById('loop-stage-badge').textContent = 'OBSERVATION VERIFIED';
-  }}
+  }
 
-  async function runLoopOpportunity() {{
+  async function runLoopOpportunity() {
     document.getElementById('loop-welcome').style.display = 'none';
     document.getElementById('loop-obs-view').style.display = 'none';
     document.getElementById('loop-opp-view').style.display = 'block';
@@ -355,23 +354,23 @@ def render_growth_studio_page() -> HTMLResponse:
     document.getElementById('opp-price').innerHTML = '&#8377;' + (data.proposed_bundle_price_paise / 100).toFixed(2);
     document.getElementById('opp-savings').innerHTML = '&#8377;' + (data.customer_savings_vs_competitor_paise / 100).toFixed(2);
     document.getElementById('opp-lift').innerHTML = '+' + data.projected_aov_lift_pct + '%';
-    
+
     const badge = document.getElementById('opp-status-badge');
     badge.textContent = data.status;
     badge.className = (data.status === 'APPROVED') ? 'badge badge-ok' : 'badge badge-warn';
 
-    if (data.status === 'APPROVED') {{
+    if (data.status === 'APPROVED') {
       document.getElementById('loop-app-view').style.display = 'block';
-    }}
-  }}
+    }
+  }
 
-  async function runLoopApprove() {{
+  async function runLoopApprove() {
     const btn = document.getElementById('btn-approve-action');
     btn.disabled = true;
     btn.innerHTML = '&#9889; Signing &amp; Appending to Audit Chain...';
 
-    try {{
-      const resp = await fetch('/growth/loop/approve/' + activeActionId, {{ method: 'POST' }});
+    try {
+      const resp = await fetch('/growth/loop/approve/' + activeActionId, { method: 'POST' });
       const data = await resp.json();
 
       document.getElementById('loop-app-view').style.display = 'block';
@@ -379,21 +378,21 @@ def render_growth_studio_page() -> HTMLResponse:
       document.getElementById('app-hash').textContent = (data.audit_hash || '').slice(0, 16) + '...';
       document.getElementById('opp-status-badge').textContent = 'APPROVED';
       document.getElementById('opp-status-badge').className = 'badge badge-ok';
-      
+
       btn.className = 'btn btn-ok';
       btn.innerHTML = '&#10003; Approved &amp; Deployed';
-    }} catch(err) {{
+    } catch(err) {
       alert('Approval error: ' + err.message);
       btn.disabled = false;
-    }}
-  }}
+    }
+  }
 
-  async function runLoopExecute() {{
+  async function runLoopExecute() {
     document.getElementById('loop-stage-badge').className = 'badge badge-warn';
     document.getElementById('loop-stage-badge').textContent = 'EXECUTING BATCH...';
 
-    try {{
-      const resp = await fetch('/growth/loop/execute/' + activeActionId + '?sample_batch_size=10', {{ method: 'POST' }});
+    try {
+      const resp = await fetch('/growth/loop/execute/' + activeActionId + '?sample_batch_size=10', { method: 'POST' });
       const data = await resp.json();
 
       document.getElementById('loop-opp-view').style.display = 'none';
@@ -406,10 +405,10 @@ def render_growth_studio_page() -> HTMLResponse:
 
       document.getElementById('loop-stage-badge').className = 'badge badge-ok';
       document.getElementById('loop-stage-badge').textContent = 'REVENUE REALIZED (+&#8377;' + (data.net_revenue_gain_paise / 100).toFixed(2) + ')';
-    }} catch(err) {{
+    } catch(err) {
       alert('Execution failed: ' + err.message);
-    }}
-  }}
+    }
+  }
   </script>
 """
     return HTMLResponse(render_page("Merchant Growth", "growth", content))

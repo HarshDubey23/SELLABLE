@@ -13,7 +13,8 @@ KEY INVARIANTS:
 from __future__ import annotations
 
 from typing import Any
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 from ..products import CATALOG
 from .intelligence import MarketIntelligenceRecord, get_market_intelligence
@@ -89,7 +90,6 @@ def evaluate_merchant_growth(
 
     # Step 3: Compute Cross-Sell Bundling (AOV Expansion)
     # Remaining budget available for attaching compatible accessories
-    remaining_budget = budget_paise - base_price
     bundle_items: list[BundleItem] = [
         BundleItem(
             sku=base_sku,

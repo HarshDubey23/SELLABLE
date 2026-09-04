@@ -1,0 +1,40 @@
+{
+ "count": 2,
+ "results": [
+  {
+   "sku": "BAT-001",
+   "name": "SG Cricket Bat Kashmir Willow",
+   "category": "cricket",
+   "price_paise": 149900,
+   "price_display": "Rs 1,499",
+   "rating": 4.1,
+   "attributes": {
+    "material": "kashmir_willow",
+    "weight_g": 1150,
+    "skill_level": "intermediate",
+    "age_fit": "15+"
+   },
+   "compatible_with": [
+    "GRIP-001",
+    "BALL-001"
+   ],
+   "stock": 15
+  },
+  {
+   "sku": "KIT-001",
+   "name": "Premium Cricket Kit Complete",
+   "category": "cricket",
+   "price_paise": 449900,
+   "price_display": "Rs 4,499",
+   "rating": 4.3,
+   "attributes": {
+    "material": "mixed",
+    "weight_g": 2400,
+    "skill_level": "intermediate",
+    "age_fit": "12+"
+   },
+   "compatible_with": [],
+   "stock": 5
+  }
+ ]
+}

@@ -1,9 +1,12 @@
 """Tests for protocol adapters: NPCI UAP, Google AP2, OpenAI ACP."""
 import os
 import time
+
 from fastapi.testclient import TestClient
+
+from apps.api.gateway.mission_verify import dumps as _dumps
+from apps.api.gateway.mission_verify import sign_mission
 from apps.api.main import app
-from apps.api.gateway.mission_verify import sign_mission, dumps as _dumps
 
 client = TestClient(app)
 

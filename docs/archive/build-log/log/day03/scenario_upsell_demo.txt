@@ -1,0 +1,27 @@
+[01] system/mission_started: Mission MSN-UPSELL_DEMO-8896900a started
+[02] buyer_agent/tool_call: GET /.well-known/agent-manifest.json
+[03] buyer_agent/tool_result: manifest: 11 tools discovered
+[04] buyer_agent/tool_result: found 8 products for intent 'cricket bat'
+[05] buyer_agent/tool_call: GET /tools/get_product/BAT-001
+[06] buyer_agent/tool_result: BAT-001: SG Cricket Bat Kashmir Willow Rs 1,499
+[07] buyer_agent/tool_call: GET /tools/get_product/BAT-002
+[08] buyer_agent/tool_result: BAT-002: SS Ton Elite English Willow Bat Rs 2,499
+[09] buyer_agent/tool_call: GET /tools/get_product/BALL-001
+[10] buyer_agent/tool_result: BALL-001: SG Test Leather Ball (Pack of 3) Rs 899
+[11] buyer_agent/llm_call: asking model to propose items for: cricket bat
+[12] buyer_agent/llm_reasoning: Agent proposes: ['BAT-002']
+[13] buyer_agent/proposal_submitted: POST /tools/submit_proposal items=['BAT-002']
+[14] gateway/verdict_received: APPROVE (all rules passed)
+[15] merchant_ai/no_offers: No pre-gated upsell offers available for this cart
+[16] buyer_agent/creating_order: Creating Razorpay order for ['BAT-002']
+[17] executor/order_created: Razorpay order order_TU69oUl76VRt69 Rs 2,499 (backed by APPROVE seq=38)
+[18] buyer_agent/payment_initiated: Opening checkout for order_TU69oUl76VRt69
+[19] buyer_agent/payment_attempt_done: Payment attempt: failed
+[20] buyer_agent/payment_retry_result: Retry: unknown
+[21] executor/payment_status: Final status: created
+[22] executor/payment_status: Final status: created
+[23] executor/payment_status: Final status: created
+[24] executor/payment_status: Final status: created
+[25] executor/payment_status: Final status: created
+[26] executor/payment_status: Final status: created
+[27] system/mission_completed: Mission MSN-UPSELL_DEMO-8896900a completed

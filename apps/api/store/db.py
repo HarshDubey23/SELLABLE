@@ -107,6 +107,26 @@ def init_schema() -> None:
                     mission_id TEXT,
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS payment_executions (
+                    execution_id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    approve_seq INTEGER NOT NULL,
+                    proposal_hash TEXT NOT NULL,
+                    quote_id TEXT NOT NULL,
+                    amount_paise INTEGER NOT NULL,
+                    currency TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    remote_order_id TEXT,
+                    remote_error_code TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    reconciled_at INTEGER,
+                    terminal_at INTEGER
+                );
                 CREATE TABLE IF NOT EXISTS growth_actions (
                     action_id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -119,66 +139,31 @@ def init_schema() -> None:
                     deployed_at INTEGER,
                     created_at INTEGER NOT NULL
                 );
-                CREATE TABLE IF NOT EXISTS execution_log (
-                    execution_id TEXT PRIMARY KEY,
-                    approval_seq INTEGER NOT NULL,
-                    mission_id TEXT NOT NULL,
-                    proposal_hash TEXT NOT NULL,
-                    amount_paise INTEGER NOT NULL,
-                    currency TEXT NOT NULL,
-                    skus TEXT NOT NULL,
-                    idempotency_key TEXT,
-                    razorpay_order_id TEXT,
-                    razorpay_payment_id TEXT,
-                    execution_state TEXT NOT NULL DEFAULT 'APPROVED',
-                    previous_state TEXT,
-                    error_code TEXT,
-                    error_reason TEXT,
-                    reconciliation_reason TEXT,
-                    attempts INTEGER DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS webhook_lifecycle (
-                    event_id TEXT PRIMARY KEY,
-                    event_type TEXT,
-                    order_id TEXT,
-                    payment_id TEXT,
-                    amount_paise INTEGER,
-                    status TEXT,
-                    lifecycle_state TEXT NOT NULL DEFAULT 'RECEIVED',
-                    hmac_valid BOOLEAN NOT NULL DEFAULT 0,
-                    received_at INTEGER NOT NULL,
-                    persisted_at INTEGER,
-                    audited_at INTEGER,
-                    applied_at INTEGER,
-                    error_reason TEXT
-                );
-                CREATE TABLE IF NOT EXISTS execution_state_transitions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    execution_id TEXT NOT NULL,
-                    from_state TEXT NOT NULL,
-                    to_state TEXT NOT NULL,
-                    reason TEXT,
-                    actor TEXT DEFAULT 'executor',
-                    occurred_at INTEGER NOT NULL
-                );
                 CREATE INDEX IF NOT EXISTS idx_orders_idem
                     ON orders(idempotency_key);
                 CREATE INDEX IF NOT EXISTS idx_events_order
                     ON webhook_events(order_id);
-                CREATE INDEX IF NOT EXISTS idx_execution_approval_seq
-                    ON execution_log(approval_seq);
-                CREATE INDEX IF NOT EXISTS idx_execution_state
-                    ON execution_log(execution_state);
+                CREATE INDEX IF NOT EXISTS idx_exec_state
+                    ON payment_executions(state);
+                CREATE INDEX IF NOT EXISTS idx_exec_mission
+                    ON payment_executions(mission_id);
             """)
             conn.commit()
         finally:
             conn.close()
-    # Outside the lock: _migrate_audit_columns takes the lock itself
+    # Outside the lock: the migrators take the lock themselves
     # (threading.Lock is NOT reentrant — calling it inside would deadlock).
     _migrate_audit_columns()
+    _migrate_webhook_columns()
 
+
+_WEBHOOK_EXTRA_COLUMNS = {
+    # Durable webhook lifecycle: RECEIVED -> AUDITED -> APPLIED.
+    # A crash between persistence and audit must NOT look like a completed
+    # event on the next boot, so processing_state is tracked on disk.
+    "processing_state": "TEXT",
+    "applied_at": "INTEGER",
+}
 
 _AUDIT_EXTRA_COLUMNS = {
     "parent_action_id": "TEXT",
@@ -205,6 +190,32 @@ def _migrate_audit_columns() -> None:
                     conn.execute(
                         f"ALTER TABLE audit_chain ADD COLUMN {col} {coltype}"
                     )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _migrate_webhook_columns() -> None:
+    """Add the durable webhook lifecycle columns (idempotent)."""
+    with _lock:
+        conn = _connect()
+        try:
+            existing = {
+                row["name"] for row in
+                conn.execute("PRAGMA table_info(webhook_events)").fetchall()
+            }
+            for col, coltype in _WEBHOOK_EXTRA_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE webhook_events ADD COLUMN {col} {coltype}"
+                    )
+            # Rows written before this migration were only ever marked seen
+            # after audit+apply succeeded, so treating them as APPLIED is
+            # accurate for historical data.
+            conn.execute(
+                "UPDATE webhook_events SET processing_state = 'APPLIED' "
+                "WHERE processing_state IS NULL"
+            )
             conn.commit()
         finally:
             conn.close()

@@ -1,0 +1,18 @@
+flowchart TD
+    User["👤 User (Natural Language Mission)"] --> BuyerAgent["🤖 Autonomous Buyer Agent (Gemini 2.5/3.5)"]
+    BuyerAgent --> ProductSearch["🔍 Catalog Search & Ranking"]
+    ProductSearch --> Proposal["📝 Purchase Proposal (SKUs + Qty)"]
+    Proposal --> Gateway["🛡️ Deterministic Policy Gateway (R1-R12)"]
+    
+    subgraph Boundary ["🔒 DETERMINISTIC SECURITY BOUNDARY"]
+        Gateway -->|R1-R12 Passed| ApprovalBinding["📜 Cryptographic Approval Binding"]
+        ApprovalBinding --> ExactQuote["🏷️ Exact Merchant Quote"]
+        ExactQuote --> DurableStore[("💾 SQLite Durable Store & Ledger")]
+    end
+    
+    Gateway -->|Any Violation| Rejection["⛔ REJECT (Zero Money Executed)"]
+    ApprovalBinding --> RazorpayExecutor["💳 Razorpay Execution Gate"]
+    RazorpayExecutor --> RazorpayAPI["🌐 Razorpay Test-Mode API"]
+    RazorpayAPI --> WebhookReceiver["⚡ Webhook Signature Verification"]
+    WebhookReceiver --> AuditChain["⛓️ SHA-256 Tamper-Evident Audit Chain"]
+    Rejection --> AuditChain

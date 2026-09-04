@@ -6,16 +6,17 @@ and bounded high-AOV checkout through the deterministic Policy Gateway.
 from __future__ import annotations
 
 import time
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from ..deps import require_api_key
+from ..gateway.mission_verify import dumps as _dumps
+from ..gateway.mission_verify import sign_mission
 from ..tools import ProposalReq, tool_submit_proposal
-from ..gateway.mission_verify import sign_mission, dumps as _dumps
-from .engine import evaluate_merchant_growth, GrowthEvaluationResult
-from .intelligence import get_all_market_radar, get_market_intelligence
+from .engine import GrowthEvaluationResult, evaluate_merchant_growth
+from .intelligence import get_all_market_radar
 from .ui import render_growth_studio_page
-from fastapi.responses import HTMLResponse
 
 router = APIRouter(prefix="/growth", tags=["growth"])
 
@@ -116,10 +117,10 @@ async def execute_growth_transaction(req: GrowthTransactReq):
 # =========================================================================
 
 from .loop import (
-    observe_store_performance,
+    execute_and_measure_growth_loop,
     identify_revenue_opportunity,
     merchant_approve_action,
-    execute_and_measure_growth_loop,
+    observe_store_performance,
 )
 
 

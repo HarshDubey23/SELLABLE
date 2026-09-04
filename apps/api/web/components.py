@@ -4,7 +4,9 @@ Includes: Warrant Flow SVG, StatBlocks, Sparklines, Block Chips, and Event Cards
 from __future__ import annotations
 
 import html
+
 from .icons import render_icon
+
 
 def warrant_flow_svg(current_stage: int = 0, is_rejected: bool = False) -> str:
     """Render the 6-stage Warrant Flow SVG representing the money custody path."""
