@@ -40,6 +40,13 @@ from .products import CATALOG
 router = APIRouter(prefix="/attack", tags=["attack"])
 
 
+# A8 swaps one approved SKU for another that is identically priced and in an
+# equally permitted category, so that the deterministic gateway has no
+# grounds to refuse and the approval binding is demonstrably the layer that
+# does. Asserted in tests/gateway/test_attack_lab.py.
+_A8_APPROVED_SKU = "BAT-001"
+_A8_MUTATED_SKU = "PWR-001"
+
 SCENARIOS: list[dict[str, Any]] = [
     {
         "id": "A1_PROMPT_INJECTION",
@@ -96,9 +103,21 @@ SCENARIOS: list[dict[str, Any]] = [
     {
         "id": "A8_CART_MUTATION",
         "label": "Cart Mutation",
-        "description": "Approval was for SKU A. User tries to swap to SKU B. "
-                       "Approval-binding SKU-set check must reject.",
-        "category": "cricket", "budget_paise": 200000,
+        "description": "Approval was issued for BAT-001; the cart is swapped "
+                       "to PWR-001 before execution. PWR-001 costs exactly "
+                       "the same and is equally in scope, so R1-R12 "
+                       "legitimately APPROVE the swapped cart — the only "
+                       "thing left to refuse it is the approval binding's "
+                       "SKU-set check at the money boundary. This is the "
+                       "defence-in-depth case: the gateway is not the last "
+                       "line.",
+        # Deliberately generous, and deliberately allowing both categories:
+        # an A8 that trips R1_BUDGET or R5_SCOPE would prove those rules
+        # work, not the binding check it claims to test. BAT-001 and
+        # PWR-001 also cost exactly the same, so the amount matches too and
+        # SKU_SET_MISMATCH is the only field left to refuse on.
+        "category": "cricket", "allowed": ("cricket", "electronics"),
+        "budget_paise": 1000000,
         "cart_mutation": True,
     },
 ]
@@ -115,7 +134,8 @@ def _build_signed_mission(scenario: dict, sku: str = "BAT-001") -> tuple[Mission
         "mission_id": f"MSN-ATK-{scenario['id']}-{now}",
         "intent": "buy something",
         "budget_paise": scenario["budget_paise"],
-        "allowed_categories": [scenario["category"]],
+        "allowed_categories": list(scenario.get("allowed")
+                                   or (scenario["category"],)),
         "forbidden_categories": list(scenario.get("forbidden", ())),
         "upsell_cap": 1.0,
         "expires_at": now + 600,
@@ -197,11 +217,14 @@ def _build_proposal(scenario: dict, mission: Mission) -> Proposal:
                                 price_paise=CATALOG["BAT-001"]["price_paise"]),),
         )
     if scenario["id"] == "A8_CART_MUTATION":
-        # Approved for BAT-001; mutator swaps to BAT-002.
+        # Approved for BAT-001; the mutator swaps in PWR-001, which the
+        # mission also allows and which costs exactly the same. Every rule
+        # R1-R12 is satisfied. Only the approval binding knows the cart it
+        # was actually issued for.
         return Proposal(
             mission_id=mission.mission_id,
-            items=(ProposalItem(sku="BAT-002", qty=1,
-                                price_paise=CATALOG["BAT-002"]["price_paise"]),),
+            items=(ProposalItem(sku=_A8_MUTATED_SKU, qty=1,
+                                price_paise=CATALOG[_A8_MUTATED_SKU]["price_paise"]),),
         )
     raise ValueError(f"unknown scenario {scenario['id']}")
 
@@ -303,27 +326,29 @@ def attack_run(scenario_id: str) -> dict[str, Any]:
         money_calls_after = money.snapshot()
 
     elif scenario["id"] == "A8_CART_MUTATION":
-        # Issue an APPROVE binding for BAT-001; attempt to use it with
-        # a mutated cart that swaps in BAT-002 (different sku_set).
+        # Issue an APPROVE binding for BAT-001, then attempt to spend it on
+        # PWR-001. Same mission, same amount, same currency, same quote —
+        # every field the binding checks matches except the SKU set, so the
+        # refusal can only be SKU_SET_MISMATCH.
         from .approval import register as _register
         from .approval import verify as _verify
+        amount = CATALOG[_A8_APPROVED_SKU]["price_paise"]
         _register(
             seq,
             mission_id=mission.mission_id,
             proposal_hash=proposal_hash or "",
-            cart_hash=proposal_hash or "", quote_id="",
-            amount_paise=CATALOG["BAT-001"]["price_paise"],
-            currency="INR", skus=[("BAT-001", 1)],
+            cart_hash=proposal_hash or "", quote_id="QFAKE",
+            amount_paise=amount,
+            currency="INR", skus=[(_A8_APPROVED_SKU, 1)],
         )
-        # Try to use it with the BAT-002 cart.
         ok, code, _b = _verify(
             seq=seq, mission_id=mission.mission_id,
             proposal_hash=proposal_hash or "",
             cart_hash=proposal_hash or "",
             quote_id="QFAKE",
-            amount_paise=CATALOG["BAT-002"]["price_paise"],
+            amount_paise=amount,
             currency="INR",
-            skus=[("BAT-002", 1)],  # mutated!
+            skus=[(_A8_MUTATED_SKU, 1)],  # mutated!
         )
         binding_blocked = not ok
         binding_reason = code

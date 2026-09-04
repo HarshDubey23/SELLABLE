@@ -44,6 +44,13 @@ router = APIRouter()
 
 QUOTE_TTL_SECONDS = 30 * 60  # 30 minutes
 
+# Faults a caller may inject at the money boundary, in either provider.
+# They model the three things that can happen to a request from the
+# client's side: the reply is lost, the request never left, or the
+# provider refused. Anything else is rejected rather than silently
+# ignored, so a typo in a demo cannot look like a passing drill.
+_INJECTABLE_FAULTS = frozenset({"remote_timeout", "remote_lost", "remote_reject"})
+
 quotes = {}            # quote_id -> quote dict
 orders = {}            # order_id -> order dict
 idempotency_seen = {}  # idempotency_key -> order_id
@@ -577,13 +584,24 @@ async def tool_create_order(req: CreateOrderReq,
              "proposal_hash": req.proposal_hash}
     fault = (x_sellable_fault or "").strip()
     if fault:
-        if provider.name != provider_mod.SIMULATED:
+        # Fault injection simulates the CLIENT's view of the provider call —
+        # a lost response, a reset connection, a definitive refusal. It never
+        # fabricates an outcome: every injected fault takes the same code
+        # path a genuine one would, so the state machine and reconciler are
+        # exercised for real. It is recorded in the audit chain precisely so
+        # that a drill can never be mistaken for an organic incident.
+        if fault not in _INJECTABLE_FAULTS:
             raise HTTPException(400, detail={
                 "ok": False,
-                "error": {"error_code": "FAULT_INJECTION_REFUSED",
-                          "message": "fault injection is only available on the "
-                                     "simulated provider"}})
+                "error": {"error_code": "UNKNOWN_FAULT",
+                          "message": f"{fault!r} is not an injectable fault",
+                          "injectable": sorted(_INJECTABLE_FAULTS)}})
         notes["_fault"] = fault
+        chain.append("executor", "fault_injected",
+                     {"execution_id": execution_id, "fault": fault,
+                      "provider": provider.name,
+                      "note": "deliberate reliability drill, not an incident"},
+                     review_state="drill")
 
     # STEP 4: the attempt is recorded on disk BEFORE it is dispatched.
     # If the process dies on the next line, boot recovery finds this row

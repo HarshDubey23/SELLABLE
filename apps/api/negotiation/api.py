@@ -93,6 +93,53 @@ def get(nid: str):
     return _state_dict(state)
 
 
+@router.get("/{nid}/transcript")
+def transcript(nid: str):
+    """The negotiation as a readable transcript, with the arithmetic done here.
+
+    `savings_paise` is computed server-side from stored offers and the
+    stored ceiling. A browser that subtracts two numbers it was handed can
+    be made to show any saving you like; a number the server derived from
+    its own rows cannot.
+
+    `clamped` on a turn means the model asked for a price outside the
+    merchant's floor/ceiling and the bounds layer pulled it back. That is
+    the whole negotiation safety story in one boolean, so it is reported
+    per turn rather than summarised away.
+    """
+    state = P.load(nid)
+    if not state:
+        raise HTTPException(404, "negotiation not found")
+
+    base = _state_dict(state)
+    ceiling = state.bounds.ceiling_paise
+    final = state.final_price_paise
+
+    turns = []
+    for t in base["turns"]:
+        for side in ("buyer_offer", "merchant_offer"):
+            offer = t.get(side)
+            if offer is not None:
+                offer["clamped"] = offer["price_paise"] != offer["raw_price_paise"]
+                offer["clamp_delta_paise"] = (
+                    offer["raw_price_paise"] - offer["price_paise"])
+        turns.append(t)
+
+    return {
+        **base,
+        "turns": turns,
+        "original_price_paise": ceiling,
+        "final_price_paise": final,
+        "savings_paise": max(0, ceiling - final) if final is not None else None,
+        "clamped_turn_count": sum(
+            1 for t in turns for side in ("buyer_offer", "merchant_offer")
+            if (t.get(side) or {}).get("clamped")),
+        "bounds_note": ("floor and ceiling come from the merchant's server-side "
+                        "bounds; no model output can move them, and any offer "
+                        "outside them is clamped before it is recorded"),
+    }
+
+
 @router.get("/mission/{mid}")
 def list_for_mission(mid: str):
     states = P.list_for_mission(mid)

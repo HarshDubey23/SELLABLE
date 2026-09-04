@@ -1,9 +1,0 @@
-{
-  "total_boundary_calls": 0,
-  "unauthorized_bypasses": 0,
-  "invariant": "DENIED / INVALID BINDING => 0 MONEY CALLS",
-  "supported_currencies": [
-    "INR"
-  ],
-  "unit": "integer paise"
-}

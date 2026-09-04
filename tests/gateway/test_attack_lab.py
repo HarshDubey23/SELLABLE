@@ -59,3 +59,41 @@ def test_all_8_attacks_blocked():
         )
     )
     assert result["block_rate"] == 1.0
+
+
+def test_each_scenario_is_blocked_by_the_layer_it_claims_to_test():
+    """A scenario that is refused for the wrong reason proves the wrong thing.
+
+    A8 used to trip R1_BUDGET while advertising itself as a demonstration of
+    the approval binding's SKU-set check — the attack was blocked, but not by
+    the mechanism on the label. The mutated cart is now identically priced
+    and equally in scope, so R1-R12 approve it and the binding is provably
+    the layer that refuses.
+    """
+    from apps.api.attack import attack_run_all
+
+    expected = {
+        "A1_PROMPT_INJECTION": "gateway/R1_BUDGET",
+        "A2_OVERSPENDING": "gateway/R1_BUDGET",
+        "A3_PRICE_MANIPULATION": "gateway/R3_PRICE_DRIFT",
+        "A4_FORBIDDEN_PRODUCT": "gateway/R2_FORBIDDEN",
+        "A5_SCOPE_VIOLATION": "gateway/R5_SCOPE",
+        "A6_INVALID_SIGNATURE": "gateway/R9_SIGNATURE",
+        "A7_STALE_MANDATE": "approval_binding/BINDING_EXPIRED",
+        "A8_CART_MUTATION": "approval_binding/SKU_SET_MISMATCH",
+    }
+    actual = {r["id"]: r["blocked_by"] for r in attack_run_all()["results"]}
+    assert actual == expected
+
+
+def test_cart_mutation_passes_the_gateway_before_the_binding_refuses_it():
+    """Defence in depth is only demonstrated when the first layer lets it by."""
+    from apps.api.attack import attack_run
+
+    result = attack_run("A8_CART_MUTATION")
+    assert result["gateway"]["decision"] == "APPROVE", (
+        "A8 must reach the money boundary; if the gateway rejects it, the "
+        "scenario is testing a policy rule rather than the approval binding")
+    assert result["binding_check"]["blocked"] is True
+    assert result["binding_check"]["reason"] == "SKU_SET_MISMATCH"
+    assert result["money_calls"]["boundary_calls"] == 0

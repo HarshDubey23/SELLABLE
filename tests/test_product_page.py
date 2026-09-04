@@ -16,12 +16,18 @@ def test_root_serves_the_product_not_the_console(client):
     r = client.get("/")
     assert r.status_code == 200
     body = r.text
-    assert "What should the agent buy?" in body, \
+    assert 'id="q"' in body and 'class="sinput"' in body, \
         "/ must open on an intent input, not a dashboard"
-    assert "cannot</em> pay for you" in body
+    assert "cannot" in body and "touch your money" in body
+    # The landing page must lead with the product, not with the evidence.
+    assert body.index("Shop with an AI") < body.index("Reviewing this for Razorpay")
 
 
-def test_console_still_reachable_at_its_own_route(client):
+def test_console_redirects_into_the_cockpit(client):
+    """The console was retired; its old path must still land somewhere."""
+    r = client.get("/console", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/judge"
     assert client.get("/console").status_code == 200
 
 
@@ -33,9 +39,22 @@ def test_product_page_declares_no_metrics_it_cannot_back(client):
     that hardcodes '142 tests passed' goes stale the moment someone
     writes a test.
     """
+    import re
+
     body = client.get("/").text
-    for stale in ("142", "20 exploits", "20/20", "0.1ms", "45.02"):
-        assert stale not in body, f"hardcoded claim {stale!r} on the landing page"
+    # Strip the stylesheet first: a CSS colour like #141420 is not a claim,
+    # and matching it made this guard fire on the design tokens rather than
+    # on anything a reader would ever see.
+    prose = re.sub(r"<style>.*?</style>", "", body, flags=re.S)
+    for stale in ("142 ", "20 exploits", "20/20", "0.1ms", "45.02",
+                  "100% secure", "unhackable", "zero vulnerabilities"):
+        assert stale not in prose, f"hardcoded claim {stale!r} on the landing page"
+
+    # And nothing may present a bare metric-looking figure outside a fetch.
+    # Every number a shopper sees is written by JS from a response body.
+    for hardcoded in ("tests passed", "attacks blocked", "% uptime"):
+        assert hardcoded not in prose.lower(), \
+            f"the landing page states {hardcoded!r} without fetching it"
 
 
 def test_page_reads_the_provider_from_diagnostics(client):
@@ -69,11 +88,15 @@ def test_probing_with_the_over_budget_sku_is_actually_rejected(client):
 
     r = client.post("/discovery/checkout",
                     json={"sku": probe["sku"], "budget_paise": 200000})
-    assert r.status_code == 400
-    err = r.json()["detail"]["error"]
-    assert err["error_code"] == "POLICY_GATEWAY_REJECT"
-    assert err["rule_id"] == "R1_BUDGET"
-    assert len(err["rule_matrix"]) == 12
+    assert r.status_code == 422
+    body = r.json()
+    assert body["ok"] is False
+    assert body["status"] == "POLICY_GATEWAY_REJECT"
+    assert body["rule_id"] == "R1_BUDGET"
+    assert len(body["rule_matrix"]) == 12
+    assert body["execution_state"] is None
+    assert body["money_boundary_calls_during_request"] == 0, \
+        "a staged refusal would still have called the provider"
     assert ex.list_executions() == [], "a refused proposal must open no execution"
 
 
@@ -85,7 +108,7 @@ def test_no_ui_page_quotes_the_eval_simulation_as_a_headline_number(client):
     loss' straight from eval/report.json — numbers whose provenance did
     not survive review, sitting next to real ones.
     """
-    for path in ("/", "/console", "/judge", "/metrics"):
+    for path in ("/", "/judge", "/console", "/metrics"):  # last two redirect into /judge
         body = client.get(path).text
         assert "Evaluation Snapshot" not in body, f"{path} quotes the simulation"
         assert "NAIVE LLM LOSS" not in body, f"{path} quotes the simulation"

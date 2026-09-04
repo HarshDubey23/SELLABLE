@@ -66,10 +66,12 @@ def test_growth_aov_bundling_within_budget():
 
 def test_growth_api_endpoints():
     """Test HTTP API surface for /growth/evaluate, /growth/market-radar, and /growth."""
-    # Test UI HTML page
-    ui_resp = client.get("/growth")
-    assert ui_resp.status_code == 200
-    assert "Closed-Loop Merchant Growth System" in ui_resp.text
+    # The growth studio page was retired when the UI collapsed to three
+    # surfaces. The capability is API-only now, and the old path redirects
+    # into the judge console rather than 404-ing.
+    ui_resp = client.get("/growth", follow_redirects=False)
+    assert ui_resp.status_code == 307
+    assert ui_resp.headers["location"].startswith("/judge")
 
     # Test JSON evaluate
     eval_resp = client.post("/growth/evaluate", json={

@@ -182,7 +182,8 @@ def test_search_endpoint_exposes_provenance(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["search_engine_status"] in (
-        "LIVE_SEARCH_SUCCESS", "ZERO_RESULTS", "SEARCH_UNAVAILABLE")
+        "LIVE_SEARCH_SUCCESS", "MOCK_SOURCES_ONLY", "ZERO_RESULTS",
+        "SEARCH_UNAVAILABLE")
     assert "provider_errors" in data
     assert "evidence_legend" in data
     assert set(data["evidence_legend"]) == {
@@ -284,3 +285,115 @@ def test_head_noun_is_required_not_merely_any_noun():
     assert _matches_query_intent("Nivia Cricket Shoes size 9", tokens, nouns)
     assert not _matches_query_intent("Cricket Bat English Willow", tokens, nouns)
     assert not _matches_query_intent("Cricket World Cup highlights", tokens, nouns)
+
+
+def test_mock_only_results_are_not_reported_as_a_live_retail_search():
+    """A run that only the synthetic APIs answered is not a market search.
+
+    Reporting LIVE_SEARCH_SUCCESS here would let a demo with zero real
+    market evidence read as a working discovery pipeline — the same class
+    of overstatement that rule 3 in the module docstring exists to stop.
+    """
+    from apps.api.discovery import pipeline as pl
+
+    def _only_mock(query, max_results=10):
+        listing = pl.WebProductListing(
+            product_name="Cricket Bat",
+            price_paise=254915, price_inr=2549.15,
+            evidence_class=pl.EVIDENCE_MOCK_SOURCE,
+            provider_kind=pl.PROVIDER_MOCK_API,
+            seller="DummyJSON (synthetic catalog)",
+            seller_domain="dummyjson.com", url="https://dummyjson.com/x",
+            scraped_at="2026-01-01T00:00:00Z", raw_evidence="{}")
+        return [listing], ["DummyJSON mock API (1 synthetic records)"], []
+
+    original = pl.search_live_web_providers
+    pl.search_live_web_providers = _only_mock
+    try:
+        result = pl.run_real_product_discovery("cricket bat", budget_paise=300000)
+    finally:
+        pl.search_live_web_providers = original
+
+    assert result.search_engine_status == "MOCK_SOURCES_ONLY"
+    assert "synthetic" in (result.error_message or "")
+    assert result.comparison.market_evidence_count == 0
+    assert result.comparison.lowest_observed_market_price_inr is None
+
+
+def test_a_broken_search_endpoint_is_not_reported_as_an_empty_market():
+    """"Nobody sells this" and "we could not look" are different answers.
+
+    Bing's RSS endpoint was found returning a zero-byte body, and before
+    this guard the provider reported that as simply "no results" — which
+    made a dead dependency look like a market with nothing in it. A
+    reviewer reading SEARCH_UNAVAILABLE learns something true; one reading
+    an empty result list learns something false.
+    """
+    from apps.api.discovery import pipeline as pl
+
+    class _EmptyBody:
+        def read(self): return b""
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    original = pl.urllib.request.urlopen
+    pl.urllib.request.urlopen = lambda *a, **k: _EmptyBody()
+    try:
+        items, hit, err = pl._query_bing_rss(
+            "cricket bat", ["cricket", "bat"], ["cricket", "bat"], "now")
+    finally:
+        pl.urllib.request.urlopen = original
+
+    assert items == []
+    assert hit is None
+    assert err is not None and "empty response body" in err
+
+
+def test_a_resultless_feed_is_distinguished_from_a_filtered_one():
+    """A feed with no items at all means the endpoint stopped answering."""
+    from apps.api.discovery import pipeline as pl
+
+    class _EmptyFeed:
+        def read(self):
+            return b'<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    original = pl.urllib.request.urlopen
+    pl.urllib.request.urlopen = lambda *a, **k: _EmptyFeed()
+    try:
+        items, hit, err = pl._query_bing_rss(
+            "cricket bat", ["cricket", "bat"], ["cricket", "bat"], "now")
+    finally:
+        pl.urllib.request.urlopen = original
+
+    assert items == []
+    assert err is not None and "no result items" in err
+
+
+def test_results_filtered_out_by_the_whitelist_are_reported_as_such():
+    """Filtering everything out IS the whitelist working, not a failure."""
+    from apps.api.discovery import pipeline as pl
+
+    feed = (b'<?xml version="1.0"?><rss version="2.0"><channel>'
+            b'<item><title>Cricket bat cheap</title>'
+            b'<link>https://spam-casino.example/cricket-bat</link>'
+            b'<description>buy cricket bat price</description></item>'
+            b'</channel></rss>')
+
+    class _Spam:
+        def read(self): return feed
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    original = pl.urllib.request.urlopen
+    pl.urllib.request.urlopen = lambda *a, **k: _Spam()
+    try:
+        items, hit, err = pl._query_bing_rss(
+            "cricket bat", ["cricket", "bat"], ["cricket", "bat"], "now")
+    finally:
+        pl.urllib.request.urlopen = original
+
+    assert items == [], "a non-whitelisted domain is never market evidence"
+    assert err is None, "filtering is not an error"
+    assert hit is not None and "off-domain" in hit

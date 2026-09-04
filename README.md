@@ -156,8 +156,16 @@ into `.venv` if they're missing, boots, waits for a real health check,
 runs smoke checks against live endpoints, and prints where to go. It's
 idempotent — re-run it as often as you like.
 
-Then open **http://localhost:8000/** for the product, or
-**http://localhost:8000/judge** for the guided walkthrough.
+There are three pages, and that is deliberate:
+
+| | |
+|---|---|
+| **`/`** | the shop. Search, evidence, recommendation, authorization, payment, recovery |
+| **`/judge`** | the cockpit. Seven scenes a reviewer can run: the gauntlet, a live mission, a negotiation, an attack you write yourself, a real provider timeout, and a ledger block you verify in your own browser |
+| **`/trace/{ref}`** | one purchase, end to end, read back out of SQLite |
+
+Everything the project used to show on nine separate pages now lives in
+those three. The old paths still redirect rather than 404.
 
 **With no Razorpay keys**, payments run on a **simulated provider**: no
 network calls, order ids prefixed `order_sim_`, and every surface —
@@ -183,10 +191,10 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **330 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **416 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
-| Gateway latency | p50 0.018 ms · p95 0.029 ms · p99 0.041 ms, over 2,000 in-process evaluations |
+| Gateway latency | **p95 under 5 ms** over 2,000 in-process evaluations. The exact figure is machine-dependent and lives in `truth.json`; CI asserts the bound, not a number it cannot reproduce |
 | Catalog | 40 SKUs |
 
 Test coverage by area — the shape matters more than the total:
@@ -194,11 +202,11 @@ Test coverage by area — the shape matters more than the total:
 | Area | Tests | What it pins down |
 |---|---|---|
 | `tests/invariants/` | 67 | gateway purity, agent custody, adapter isolation — checked by parsing the source, not by trusting a comment |
-| `tests/gateway/` | 51 | every rule, every bound field, chain tamper |
-| `tests/execution/` | 27 | state machine, crash recovery, reconciliation, concurrency |
-| `tests/security/` | 20 | injection and manipulation scenarios |
+| `tests/gateway/` | 53 | every rule, every bound field, chain tamper, and which layer refuses which attack |
+| `tests/security/` | 37 | injection, manipulation, and the reviewer-facing attack sandbox |
+| `tests/execution/` | 28 | state machine, crash recovery, reconciliation, concurrency |
 | `tests/chaos/` | 9 | fault-injection drills |
-| `tests/concurrency/` | 3 | single-use binding under parallel load |
+| `tests/concurrency/` | 3 | one authorization, many racing requests, exactly one payment |
 
 The adversarial suite reports **which layer** refused each attack, because
 two of them get past the gateway and are stopped by the approval binding
@@ -255,9 +263,13 @@ apps/api/
   ├── audit/chain.py          append-only SHA-256 chain, boot-verified
   ├── discovery/              market evidence, provenance-tagged
   ├── agent/                  buyer agent. Zero money authority
+  ├── attack_custom.py        reviewer's attack sandbox. Imports no executor
+  ├── audit_demo.py           block preimage + in-memory tamper cascade
+  ├── receipt.py              the settled facts of one purchase
   ├── recovery/               executor-side payment recovery (NOT under agent/)
+  ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
-tests/                        330 tests
+tests/                        416 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents
@@ -276,11 +288,26 @@ every response from that path says `authorization_issued_by:
 in_process_demo_issuer`. The `/tools/*` API path takes externally signed
 missions and has no such caveat.
 
-**Reconciliation matches on correlation fields.** Razorpay exposes no
-public fetch-by-idempotency-key lookup, so reconciliation pages recent
-orders and matches `proposal_hash` + amount from the order's `notes`. A
-provider that dropped `notes` would defeat it, and at high volume the
-paging window needs to be time-bounded rather than count-bounded.
+**Reconciliation matches on correlation fields, and the listing is
+eventually consistent.** Razorpay exposes no public
+fetch-by-idempotency-key lookup, so reconciliation pages recent orders
+and matches `proposal_hash` + amount from the order's `notes`. A provider
+that dropped `notes` would defeat it. Worse, the listing is not
+read-your-writes consistent: an order created seconds ago may not appear,
+and an early version of this code wrote off a real payment as FAILED
+because of it (`docs/WHAT_BROKE.md` #11). Absence inside a two-minute
+window is now reported as inconclusive rather than as failure. That is a
+mitigation, not a solution — the real answer is a provider lookup keyed
+on something we chose, which this API does not offer.
+
+**Live retail discovery is frequently unavailable.** The search provider
+it depends on has stopped returning results, so most searches report
+`SEARCH_UNAVAILABLE` or `MOCK_SOURCES_ONLY` and the recommendation stands
+on the merchant catalog with no market comparison claimed. This is
+visible on the storefront rather than hidden, and SELLABLE can only ever
+sell what is in its own catalog — external listings were never a payable
+amount. It does mean the "compare against live retail" part of the demo
+often has nothing to show.
 
 **Single-node concurrency.** Single-use consumption and the execution
 dispatch claim are conditional `UPDATE`s against one SQLite file. Correct

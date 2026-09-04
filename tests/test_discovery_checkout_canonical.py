@@ -69,11 +69,67 @@ def test_checkout_over_budget_is_rejected_by_the_gateway(client):
 
     price = CATALOG["EAR-001"]["price_paise"]
     resp = _checkout(client, budget_paise=price - 1)
-    assert resp.status_code == 400
-    err = resp.json()["detail"]["error"]
-    assert err["error_code"] == "POLICY_GATEWAY_REJECT"
-    assert err["rule_id"] == "R1_BUDGET"
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["status"] == "POLICY_GATEWAY_REJECT"
+    assert body["rule_id"] == "R1_BUDGET"
+    assert body["execution_state"] is None, \
+        "no execution exists when the gateway refuses before the money path"
+    assert body["money_boundary_calls_during_request"] == 0, \
+        "a gateway refusal must not touch the payment provider"
     assert ex.list_executions() == [], "a rejected proposal must not open an execution"
+
+
+def test_ambiguous_outcome_is_never_reportable_as_success(client):
+    """The bug this guards: HTTP 202 is a 2xx.
+
+    The executor signals "the provider's outcome is unknown" with 202. A
+    browser client that checks only `response.ok` sees 2xx and, if the
+    state is not at the top level of the body, falls back to a default and
+    tells the buyer the payment succeeded. Every checkout outcome therefore
+    carries `ok` and `execution_state` as top-level fields.
+    """
+    resp = client.post("/discovery/checkout", json={
+        "sku": "EAR-001", "budget_paise": 500000, "fault": "remote_timeout"})
+
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["ok"] is False, "202 must not be readable as success"
+    assert body["execution_state"] == ex.RECONCILIATION_REQUIRED
+    assert "detail" not in body or not isinstance(body.get("detail"), dict), \
+        "the outcome must be flat, not nested under `detail`"
+    assert body["reconcile_hint"].endswith("/reconcile")
+    assert body["retryable"] is False, "blind retry of an unknown outcome is never offered"
+
+    row = ex.get(body["execution_id"])
+    assert row is not None and row["state"] == ex.RECONCILIATION_REQUIRED
+
+
+def test_reconciliation_resolves_the_ambiguous_outcome_from_provider_state(client):
+    """The order really was created; only the response was lost."""
+    body = client.post("/discovery/checkout", json={
+        "sku": "EAR-001", "budget_paise": 500000,
+        "fault": "remote_timeout"}).json()
+
+    resolved = client.post(f"/discovery/reconcile/{body['execution_id']}")
+    assert resolved.status_code == 200
+    out = resolved.json()
+    assert out["state"] == ex.EXECUTED
+    assert out["resolution"] == "REMOTE_ORDER_FOUND"
+    assert out["remote_order_id"].startswith("order_sim_")
+
+
+def test_undispatched_request_reconciles_to_failed_not_to_success(client):
+    """`remote_lost` never reached the provider, so nothing may be claimed."""
+    body = client.post("/discovery/checkout", json={
+        "sku": "EAR-001", "budget_paise": 500000,
+        "fault": "remote_lost"}).json()
+    assert body["execution_state"] == ex.RECONCILIATION_REQUIRED
+
+    out = client.post(f"/discovery/reconcile/{body['execution_id']}").json()
+    assert out["state"] == ex.FAILED
+    assert out["resolution"] == "NO_REMOTE_ORDER"
 
 
 def test_checkout_refuses_a_sku_the_merchant_does_not_stock(client):
