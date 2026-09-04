@@ -290,7 +290,7 @@ table.t td{color:var(--text-mid)}
 def _scene_sentinel(truth: dict[str, Any]) -> str:
     code = truth.get("codebase", {})
     return f"""
-<h2 class="st">The AI decides what to recommend. It cannot decide what money moves.</h2>
+<h2 class="st">Two kinds of thing, never in the same box</h2>
 <p class="sl">That is not a policy document, it is an architecture. A model picks a
   SKU and a quantity and that is the whole of its authority. Prices come from the
   server. Permission is a single-use cryptographic binding to one exact cart.
@@ -428,7 +428,7 @@ def _scene_negotiation() -> str:
 
 <div class="row-actions" style="margin-top:16px">
   <button class="btn btn-primary" id="n-run">Run a negotiation</button>
-  <span class="panel-sub">SKU BAT-002 &middot; floor and ceiling from server-side bounds</span>
+  <span class="panel-sub">SKU BAT-002 &middot; the request carries a SKU and nothing else; the floor and ceiling come from the catalog</span>
 </div>
 
 <div id="n-state"></div>
@@ -978,19 +978,16 @@ $('n-run').addEventListener('click', async function(){
   cols.hidden = true; clear(deal); clear(o);
   loading(st, 'two agents are exchanging offers under server-side bounds');
   try {
-    const start = await jfetch('/negotiation/start', {
+    /* Only a SKU is sent. The floor and ceiling are read from the
+       merchant's catalog server-side, so nothing this page does can
+       widen the range the model is allowed to move within. */
+    const r = await jfetch('/negotiation/demo', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({mission_id:'MSN-COCKPIT-'+Date.now(), sku:'BAT-002', qty:1,
-        floor_paise:180000, ceiling_paise:249900, buyer_budget_paise:300000,
-        max_turns:3, llm_enabled:true})});
-    if (!start.ok){ failed(st, 'POST /negotiation/start',
-        (start.body && start.body.detail) || JSON.stringify(start.body)); return; }
-    const nid = start.body.negotiation_id;
-    await jfetch('/negotiation/' + nid + '/run', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({llm_enabled:true})});
-    const r = await jfetch('/negotiation/' + nid + '/transcript');
-    if (!r.ok){ failed(st, 'GET transcript', JSON.stringify(r.body)); return; }
+      body: JSON.stringify({sku:'BAT-002'})});
+    if (!r.ok){
+      const err = (r.body && r.body.detail && r.body.detail.error) || {};
+      failed(st, 'POST /negotiation/demo',
+             err.message || JSON.stringify(r.body)); return; }
     clear(st);
     const d = r.body;
     const buyer = $('n-buyer'), merch = $('n-merch');
@@ -1024,7 +1021,7 @@ $('n-run').addEventListener('click', async function(){
         esc(d.status) + '. No saving is claimed, because none exists.</div>';
     }
     out(o, [
-      c('dim','POST /negotiation/start → /run → GET /{id}/transcript'),
+      c('dim','POST /negotiation/demo  {"sku":"BAT-002"}'),
       '',
       'bounds          floor ' + rupees(d.floor_paise) +
                       '  ceiling ' + rupees(d.ceiling_paise),

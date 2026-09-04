@@ -7,6 +7,8 @@ GET  /negotiation/{id}       - fetch current state
 GET  /negotiation/mission/{mid} - list negotiations for a mission
 POST /negotiation/{id}/accept_at - merchant manually accepts a buyer offer
                                    (human-in-the-loop override; audit-chained)
+POST /negotiation/demo       - customer-side entry point: SKU only, bounds
+                               read from the catalog, no API key
 
 Every route chains to the audit log. The final agreed price from any
 negotiation STILL must flow through /tools/submit_proposal -> gateway
@@ -14,11 +16,15 @@ evaluate() -> /tools/create_order (INV-1). Negotiation never shortcuts money.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .. import ratelimit
 from ..audit import chain as audit
 from ..deps import require_api_key
+from ..products import CATALOG
 from . import engine as E
 from . import persist as P
 from .types import NegotiationStatus
@@ -92,6 +98,60 @@ def get(nid: str):
         raise HTTPException(404, "negotiation not found")
     return _state_dict(state)
 
+
+class DemoReq(BaseModel):
+    """A SKU, and nothing else. That is the whole point."""
+    sku: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/demo")
+def demo(req: DemoReq, request: Request):
+    """Run one negotiation with bounds the caller cannot choose.
+
+    The routes above are the AGENT's API and sit behind an API key,
+    which is right: an agent opening a negotiation supplies its own
+    mission and its own budget. This one is the customer's, so it takes
+    no key — and therefore takes no bounds either. The floor and ceiling
+    are read from the merchant's own catalog entry, so a caller cannot
+    negotiate against limits they invented.
+
+    It is also the honest version of the demo: "the model cannot move the
+    floor" is a much better claim when the floor did not arrive in the
+    request body.
+    """
+    who = request.client.host if request.client else "unknown"
+    if not ratelimit.allow(who, bucket="negotiation_demo", limit=10):
+        raise HTTPException(429, detail={
+            "ok": False,
+            "error": {"error_code": "RATE_LIMITED",
+                      "retry_after_seconds": ratelimit.retry_after(
+                          who, bucket="negotiation_demo")}})
+
+    item = CATALOG.get(req.sku)
+    if item is None:
+        raise HTTPException(404, detail={
+            "ok": False,
+            "error": {"error_code": "UNKNOWN_SKU",
+                      "message": f"{req.sku!r} is not in the merchant catalog"}})
+    floor = item.get("floor_paise")
+    ceiling = item.get("ceiling_paise", item["price_paise"])
+    if floor is None:
+        raise HTTPException(409, detail={
+            "ok": False,
+            "error": {"error_code": "SKU_NOT_NEGOTIABLE",
+                      "message": f"{req.sku} has no server-side floor, so "
+                                 f"there is nothing to negotiate within"}})
+
+    state = E.start_negotiation(
+        mission_id=f"MSN-DEMO-NEG-{int(time.time())}",
+        sku=req.sku, qty=1,
+        floor_paise=floor, ceiling_paise=ceiling,
+        buyer_budget_paise=ceiling,
+        max_turns=3, walk_away_gap_paise=500, ttl_seconds=600,
+        parent_action_id=None, llm_enabled=True,
+    )
+    state = E.run_to_completion(state, llm_enabled=True)
+    return transcript(state.negotiation_id)
 
 @router.get("/{nid}/transcript")
 def transcript(nid: str):

@@ -108,3 +108,54 @@ def test_clamped_turn_count_matches_the_offers(client):
 
 def test_an_unknown_negotiation_is_404(client):
     assert client.get("/negotiation/neg_nope/transcript").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────
+# The customer-side entry point. The agent routes above take a mission
+# and a budget and are key-gated; this one takes a SKU and nothing else,
+# which is what makes "the model cannot move the floor" a claim about
+# the interface rather than about the caller's good manners.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_the_demo_route_needs_no_key_and_accepts_no_bounds(client):
+    from apps.api import ratelimit
+    ratelimit.reset()
+
+    unkeyed = TestClient(client.app)  # deliberately no X-API-Key
+    r = unkeyed.post("/negotiation/demo", json={"sku": "BAT-002"})
+    assert r.status_code == 200, r.text
+
+    body = r.json()
+    assert body["sku"] == "BAT-002"
+    # Bounds came from the catalog, not from the request.
+    from apps.api.products import CATALOG
+    assert body["floor_paise"] == CATALOG["BAT-002"]["floor_paise"]
+    assert body["ceiling_paise"] == CATALOG["BAT-002"]["ceiling_paise"]
+
+
+def test_the_demo_route_ignores_any_bounds_a_caller_tries_to_send(client):
+    """A floor of zero in the body must have no effect whatsoever."""
+    from apps.api import ratelimit
+    from apps.api.products import CATALOG
+    ratelimit.reset()
+
+    r = client.post("/negotiation/demo", json={
+        "sku": "BAT-002", "floor_paise": 0, "ceiling_paise": 99999999,
+        "buyer_budget_paise": 99999999, "max_turns": 99})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["floor_paise"] == CATALOG["BAT-002"]["floor_paise"]
+    assert body["ceiling_paise"] == CATALOG["BAT-002"]["ceiling_paise"]
+    for turn in body["turns"]:
+        for side in ("buyer_offer", "merchant_offer"):
+            offer = turn.get(side)
+            if offer:
+                assert offer["price_paise"] >= body["floor_paise"]
+
+
+def test_the_demo_route_refuses_a_sku_with_no_server_side_floor(client):
+    from apps.api import ratelimit
+    ratelimit.reset()
+    r = client.post("/negotiation/demo", json={"sku": "NOT-A-SKU"})
+    assert r.status_code == 404
+    assert r.json()["detail"]["error"]["error_code"] == "UNKNOWN_SKU"
