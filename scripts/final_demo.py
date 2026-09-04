@@ -32,6 +32,41 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 load_dotenv(PROJECT_ROOT / ".env")
 
+
+def demo_seq(scenario: str) -> int:
+    """A real audit-chain sequence, not one invented from the clock.
+
+    THE BUG THIS REPLACES
+    ---------------------
+    Every scenario used to mint its own binding id with
+
+        seq_id = int(time.time() * 1000 + OFFSET) % 1000000
+
+    with offsets 0, 1, 2, 3, 11 and 42. `bindings.seq` is a PRIMARY KEY,
+    so two scenarios whose gap happens to equal the difference of their
+    offsets write the same key and SQLite raises
+
+        IntegrityError: UNIQUE constraint failed: bindings.seq
+
+    quote_tamper -> replay collides at a 9 ms gap and quote_tamper ->
+    expired_quote at 8 ms, which a fast runner hits routinely and a slow
+    one never does. That is why the release gate passed on three CI
+    runners and failed on the fourth. The modulo also wraps every 1000
+    seconds, so a long job can collide with its own earlier stages.
+
+    Production never had this problem, because production does not invent
+    the number: `tools.tool_submit_proposal` takes the sequence the audit
+    chain returns when the verdict is appended, and the chain hands out a
+    monotonic id under a lock. The demo now does exactly the same thing,
+    which removes the collision by construction and makes the harness
+    exercise the real mechanism rather than a lookalike.
+    """
+    from apps.api.audit import chain
+
+    return chain.append("demo_harness", "binding_issued",
+                        {"scenario": scenario})
+
+
 def run_happy_path():
     print("\n--- [SCENARIO 1/15: HAPPY PATH] End-to-End Autonomous Purchase & Razorpay Order ---")
     from apps.api import razorpay_client
@@ -57,7 +92,7 @@ def run_happy_path():
     verd = engine.evaluate(mission=m, proposal=p, catalog=CATALOG, verify_fn=lambda *a: True)
     assert verd.decision == Decision.APPROVE
 
-    seq_id = int(time.time() * 1000) % 1000000
+    seq_id = demo_seq("happy_path")
     binding = register_binding(
         seq_id,
         mission_id=m.mission_id,
@@ -149,7 +184,7 @@ def run_cart_mutation():
     from apps.api.approval import register as register_binding
     from apps.api.approval import verify as verify_binding
 
-    seq_id = int(time.time() * 1000 + 1) % 1000000
+    seq_id = demo_seq("cart_mutation")
     binding = register_binding(
         seq_id,
         mission_id="MSN-MUT-01",
@@ -182,7 +217,7 @@ def run_quote_tamper():
     from apps.api.approval import register as register_binding
     from apps.api.approval import verify as verify_binding
 
-    seq_id = int(time.time() * 1000 + 11) % 1000000
+    seq_id = demo_seq("quote_tamper")
     binding = register_binding(
         seq_id,
         mission_id="MSN-QT-01",
@@ -215,7 +250,7 @@ def run_replay():
     from apps.api.approval import register as register_binding
     from apps.api.approval import verify as verify_binding
 
-    seq_id = int(time.time() * 1000 + 2) % 1000000
+    seq_id = demo_seq("replay")
     binding = register_binding(
         seq_id,
         mission_id="MSN-REP-01",
@@ -242,7 +277,7 @@ def run_expired_quote():
     from apps.api.approval import register as register_binding
     from apps.api.approval import verify as verify_binding
 
-    seq_id = int(time.time() * 1000 + 3) % 1000000
+    seq_id = demo_seq("expired_quote")
     now = int(time.time())
     binding = register_binding(
         seq_id,
@@ -353,7 +388,7 @@ def run_concurrency_replay():
     from apps.api.approval import register as register_binding
     from apps.api.approval import verify as verify_binding
 
-    seq_id = int(time.time() * 1000 + 42) % 1000000
+    seq_id = demo_seq("concurrency_replay")
     now = int(time.time())
     register_binding(
         seq_id,

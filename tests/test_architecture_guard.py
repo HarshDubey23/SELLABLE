@@ -44,3 +44,47 @@ def test_deterministic_gateway_has_no_llm_imports():
         content = py_file.read_text(encoding="utf-8")
         assert "google.genai" not in content, f"LLM SDK imported inside deterministic gateway module: {py_file}"
         assert "genai" not in content, f"LLM SDK imported inside deterministic gateway module: {py_file}"
+
+
+def test_the_demo_harness_never_invents_a_binding_primary_key():
+    """`bindings.seq` is an audit-chain sequence, not a number to make up.
+
+    scripts/final_demo.py used to mint one per scenario from the clock,
+    modulo a million, with a small per-scenario offset. Since seq is a
+    PRIMARY KEY, two scenarios whose gap equalled the difference of their
+    offsets wrote the same key and SQLite raised UNIQUE constraint failed.
+    It hit at gaps of 8 and 9 ms - routine on a fast runner, never on a
+    slow one - which is why the release gate passed on three CI machines
+    and failed on the fourth.
+
+    Production was never exposed: it passes the sequence the audit chain
+    returns. This asserts the harness does the same, so the gate cannot go
+    back to being a coin flip.
+
+    Checked against the syntax tree rather than the text, so the
+    explanation above cannot trip the assertion it is explaining.
+    """
+    import ast
+    import pathlib
+
+    source = pathlib.Path("scripts/final_demo.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(getattr(t, "id", "") == "seq_id" for t in node.targets):
+            continue
+        expr = ast.unparse(node.value)
+        if "time" in expr or "%" in expr:
+            offenders.append(expr)
+
+    assert offenders == [], (
+        f"final_demo.py assigns seq_id from the clock again: {offenders}. "
+        f"Use demo_seq(), which returns a real audit-chain sequence.")
+
+    names = {n.name for n in ast.walk(tree)
+             if isinstance(n, ast.FunctionDef)}
+    assert "demo_seq" in names, "the helper that replaced it is gone"
+    assert 'chain.append("demo_harness"' in source,         "demo_seq must take its sequence from the audit chain"
