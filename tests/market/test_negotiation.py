@@ -289,3 +289,48 @@ def test_the_keyless_market_is_reproducible():
     second = asyncio.run(run())
     assert first == second
     assert len(first) == 3
+
+
+# ------------------------------------------------------- honest matching
+
+def test_a_description_word_cannot_make_one_product_into_another():
+    """Asked for a camera, the catalog must not answer with a charger.
+
+    It did. "Camera and lens for travel" matched CHG-001, a 65W charger,
+    on the words "compact travel size" in its description -- a real
+    catalog row, honestly labelled, and completely wrong. Three merchants
+    then bid on a charger as though the request had been served.
+
+    A word in a description says something about a product. The name and
+    the category say what it *is*, and only that can make it an answer.
+    """
+    from apps.api.market.agents.buyer import keyword_plan
+    from apps.api.products import CATALOG
+
+    assert "travel" in str(CATALOG["CHG-001"]["description"]).lower(), \
+        "this test is meaningless if the charger no longer mentions travel"
+
+    plan = keyword_plan("Camera and lens for travel under Rs 1,50,000",
+                        CATALOG)
+    assert plan is None or "CHG-001" not in plan.skus, \
+        "a charger was returned for a camera request"
+
+
+def test_the_catalog_answers_what_it_stocks_and_refuses_what_it_does_not():
+    """Both halves matter. Refusing everything would also pass one of them."""
+    from apps.api.market.agents.buyer import keyword_plan
+    from apps.api.products import CATALOG
+
+    served = ["A complete cricket setup under Rs 6,000",
+              "A gaming PC under Rs 80,000",
+              "Best laptop for coding under Rs 90,000"]
+    refused = ["Camera and lens for travel under Rs 1,50,000",
+               "Best monitor keyboard and mouse combo under Rs 35,000",
+               "a submarine"]
+
+    for mission in served:
+        plan = keyword_plan(mission, CATALOG)
+        assert plan is not None and plan.skus, f"should serve: {mission}"
+    for mission in refused:
+        assert keyword_plan(mission, CATALOG) is None, \
+            f"should refuse rather than substitute something: {mission}"

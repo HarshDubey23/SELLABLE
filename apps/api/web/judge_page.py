@@ -1,6 +1,6 @@
 """GET /judge (and /cockpit) — the reviewer's cockpit.
 
-SEVEN SCENES, ONE PAGE
+EIGHT SCENES, ONE PAGE
 ----------------------
   A  Sentinel        live status, read from real endpoints on a poll
   B  Gauntlet        every built-in attack, one button, real latencies
@@ -9,6 +9,7 @@ SEVEN SCENES, ONE PAGE
   E  Two locks       write your own attack; watch both layers refuse it
   F  Kill & resurrect  really kill the process, watch recovery classify it
   G  Trust nothing   verify a chain block in your own browser, then break it
+  H  The market     three merchant LLMs bid; the server decides what it costs
 
 WHY IT IS ONE PAGE
 ------------------
@@ -62,6 +63,7 @@ SCENES = [
     ("locks", "E", "Two locks"),
     ("recovery", "F", "Kill &amp; resurrect"),
     ("trust", "G", "Trust nothing"),
+    ("market", "H", "The market"),
     ("evidence", "—", "Evidence"),
 ]
 
@@ -281,6 +283,102 @@ table.t td{color:var(--text-mid)}
   .brow{grid-template-columns:1fr 1fr;gap:6px}
   .brow.h{display:none}
   .tev{grid-template-columns:1fr}
+}
+
+/* ── H  the market ─────────────────────────────────────────────────────
+   The signature of this scene is its borders. A dashed violet edge means
+   a language model wrote the numbers inside it. A solid teal rule means
+   the server computed them. A card that never earns a teal rule never
+   earned a price, and you can see that from across the room without
+   reading a word. */
+.mk-ask{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 6px}
+.mk-ask #mk-mode{display:flex;gap:6px;flex-wrap:wrap}
+.mk-ask input[type=text]{
+  flex:1 1 340px;min-width:0;background:var(--bg-inset);color:var(--text-hi);
+  border:1px solid var(--border-hi);border-radius:var(--r-ctl);
+  padding:11px 13px;font:inherit;font-size:13.5px}
+.mk-ask input[type=text]:focus{outline:2px solid var(--violet);outline-offset:1px}
+.mk-seeds{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 14px}
+.mk-seed{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+  background:transparent;color:var(--text-lo);border:1px dashed var(--border-hi);
+  border-radius:999px;padding:5px 11px;cursor:pointer}
+.mk-seed:hover{color:var(--text-hi);border-color:var(--violet-line)}
+
+.mk-brief{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:var(--r-panel);overflow:hidden;margin:14px 0}
+.mk-brief div{background:var(--bg-panel);padding:11px 13px}
+.mk-brief .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--text-lo);margin-bottom:5px}
+.mk-brief .v{font-size:13px;color:var(--text-hi)}
+
+/* The bid floor. Three merchants, answering at once. */
+.mk-floor{display:grid;grid-template-columns:repeat(auto-fit,minmax(248px,1fr));
+  gap:12px;margin:16px 0}
+.mk-bid{background:var(--bg-panel);border:1px solid var(--border);
+  border-radius:var(--r-panel);overflow:hidden;display:flex;flex-direction:column}
+.mk-bid.pending{border-style:dashed;border-color:var(--border-hi);opacity:.72}
+.mk-bid.model{border:1px dashed var(--violet-line)}
+.mk-bid.refused{border:1px solid rgba(255,77,94,.42)}
+.mk-bid.won{border:1px solid var(--teal);box-shadow:0 0 0 1px var(--teal-soft)}
+.mk-bid-h{display:flex;align-items:baseline;justify-content:space-between;
+  gap:8px;padding:11px 13px 9px;border-bottom:1px solid var(--border)}
+.mk-bid-id{font-family:var(--mono);font-size:12px;font-weight:700;
+  letter-spacing:.08em;color:var(--text-hi)}
+.mk-bid-strat{font-size:10.5px;color:var(--text-lo)}
+.mk-terms{padding:11px 13px;display:grid;gap:6px;flex:1}
+.mk-term{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+.mk-term .k{color:var(--text-lo)}
+.mk-term .v{font-family:var(--mono);color:var(--text-hi)}
+/* The seam. Above it, what a model asked for. Below it, what the server
+   says that costs. They are never allowed to share a surface. */
+.mk-priced{border-top:2px solid var(--teal);background:var(--teal-soft);
+  padding:10px 13px}
+.mk-priced .amt{font-family:var(--mono);font-size:19px;font-weight:700;
+  color:var(--text-hi);letter-spacing:-.01em}
+.mk-priced .by{font-size:10px;color:var(--text-lo);margin-top:3px}
+.mk-refused{border-top:2px solid var(--red);background:var(--red-soft);
+  padding:10px 13px}
+.mk-refused .code{font-family:var(--mono);font-size:11px;font-weight:700;
+  color:var(--red);word-break:break-all}
+.mk-refused .why{font-size:11px;color:var(--text-mid);margin-top:4px}
+.mk-src{display:flex;align-items:center;gap:5px;padding:7px 13px;
+  border-top:1px solid var(--border);font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--text-lo)}
+.mk-src .d{width:5px;height:5px;border-radius:50%;background:var(--text-lo)}
+.mk-src.llm .d{background:var(--violet)}
+.mk-src.llm{color:var(--violet)}
+
+/* Why this merchant. Only subtractions between offers on the table. */
+.mk-why{background:var(--bg-panel);border:1px solid var(--border);
+  border-left:3px solid var(--teal);border-radius:var(--r-panel);
+  padding:15px 17px;margin:16px 0}
+.mk-why h4{font-size:15px;margin:0 0 4px;color:var(--text-hi)}
+.mk-why .basis{font-size:11px;color:var(--text-lo);margin-bottom:11px}
+.mk-reasons{display:grid;gap:7px}
+.mk-reason{display:flex;gap:9px;align-items:baseline;font-size:12.5px}
+.mk-reason .dim{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--text-lo);min-width:88px}
+.mk-reason.better .txt{color:var(--teal)}
+.mk-reason.worse  .txt{color:var(--amber)}
+.mk-weights{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;
+  padding-top:11px;border-top:1px solid var(--border)}
+.mk-weight{font-family:var(--mono);font-size:10.5px;color:var(--text-lo)}
+.mk-weight b{color:var(--text-hi);font-weight:700}
+
+.mk-settled{background:var(--bg-inset);border:1px solid var(--teal);
+  border-radius:var(--r-panel);padding:15px 17px;margin:16px 0}
+.mk-settled .amt{font-family:var(--mono);font-size:24px;font-weight:700;
+  color:var(--text-hi)}
+.mk-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:9px;margin-top:12px}
+.mk-fact .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--text-lo)}
+.mk-fact .v{font-family:var(--mono);font-size:11.5px;color:var(--text-hi);
+  word-break:break-all;margin-top:2px}
+@media (prefers-reduced-motion:no-preference){
+  .mk-bid{animation:mk-in .34s cubic-bezier(.22,.61,.36,1) both}
+  @keyframes mk-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 }
 """
 
@@ -679,6 +777,68 @@ def _scene_evidence(truth: dict[str, Any]) -> str:
 """
 
 
+def _scene_market() -> str:
+    """Scene H. Three merchants bid; the server decides what it costs.
+
+    The design carries one idea. A dashed violet border means a language
+    model wrote the numbers inside it; a solid teal rule means the server
+    computed them. A refused offer never gets the teal rule, because a
+    refused offer has no price. A reviewer can look at three cards and
+    tell, without reading a word, which figures are claims and which are
+    facts.
+    """
+    return """
+<h2 class="st">Three merchants argue. None of them can name a price.</h2>
+<p class="sl">Each merchant is its own language model with its own strategy and its own
+  signed limits, and they answer at once without seeing each other. What comes back is a
+  structured intent &mdash; discounts, delivery, warranty &mdash; with
+  <em>no field for an amount</em>. A merchant cannot say what something costs, because
+  the vocabulary it writes in does not contain the idea. The server prices the intent
+  against the catalog and that merchant's own manifest, and refuses anything the manifest
+  does not allow. Nothing is clamped: an illegal offer is not quietly trimmed to fit, it
+  is turned down with a reason you can read.</p>
+
+<div class="mk-ask">
+  <input type="text" id="mk-text" maxlength="400" autocomplete="off"
+         aria-label="What do you want to buy"
+         placeholder="Say what you want, in your own words"
+         value="A complete cricket setup under Rs 6,000">
+  <button class="btn btn-primary" id="mk-open">Open the market</button>
+  <span id="mk-mode"></span>
+</div>
+<div class="mk-seeds">
+  <button class="mk-seed" data-mission="A complete cricket setup under Rs 6,000">complete setup &middot; Rs 6,000</button>
+  <button class="mk-seed" data-mission="A cricket bat and ball delivered as fast as possible, under Rs 3,000">fastest delivery &middot; Rs 3,000</button>
+  <button class="mk-seed" data-mission="Cricket gear with the longest warranty under Rs 8,000">longest warranty &middot; Rs 8,000</button>
+  <button class="mk-seed" data-mission="A gaming PC under Rs 80,000">a mission this catalog cannot serve</button>
+</div>
+
+<div id="mk-err"></div>
+<div id="mk-brief"></div>
+<div class="mk-floor" id="mk-floor"></div>
+<div id="mk-state"></div>
+<div id="mk-why"></div>
+
+<div class="row-actions" style="margin-top:16px">
+  <button class="btn" id="mk-round" disabled>Run a round</button>
+  <button class="btn" id="mk-counter" disabled>Counter</button>
+  <button class="btn" id="mk-override" disabled>Override: cheapest instead</button>
+  <button class="btn" id="mk-accept" disabled>Accept the winner</button>
+  <button class="btn btn-primary" id="mk-settle" disabled>Pay for real</button>
+</div>
+<p class="sl" style="margin-top:10px">A counter goes to one merchant and names no rival
+  and no rival's terms &mdash; a test reads every prompt and fails if one merchant's brief
+  so much as contains another's name. The override re-runs the same mission on
+  cheapest-first weights as a <em>new</em> negotiation; the one on screen is never edited,
+  so the two can be set side by side. Accept is a conditional UPDATE, so twenty
+  simultaneous accepts produce one winner and nineteen refusals. Pay sends the winning
+  basket through the same gateway, the same approval binding and the same execution
+  machine as every other purchase here.</p>
+
+<div id="mk-settled"></div>
+"""
+
+
 def render_judge_page() -> str:
     truth = _load_truth()
 
@@ -696,6 +856,7 @@ def render_judge_page() -> str:
         "locks": _scene_locks(),
         "recovery": _scene_recovery(),
         "trust": _scene_trust(),
+        "market": _scene_market(),
         "evidence": _scene_evidence(truth),
     }
     body = "".join(
@@ -712,7 +873,7 @@ def render_judge_page() -> str:
   <div class="kicker">Razorpay AI Buildathon &middot; Track 01 &middot; evidence cockpit</div>
   <h1>The AI decides <span class="a">what to recommend</span>.<br>
       It cannot decide <span class="b">what money moves</span>.</h1>
-  <p>Seven scenes. Each one runs the production code path in front of you &mdash; the
+  <p>Eight scenes. Each one runs the production code path in front of you &mdash; the
      same gateway, the same binding, the same executor, the same ledger the storefront
      uses. Nothing here is a mock-up, and no number on this page was typed in.</p>
 </header>
@@ -1471,6 +1632,217 @@ $('e-score').addEventListener('click', async function(){
     L.push(c('dim','  evidence: ' + ex.evidence));
     out(o, L);
   } catch(e){ failed(o, 'GET /api/v1/security-score', e.message); }
+});
+
+/* ── H  the market ──────────────────────────────────────────────────
+   Three merchants answer at once. This renders what came back and
+   nothing else: every rupee figure on screen is a field the server
+   computed, and the card it sits in says so by its border. */
+let MK = null;
+
+function mkMode(mode){
+  if(!mode) return '';
+  const llm = mode.merchants === 'llm';
+  const pay = mode.payments === 'razorpay_test';
+  return '<span class="chip ' + (llm ? 'chip-violet' : 'chip-warn') + '">' +
+           esc(mode.merchants_label) + '</span> ' +
+         '<span class="chip ' + (pay ? 'chip-ok' : 'chip-warn') + '">' +
+           esc(mode.payments_label) + '</span>';
+}
+
+function mkBrief(d){
+  const p = d.planner || {};
+  return '<div class="mk-brief">' +
+    '<div><div class="k">Budget ceiling</div><div class="v">' + esc(d.budget_display) + '</div></div>' +
+    '<div><div class="k">Basket</div><div class="v">' + esc((d.basket||[]).join(', ')) + '</div></div>' +
+    '<div><div class="k">Read by</div><div class="v">' + esc(p.label || 'unknown') + '</div></div>' +
+    '<div><div class="k">Round</div><div class="v">' + esc(d.current_round) + ' of ' + esc(d.max_rounds) + '</div></div>' +
+    '</div>';
+}
+
+function mkBid(o, winnerId){
+  const i = o.intent || {};
+  const cls = !o.accepted ? 'refused' : (o.merchant_id === winnerId ? 'won' : 'model');
+  const rows = [
+    ['Line discount', i.line_discount_pct + '%'],
+    ['Bundle discount', i.bundle_discount_pct + '%'],
+    ['Shipping', i.shipping],
+    ['Delivery', i.delivery_days + ' day(s)'],
+    ['Warranty', i.warranty_years ? i.warranty_years + ' year(s)' : 'none']
+  ];
+  const terms = rows.map(function(t){
+    return '<div class="mk-term"><span class="k">' + esc(t[0]) +
+           '</span><span class="v">' + esc(t[1]) + '</span></div>';
+  }).join('');
+
+  const foot = o.accepted
+    ? '<div class="mk-priced"><div class="amt">' + esc(o.total_display) + '</div>' +
+      '<div class="by">server-side catalog recomputation</div></div>'
+    : '<div class="mk-refused"><div class="code">' + esc(o.reason) + '</div>' +
+      '<div class="why">' + esc((o.verdict && o.verdict.reason_human) ||
+        'refused by the merchant policy engine before it was priced') + '</div></div>';
+
+  return '<div class="mk-bid ' + cls + '">' +
+    '<div class="mk-bid-h"><span class="mk-bid-id">' + esc(o.merchant_id) + '</span>' +
+    '<span class="mk-bid-strat">round ' + esc(o.round) + '</span></div>' +
+    '<div class="mk-terms">' + terms + '</div>' + foot +
+    '<div class="mk-src' + (o.is_llm ? ' llm' : '') + '"><span class="d"></span>' +
+    esc(o.agent_label || '') + (o.latency_ms ? ' &middot; ' + esc(o.latency_ms) + 'ms' : '') +
+    '</div></div>';
+}
+
+function mkWhy(d){
+  const r = d.ranking;
+  if(!r || !r.explanation) return '';
+  const e = r.explanation;
+  const reasons = (e.reasons||[]).map(function(x){
+    return '<div class="mk-reason ' + esc(x.direction) + '">' +
+      '<span class="dim">' + esc(x.dimension) + '</span>' +
+      '<span class="txt">' + esc(x.text) + '</span></div>';
+  }).join('');
+  const wu = e.weights_used || {};
+  const weights = Object.keys(wu).map(function(k){
+    return '<span class="mk-weight">' + esc(k) + ' <b>' + esc(wu[k]) + '</b></span>';
+  }).join('');
+  const runner = e.runner_up
+    ? '<div class="mk-weight" style="margin-top:8px">runner-up ' + esc(e.runner_up.merchant_id) +
+      ', behind by <b>' + (e.runner_up.margin/10).toFixed(1) + '</b> points</div>'
+    : '';
+  return '<div class="mk-why"><h4>' + esc(e.headline) + '</h4>' +
+    '<div class="basis">' + esc(e.basis) + '</div>' +
+    '<div class="mk-reasons">' + reasons + '</div>' +
+    '<div class="mk-weights">' + weights + '</div>' + runner + '</div>';
+}
+
+function mkRender(d){
+  MK = d;
+  const winner = (d.ranking && d.ranking.winner) ? d.ranking.winner.merchant_id : null;
+  const bids = (d.offers||[]).filter(function(o){ return o.round === d.current_round; });
+  $('mk-brief').innerHTML = mkBrief(d);
+  $('mk-floor').innerHTML = bids.length
+    ? bids.map(function(o){ return mkBid(o, winner); }).join('')
+    : '<div class="state-empty">no offers yet &mdash; run a round</div>';
+  const settledStates = ['ROUND_COMPLETE','ACCEPTED','COUNTER_ISSUED'];
+  $('mk-why').innerHTML = settledStates.indexOf(d.state) >= 0 ? mkWhy(d) : '';
+  $('mk-mode').innerHTML = mkMode(d.mode);
+
+  const refused = (d.offers||[]).filter(function(o){ return !o.accepted; }).length;
+  $('mk-state').innerHTML =
+    '<div class="panel-sub" style="margin-top:10px">state <b>' + esc(d.state) + '</b>' +
+    ' &middot; round ' + esc(d.current_round) + '/' + esc(d.max_rounds) +
+    (refused ? ' &middot; <span style="color:var(--red)">' + refused +
+               ' offer(s) refused by policy</span>' : '') +
+    (d.transcript_hash ? ' &middot; transcript ' + esc(d.transcript_hash.slice(0,16)) : '') +
+    '</div>';
+
+  const open = d.state === 'ROUND_COMPLETE' || d.state === 'COUNTER_ISSUED';
+  $('mk-round').disabled = !(d.state === 'OPEN' || d.state === 'COUNTER_ISSUED') ||
+                           d.current_round >= d.max_rounds;
+  $('mk-counter').disabled = !open || !winner;
+  $('mk-accept').disabled = d.state !== 'ROUND_COMPLETE';
+  $('mk-override').disabled = !(open || d.state === 'ACCEPTED');
+  $('mk-settle').disabled = d.state !== 'ACCEPTED' || d.settled;
+  $('mk-counter').textContent = winner
+    ? 'Ask ' + winner + ' for faster delivery' : 'Counter';
+}
+
+async function mkCall(url, opts, what){
+  const err = $('mk-err'); err.innerHTML = '';
+  const box = $('mk-floor');
+  if(what) loading(box, what);
+  const r = await jfetch(url, opts);
+  if(!r.ok){
+    const e = (r.body && r.body.detail && r.body.detail.error) || {};
+    err.innerHTML = '<div class="state-error">' + esc(e.error_code || r.status) +
+      '<span class="m">' + esc(e.message || r.parseError || 'request failed') +
+      (e.hint ? ' &mdash; ' + esc(e.hint) : '') + '</span></div>';
+    if(what) box.innerHTML = '';
+    return null;
+  }
+  return r.body;
+}
+
+async function mkOpen(){
+  const text = $('mk-text').value.trim();
+  if(!text) return;
+  $('mk-settled').innerHTML = '';
+  $('mk-why').innerHTML = '';
+  const d = await mkCall('/market/open', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({mission_text:text, use_llm:true})
+  }, 'reading the mission and signing a ceiling');
+  if(d) mkRender(d);
+}
+
+async function mkRound(){
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/round',
+    {method:'POST'}, 'three merchants answering at once');
+  if(d) mkRender(d);
+}
+
+async function mkCounter(){
+  const w = MK.ranking && MK.ranking.winner && MK.ranking.winner.merchant_id;
+  if(!w) return;
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/counter', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({merchant_id:w, ask:'FASTER_DELIVERY',
+                          note:'can you do better on delivery?'})
+  });
+  if(d) mkRender(d);
+}
+
+async function mkAccept(){
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/accept',
+    {method:'POST'});
+  if(d) mkRender(d);
+}
+
+async function mkOverride(){
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/override', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({preset:'cheapest'})
+  }, 're-running the same mission on cheapest-first weights');
+  if(d){ $('mk-settled').innerHTML = ''; mkRender(d); }
+}
+
+async function mkSettle(){
+  const box = $('mk-settled');
+  loading(box, 'gateway to approval binding to execution machine to Razorpay');
+  const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/settle',
+    {method:'POST'});
+  if(!d){ box.innerHTML = ''; return; }
+  const s = d.settlement, o = s.order || {};
+  box.innerHTML = '<div class="mk-settled">' +
+    '<div class="amt">' + esc(s.amount_display) + '</div>' +
+    '<div class="panel-sub">paid to ' + esc(s.merchant_id) +
+      ' &middot; ' + esc(d.mode.payments_label) + '</div>' +
+    '<div class="mk-facts">' +
+    '<div class="mk-fact"><div class="k">Order</div><div class="v">' + esc(o.order_id) + '</div></div>' +
+    '<div class="mk-fact"><div class="k">Execution</div><div class="v">' + esc(o.execution_state) + '</div></div>' +
+    '<div class="mk-fact"><div class="k">Provider</div><div class="v">' + esc(o.provider) + '</div></div>' +
+    '<div class="mk-fact"><div class="k">Approval seq</div><div class="v">' + esc(s.approve_seq) + '</div></div>' +
+    '<div class="mk-fact"><div class="k">Transcript hash</div><div class="v">' + esc(s.transcript_hash) + '</div></div>' +
+    '</div>' +
+    '<div class="panel-sub" style="margin-top:11px">The binding pinned this merchant and ' +
+    'this transcript. Edit either afterwards and it stops matching, so no order is created.</div>' +
+    '</div>';
+  mkRender(d);
+}
+
+document.querySelectorAll('.mk-seed').forEach(function(b){
+  b.addEventListener('click', function(){
+    $('mk-text').value = b.dataset.mission;
+    mkOpen();
+  });
+});
+if($('mk-open'))     $('mk-open').addEventListener('click', mkOpen);
+if($('mk-round'))    $('mk-round').addEventListener('click', mkRound);
+if($('mk-counter'))  $('mk-counter').addEventListener('click', mkCounter);
+if($('mk-accept'))   $('mk-accept').addEventListener('click', mkAccept);
+if($('mk-override')) $('mk-override').addEventListener('click', mkOverride);
+if($('mk-settle'))   $('mk-settle').addEventListener('click', mkSettle);
+if($('mk-text'))     $('mk-text').addEventListener('keydown', function(e){
+  if(e.key === 'Enter') mkOpen();
 });
 """
 
