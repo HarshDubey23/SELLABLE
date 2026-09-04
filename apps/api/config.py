@@ -69,6 +69,14 @@ PLACEHOLDER_VALUES = frozenset({
     "your_gemini_api_key_here",
     "your_openrouter_key_here",
     "changeme",
+    # The values tests/conftest.py sets. Without them here the suite
+    # selects the LIVE provider and every checkout test reaches out to
+    # api.razorpay.com, which answers 401 — so whether a test passes
+    # depends on the runner's network rather than on the code. A test
+    # suite that talks to a payment API is not a test suite.
+    "rzp_test_dummy",
+    "dummy_secret",
+    "test_webhook_secret",
 })
 
 

@@ -158,7 +158,9 @@ def _rupees(paise: Any) -> str:
 def _ts(v: Any) -> str:
     import datetime as dt
     try:
-        return dt.datetime.fromtimestamp(int(v), dt.UTC).strftime(
+        # dt.timezone.utc, not dt.UTC: the latter is 3.11+, and this
+        # project supports 3.10.
+        return dt.datetime.fromtimestamp(int(v), dt.timezone.utc).strftime(
             "%Y-%m-%d %H:%M:%S UTC")
     except (TypeError, ValueError, OSError):
         return "—"

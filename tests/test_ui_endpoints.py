@@ -117,3 +117,26 @@ def test_protocol_adapters_are_still_reachable_over_the_api():
     # x402 is an honest stub and says so with a 501 rather than pretending.
     assert client.get("/x402/quote").status_code in (404, 501, 405)
 
+
+
+def test_the_trace_page_renders_on_every_supported_python():
+    """Guards a 3.11-only API that slipped into a page nothing rendered.
+
+    `datetime.UTC` is 3.11+, and this project supports 3.10. The trace
+    page's timestamp helper used it, and no test rendered the page with a
+    real execution, so it would have failed only on a reviewer's 3.10
+    clone. Rendering it here means the whole formatting path runs.
+    """
+    buy = client.post("/discovery/checkout",
+                      json={"sku": "BAT-001", "budget_paise": 300000})
+    assert buy.status_code == 200, buy.text
+    ref = buy.json()["execution_id"]
+
+    page = client.get(f"/trace/{ref}")
+    assert page.status_code == 200
+    assert "UTC" in page.text, "timestamps must actually render"
+    assert ref in page.text
+
+    api = client.get(f"/api/v1/trace/{ref}")
+    assert api.status_code == 200
+    assert api.json()["execution"]["execution_id"] == ref
