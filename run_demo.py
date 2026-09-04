@@ -61,8 +61,8 @@ OPENROUTER_MODEL=google/gemini-1.5-flash
 def ensure_virtualenv():
     # If already running inside virtualenv or requirements installed, proceed
     try:
-        import fastapi
-        import uvicorn
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
         return
     except ImportError:
         pass

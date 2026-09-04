@@ -15,7 +15,6 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-from . import config as app_config
 from . import money as money_mod
 from .approval import all_bindings
 from .attack import SCENARIOS as _SCENARIOS

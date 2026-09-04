@@ -26,7 +26,6 @@ _NAV_ITEMS = [
     ("architecture", "/architecture", "Architecture"),
     ("products", "/products", "Catalog"),
     ("metrics", "/metrics", "Metrics"),
-    ("why", "/why", "Why SELLABLE"),
 ]
 
 _FAVICON = (

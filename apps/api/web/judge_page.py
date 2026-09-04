@@ -37,9 +37,10 @@ def render_judge_page() -> str:
     is_simulated = not cfg.get("payment_configured", False)
     money_calls = money_snapshot().get("total", 0)
 
-    t = lambda s, k, d="—": _t(truth, s, k, d)
+    def t(s, k, d="—"):
+        return _t(truth, s, k, d)
+
     tests_passed = t("tests", "passed")
-    tests_skipped = t("tests", "skipped")
     attacks_blocked = t("attacks", "blocked")
     gateway_latency = t("gateway", "p95_ms")
     money_boundary = t("money_boundary", "razorpay_calls_from_llm_context", "0")

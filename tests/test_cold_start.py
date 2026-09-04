@@ -41,7 +41,6 @@ def test_cold_start_routes():
         "/audit-ui",
         "/gateway-ui",
         "/products",
-        "/why",
         "/demo",
         "/demo/checkout",
         "/demo/failures",
