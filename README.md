@@ -148,8 +148,12 @@ You can watch all three: [execution lifecycle](docs/architecture/execution-lifec
 ```bash
 git clone https://github.com/HarshDubey23/SELLABLE.git
 cd SELLABLE
-python run.py
+python run.py          # macOS and most Linux: python3 run.py
 ```
+
+macOS ships no `python` command at all, only `python3` — if you see
+`command not found: python`, that is why, and `python3 run.py` is the
+whole fix.
 
 That's the whole thing. `run.py` creates `.env`, installs dependencies
 into `.venv` if they're missing, boots, waits for a real health check,
