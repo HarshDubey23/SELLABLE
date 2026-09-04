@@ -130,32 +130,59 @@ def test_an_over_cap_bundle_discount_is_refused():
 
 
 def test_the_cap_belongs_to_the_merchant_not_to_the_number():
-    """15% is illegal at NOVATECH and legal at GEARHUB, whose cap is 15%.
+    """The identical offer is illegal at one merchant and legal at another.
 
-    GEARHUB still cannot use all of it here — its own margin floor binds
-    first, which is the point of having two independent limits.
+    15% is over NovaTech's 8% cap and exactly at GearHub's. Nothing about
+    the number decides this; the signed manifest of the merchant making
+    the offer does. That is what makes the cap a property of the merchant
+    rather than a global constant hiding in the engine.
     """
+    assert merchants.get("NOVATECH").max_line_discount_pct == 8
     assert merchants.get("GEARHUB").max_line_discount_pct == 15
 
     refused = ev(intent("NOVATECH", line_discount_pct=15))
     assert refused.reason == policy.LINE_DISCOUNT_EXCEEDED
+    assert refused.total_paise is None
 
-    # Not a discount-cap refusal at GEARHUB; the margin floor catches it.
-    at_gearhub = ev(intent("GEARHUB", line_discount_pct=15, delivery_days=4))
-    assert at_gearhub.reason != policy.LINE_DISCOUNT_EXCEEDED
-
-    # And a discount inside both limits is accepted.
-    ok = ev(intent("GEARHUB", line_discount_pct=10, delivery_days=4))
-    assert ok.accepted, ok.reason
+    allowed = ev(intent("GEARHUB", line_discount_pct=15, delivery_days=4))
+    assert allowed.accepted, allowed.reason
+    assert allowed.total_paise is not None
 
 
 # --------------------------------------------------------- other limits
 
-def test_margin_floor_refuses_a_trade_below_cost_plus_margin():
-    v = ev(intent("GEARHUB", line_discount_pct=15, delivery_days=4))
-    assert v.reason == policy.MARGIN_VIOLATION
-    assert v.breach["resulting_margin_pct"] < v.breach["manifest_floor_pct"]
-    assert v.total_paise is None
+def test_every_merchant_can_reach_its_own_headline_cap():
+    """A cap nobody can use is marketing, not a limit.
+
+    Each merchant's advertised maximum line discount has to be genuinely
+    offerable, or the negotiation is theatre: the merchants would look
+    like they had room to move and never actually move. This pins that
+    the manifests are tuned so the headline number is reachable.
+    """
+    for merchant_id in ("NOVATECH", "GEARHUB", "BYTECART"):
+        m = merchants.get(merchant_id)
+        v = ev(intent(merchant_id, line_discount_pct=m.max_line_discount_pct,
+                      delivery_days=m.min_delivery_days))
+        assert v.accepted, (
+            f"{merchant_id} cannot reach its own {m.max_line_discount_pct}% "
+            f"cap: {v.reason}")
+
+
+def test_margin_floor_binds_where_the_caps_do_not():
+    """Stack both levers at their caps and the floor catches every merchant.
+
+    Neither limit is redundant. The caps bound each lever on its own; the
+    floor bounds what the levers do together, which is the only place a
+    merchant can quietly negotiate itself under water.
+    """
+    for merchant_id in ("NOVATECH", "GEARHUB", "BYTECART"):
+        m = merchants.get(merchant_id)
+        v = ev(intent(merchant_id, line_discount_pct=m.max_line_discount_pct,
+                      bundle_discount_pct=m.max_bundle_discount_pct,
+                      delivery_days=m.min_delivery_days))
+        assert v.reason == policy.MARGIN_VIOLATION,             f"{merchant_id} stacked both caps and was not refused: {v.reason}"
+        assert v.breach["resulting_margin_pct"] < v.breach["manifest_floor_pct"]
+        assert v.total_paise is None, "a refused offer must carry no price"
 
 
 def test_free_shipping_must_be_earned():

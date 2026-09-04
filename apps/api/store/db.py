@@ -139,6 +139,68 @@ def init_schema() -> None:
                     deployed_at INTEGER,
                     created_at INTEGER NOT NULL
                 );
+                -- SELLABLE Market. Declared here with every other table so
+                -- a fresh database - a clone, a test tmpdir - has them from
+                -- the first boot. The market modules also call their own
+                -- CREATE IF NOT EXISTS, which is harmless and keeps them
+                -- usable in isolation.
+                CREATE TABLE IF NOT EXISTS market_merchants (
+                    merchant_id TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    manifest_json TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    seeded_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS market_negotiations (
+                    negotiation_id TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    mission_text TEXT NOT NULL,
+                    mission_id TEXT NOT NULL,
+                    budget_paise INTEGER NOT NULL,
+                    basket_json TEXT NOT NULL,
+                    weights_json TEXT NOT NULL,
+                    planner_json TEXT NOT NULL,
+                    current_round INTEGER NOT NULL DEFAULT 0,
+                    winner_merchant_id TEXT,
+                    winner_offer_id TEXT,
+                    transcript_hash TEXT,
+                    parent_negotiation_id TEXT,
+                    override_of TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    last_error TEXT
+                );
+                -- offer_id is the PRIMARY KEY on purpose: it is derived
+                -- deterministically from (negotiation, merchant, round), so a
+                -- replayed round collides here and is refused by the database
+                -- rather than by a check someone can forget to write.
+                CREATE TABLE IF NOT EXISTS market_offers (
+                    offer_id TEXT PRIMARY KEY,
+                    negotiation_id TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    round INTEGER NOT NULL,
+                    intent_json TEXT NOT NULL,
+                    verdict_json TEXT NOT NULL,
+                    accepted INTEGER NOT NULL,
+                    reason TEXT,
+                    total_paise INTEGER,
+                    provenance_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS market_counters (
+                    counter_id TEXT PRIMARY KEY,
+                    negotiation_id TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    round INTEGER NOT NULL,
+                    ask TEXT NOT NULL,
+                    note TEXT,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_market_offers_neg
+                    ON market_offers(negotiation_id);
+                CREATE INDEX IF NOT EXISTS idx_market_neg_state
+                    ON market_negotiations(state);
                 CREATE INDEX IF NOT EXISTS idx_orders_idem
                     ON orders(idempotency_key);
                 CREATE INDEX IF NOT EXISTS idx_events_order

@@ -29,7 +29,7 @@ from ..store import db as store
 
 # Bump when the shape or the numbers change. Seeding replaces every row
 # whose version differs, so a partially-migrated set cannot exist.
-MANIFEST_VERSION = 3
+MANIFEST_VERSION = 4
 
 LLM_BACKED = "llm"
 SCRIPTED = "scripted"
@@ -143,7 +143,12 @@ _SEED: tuple[CapabilityManifest, ...] = (
         max_delivery_days=9,
         allowed_warranty_years=(0, 1),
         warranty_price_per_year_paise=14900,
-        cost_basis_pct=80,
+        # Tuned so the headline 15% is actually reachable on its own
+        # (margin 12% against a floor of 8%) while stacking it with the
+        # 18% bundle is not. A merchant whose advertised cap can never be
+        # used is a badly specified merchant, and a market where two of
+        # three refuse every round teaches a reviewer nothing.
+        cost_basis_pct=74,
         min_margin_pct=8,
         eligible_categories=("cricket", "electronics", "apparel", "books",
                              "stationery", "groceries"),
@@ -166,7 +171,9 @@ _SEED: tuple[CapabilityManifest, ...] = (
         max_delivery_days=7,
         allowed_warranty_years=(0, 1, 2, 3),
         warranty_price_per_year_paise=9900,
-        cost_basis_pct=76,
+        # Same shape: the 22% bundle clears the 10% floor on its own
+        # (margin 12%), stacking it with the line discount does not.
+        cost_basis_pct=68,
         min_margin_pct=10,
         eligible_categories=("cricket", "electronics", "books", "apparel",
                              "stationery", "groceries"),
