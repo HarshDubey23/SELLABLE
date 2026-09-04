@@ -1,5 +1,0 @@
-audit_chain: 59 rows
-webhook_events: 0 rows
-orders: 12 rows
-quotes: 17 rows
-verdicts: 20 rows
