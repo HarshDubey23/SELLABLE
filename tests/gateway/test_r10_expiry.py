@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/gateway/test_r10_expiry.py - R10 mission expiry tests
 """
 import time

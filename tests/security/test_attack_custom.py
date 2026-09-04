@@ -231,3 +231,91 @@ def test_the_rate_limit_actually_refuses(client):
     refusal = client.post("/attack/gauntlet")
     if refusal.status_code == 429:
         assert refusal.json()["detail"]["error"]["error_code"] == "RATE_LIMITED"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Route classification. Everything reachable without a key that can end
+# in a Razorpay call needs a ceiling, because "unauthenticated" and
+# "unbounded" together is how a storefront becomes an expense.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_the_storefront_checkout_has_a_ceiling(client):
+    """No API key, by design. Therefore a rate limit, by necessity."""
+    ratelimit.reset()
+    codes = [client.post("/discovery/checkout",
+                         json={"sku": "BAT-001", "budget_paise": 300000}).status_code
+             for _ in range(16)]
+    assert 429 in codes, (
+        "an unauthenticated route that creates real test orders must be "
+        "throttled; without this a loop is an unbounded spend")
+
+
+def test_the_agent_mission_runner_has_a_ceiling(client):
+    ratelimit.reset()
+    codes = [client.post("/agent/run_full_mission",
+                         json={"intent": "x", "budget_inr": 10}).status_code
+             for _ in range(12)]
+    assert 429 in codes
+
+
+def test_every_unauthenticated_mutating_route_is_accounted_for():
+    """A checklist that fails when someone adds an ungated POST.
+
+    Not a security control — a forcing function. Adding a mutating route
+    without a key means deciding, in writing, why that is right and what
+    bounds it instead.
+    """
+    import ast
+    import pathlib
+
+    KEYED = "require_api_key"
+    # Route -> why it is open, and what bounds it instead.
+    ACCOUNTED = {
+        "/search": "read-only discovery; no state change",
+        "/api/v1/gateway/simulate": "pure gateway evaluation; writes nothing, not even an audit row",
+        "/checkout": "the customer's checkout; rate-limited per client",
+        "/reconcile/{execution_id}": "customer recovery; bounded by the state machine",
+        "/attack/custom": "reviewer sandbox; rate-limited, imports no executor",
+        "/attack/gauntlet": "reviewer sandbox; rate-limited",
+        "/run/{scenario_id}": "attack lab; gateway-only, no money boundary",
+        "/simulate/{scenario_id}": "attack lab; gateway-only, no money boundary",
+        "/run_all": "attack lab; gateway-only, no money boundary",
+        "/audit/tamper-demo": "in-memory copy only; rate-limited",
+        "/demo": "negotiation with catalog-derived bounds; rate-limited",
+        "/agent/run_full_mission": "cockpit mission scene; rate-limited",
+        "/demo/kill-switch": "double-gated on CHAOS_ENABLED and test credentials",
+        "/webhook": "HMAC-verified, fail-closed when the secret is unset",
+        "/api/chaos/faults": "gated on CHAOS_ENABLED",
+        "/api/chaos/faults/{fault_id}": "gated on CHAOS_ENABLED",
+        "/api/chaos/reset": "gated on CHAOS_ENABLED",
+        "/api/chaos/scenarios/{scenario_id}/run": "gated on CHAOS_ENABLED",
+        "/missions/{mission_id}/start": "observability only; never gates money",
+        "/missions/{mission_id}/step": "observability only; never gates money",
+        "/missions/{mission_id}/finish": "observability only; never gates money",
+        "/evaluate": "growth: gateway verdict only, never creates an order",
+        "/transact": "growth: gateway verdict only, never creates an order",
+        "/loop/approve/{action_id}": "merchant growth loop; no money boundary",
+        "/loop/execute/{action_id}": "merchant growth loop; no money boundary",
+    }
+
+    unaccounted = []
+    for path in pathlib.Path("apps/api").rglob("*.py"):
+        # utf-8-sig: a stray BOM makes ast.parse raise on a valid file.
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):
+                continue
+            for dec in node.decorator_list:
+                if not isinstance(dec, ast.Call):
+                    continue
+                target = getattr(dec.func, "attr", "")
+                if target not in ("post", "put", "delete", "patch"):
+                    continue
+                route = dec.args[0].value if dec.args else "?"
+                keyed = KEYED in ast.unparse(dec)
+                if not keyed and route not in ACCOUNTED:
+                    unaccounted.append(f"{path}: {target.upper()} {route}")
+
+    assert unaccounted == [], (
+        "these mutating routes have neither an API key nor an entry saying "
+        "why they are open:\n  " + "\n  ".join(unaccounted))

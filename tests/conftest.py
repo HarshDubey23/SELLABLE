@@ -1,4 +1,4 @@
-﻿"""Shared pytest fixtures for the SELLABLE test suite."""
+"""Shared pytest fixtures for the SELLABLE test suite."""
 from pathlib import Path
 
 import pytest

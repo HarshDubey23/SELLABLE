@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/gateway/test_attack_lab.py
 
 Proves all 8 adversarial scenarios are blocked with 0 Razorpay calls.

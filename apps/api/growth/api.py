@@ -57,13 +57,16 @@ async def market_radar():
 
 @router.post("/transact")
 async def execute_growth_transaction(req: GrowthTransactReq):
-    """Execute an AI-optimized merchant growth bundle through the deterministic Policy Gateway.
+    """Evaluate a growth bundle against the deterministic policy gateway.
 
-    Guarantees:
-    - 0 LLM money authority: proposal runs through pure-stdlib R1-R12 gateway.
-    - Prices taken strictly from server-side catalog.
-    - Single-use SHA-256 approval binding minted.
-    - Settles on live Razorpay test-mode API.
+    What this does: prices the bundle from the server-side catalog, signs a
+    mission, and runs R1-R12 via `tool_submit_proposal`. An APPROVE mints a
+    single-use approval binding.
+
+    What this does NOT do, despite what its docstring used to claim: settle
+    anything. It stops at the verdict. Creating an order requires
+    `tool_create_order`, which this route never calls, so no money moves
+    here and none is claimed to. Anything that says otherwise is wrong.
     """
     now_ts = int(time.time())
     mission_id = f"GRW-{now_ts}"

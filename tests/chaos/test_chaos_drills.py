@@ -1,7 +1,15 @@
-"""Automated Pytest Suite for Chaos Monkey Fault-Injection & Invariants."""
+"""Automated Pytest Suite for Chaos Monkey Fault-Injection & Invariants.
+
+Arming a fault is gated behind CHAOS_ENABLED, because it changes how every
+other route on the server behaves and the arming endpoints are
+unauthenticated. A drill sets the flag deliberately; the gate itself is
+asserted in `test_arming_is_refused_when_chaos_is_not_enabled`, which
+runs with the flag off.
+"""
 import asyncio
 import os
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.chaos.engine import chaos_engine
@@ -9,6 +17,35 @@ from apps.api.chaos.scenarios import scenario_runner
 from apps.api.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _chaos_enabled(monkeypatch):
+    """Every drill in this file is a deliberate drill."""
+    monkeypatch.setenv("CHAOS_ENABLED", "true")
+
+
+def test_arming_is_refused_when_chaos_is_not_enabled(monkeypatch):
+    """The gate, asserted rather than assumed.
+
+    Without it, anyone who can reach a public deploy can arm a latency
+    spike or a 5xx flake on the checkout route. Reads stay open — watching
+    a drill is harmless, running one is not.
+    """
+    monkeypatch.delenv("CHAOS_ENABLED", raising=False)
+
+    armed = client.post("/api/chaos/faults", json={
+        "fault_id": "f-should-not-arm", "type": "flake_5xx",
+        "target_route": "/discovery/checkout", "duration_ms": 5000})
+    assert armed.status_code == 403
+    assert armed.json()["detail"]["error"]["error_code"] == "CHAOS_DISABLED"
+
+    assert client.post("/api/chaos/reset").status_code == 403
+    assert client.post(
+        "/api/chaos/scenarios/duplicate_storm/run").status_code == 403
+
+    # Reading is always allowed.
+    assert client.get("/api/chaos/status").status_code == 200
 
 
 def test_chaos_safety_check():

@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/gateway/test_r9_signature.py - R9 mission signature tests
 """
 import hashlib

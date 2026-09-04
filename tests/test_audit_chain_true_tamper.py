@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_audit_chain_true_tamper.py — True SQLite Persisted Ledger Tamper Detection
 
 Section 18:

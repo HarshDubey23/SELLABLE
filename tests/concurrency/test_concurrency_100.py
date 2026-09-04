@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/concurrency/test_concurrency_100.py — Extreme Concurrency & Idempotency Stress Tests
 
 Sections 8, 9, 20, 23:
