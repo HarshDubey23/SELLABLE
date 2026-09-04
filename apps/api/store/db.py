@@ -119,10 +119,58 @@ def init_schema() -> None:
                     deployed_at INTEGER,
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS execution_log (
+                    execution_id TEXT PRIMARY KEY,
+                    approval_seq INTEGER NOT NULL,
+                    mission_id TEXT NOT NULL,
+                    proposal_hash TEXT NOT NULL,
+                    amount_paise INTEGER NOT NULL,
+                    currency TEXT NOT NULL,
+                    skus TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    razorpay_order_id TEXT,
+                    razorpay_payment_id TEXT,
+                    execution_state TEXT NOT NULL DEFAULT 'APPROVED',
+                    previous_state TEXT,
+                    error_code TEXT,
+                    error_reason TEXT,
+                    reconciliation_reason TEXT,
+                    attempts INTEGER DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS webhook_lifecycle (
+                    event_id TEXT PRIMARY KEY,
+                    event_type TEXT,
+                    order_id TEXT,
+                    payment_id TEXT,
+                    amount_paise INTEGER,
+                    status TEXT,
+                    lifecycle_state TEXT NOT NULL DEFAULT 'RECEIVED',
+                    hmac_valid BOOLEAN NOT NULL DEFAULT 0,
+                    received_at INTEGER NOT NULL,
+                    persisted_at INTEGER,
+                    audited_at INTEGER,
+                    applied_at INTEGER,
+                    error_reason TEXT
+                );
+                CREATE TABLE IF NOT EXISTS execution_state_transitions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    execution_id TEXT NOT NULL,
+                    from_state TEXT NOT NULL,
+                    to_state TEXT NOT NULL,
+                    reason TEXT,
+                    actor TEXT DEFAULT 'executor',
+                    occurred_at INTEGER NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS idx_orders_idem
                     ON orders(idempotency_key);
                 CREATE INDEX IF NOT EXISTS idx_events_order
                     ON webhook_events(order_id);
+                CREATE INDEX IF NOT EXISTS idx_execution_approval_seq
+                    ON execution_log(approval_seq);
+                CREATE INDEX IF NOT EXISTS idx_execution_state
+                    ON execution_log(execution_state);
             """)
             conn.commit()
         finally:

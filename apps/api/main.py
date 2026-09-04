@@ -7,6 +7,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from fastapi import FastAPI
 
+from . import config as app_config
 from .agent.runner import router as agent_router
 from .attack import router as attack_router
 from .audit import chain as audit_chain
@@ -19,6 +20,7 @@ from .demo import router as demo_router
 from .demo_capture import router as capture_router
 from .demo_ui import router as demo_ui_router
 from .discovery import discovery_router
+from .executor import init_execution_schema
 from .gateway.proof import compute_proof
 from .growth import growth_router
 from .manifest import router as manifest_router
@@ -49,10 +51,11 @@ app.add_middleware(ChaosFaultBusMiddleware)
 
 # G6: chain self-verifies at boot; tamper halts the money path
 CHAIN_OK_AT_BOOT, _boot_reason = audit_chain.verify_strict()
+init_execution_schema()
 print(f"[BOOT] audit chain verify_strict -> {CHAIN_OK_AT_BOOT} ({_boot_reason})")
 print(f"[BOOT] durable store -> {store.db_path()} "
-      f"({len(audit_chain.entries())} chain entries, {len(orders)} orders, "
-      f"{len(quotes)} quotes)")
+       f"({len(audit_chain.entries())} chain entries, {len(orders)} orders, "
+       f"{len(quotes)} quotes, execution_log ready)")
 
 app.include_router(manifest_router)
 app.include_router(tools_router)
