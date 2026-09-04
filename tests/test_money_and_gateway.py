@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from apps.api.gateway_service import GatewayException, GatewayMode, SimulatorGateway
 from apps.api.money_types import Money, MoneyError

@@ -1,9 +1,21 @@
-"""Chaos Control API Endpoints & SSE Live Feed Router."""
+"""Chaos control: arm and disarm faults, and watch them fire.
+
+GATED, because arming a fault changes how every other route on the
+server behaves. A latency spike or a 5xx flake armed by a passer-by on a
+public deploy is an availability incident, not a demo. Reads (status, run
+details, the event stream) stay open — watching is harmless.
+
+The gate is the same one the kill switch uses: CHAOS_ENABLED=true, set
+deliberately by whoever is running the drill. With it unset the arming
+routes answer 403 and say why, which is also what lets the cockpit render
+its chaos controls as honestly disabled rather than hiding them.
+"""
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .engine import chaos_engine
@@ -13,7 +25,20 @@ from .scenarios import scenario_runner
 router = APIRouter(tags=["chaos"])
 
 
-@router.post("/api/chaos/faults")
+def require_chaos_enabled() -> None:
+    """Refuse to arm faults unless someone asked for them by name."""
+    if os.environ.get("CHAOS_ENABLED", "").strip().lower() != "true":
+        raise HTTPException(403, detail={
+            "ok": False,
+            "error": {
+                "error_code": "CHAOS_DISABLED",
+                "message": ("arming a fault changes how every route behaves, "
+                            "so it requires CHAOS_ENABLED=true. Reading chaos "
+                            "status and run history is always available."),
+            }})
+
+
+@router.post("/api/chaos/faults", dependencies=[Depends(require_chaos_enabled)])
 def arm_fault(payload: dict[str, Any]):
     """Arm a new fault in Chaos Monkey."""
     fault_id = payload.get("fault_id", f"f-{payload.get('type', 'custom')}")
@@ -29,7 +54,7 @@ def arm_fault(payload: dict[str, Any]):
     return {"ok": True, "message": msg, "fault": cfg.__dict__ if cfg else {}}
 
 
-@router.delete("/api/chaos/faults/{fault_id}")
+@router.delete("/api/chaos/faults/{fault_id}", dependencies=[Depends(require_chaos_enabled)])
 def disarm_fault(fault_id: str):
     """Disarm an active fault."""
     ok = chaos_engine.disarm_fault(fault_id)
@@ -38,14 +63,14 @@ def disarm_fault(fault_id: str):
     return {"ok": True, "message": f"Fault '{fault_id}' disarmed."}
 
 
-@router.post("/api/chaos/reset")
+@router.post("/api/chaos/reset", dependencies=[Depends(require_chaos_enabled)])
 def reset_chaos():
     """Global kill switch: disarm all faults and restore happy-path operation."""
     res = chaos_engine.reset_all()
     return res
 
 
-@router.post("/api/chaos/scenarios/{scenario_id}/run")
+@router.post("/api/chaos/scenarios/{scenario_id}/run", dependencies=[Depends(require_chaos_enabled)])
 async def run_scenario(scenario_id: str):
     """Run a deterministic chaos drill end-to-end."""
     verdict = await scenario_runner.run_drill(scenario_id.upper())

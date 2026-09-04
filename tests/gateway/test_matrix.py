@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/gateway/test_matrix.py - R1-R12 gateway rule matrix
 """
 import time

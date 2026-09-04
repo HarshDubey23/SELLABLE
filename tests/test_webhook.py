@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_webhook.py - Webhook HMAC, dedup, and ledger tests (offline).
 """
 import hashlib

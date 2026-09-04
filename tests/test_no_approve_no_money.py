@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_no_approve_no_money.py
 
 INV-1: No approval binding -> no money flow.

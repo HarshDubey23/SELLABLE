@@ -1,4 +1,4 @@
-﻿"""
+"""
 Architecture Guard Tests for SELLABLE.
 
 Enforces:

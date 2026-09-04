@@ -1,7 +1,7 @@
 """
 HTTP endpoints for running buyer agent missions.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import config as app_config
 from ..deps import require_api_key
@@ -93,7 +93,8 @@ async def run_scenario_endpoint(scenario_id: str):
 
 
 @router.post("/agent/run_full_mission")
-async def run_full_mission_ui(payload: dict | None = None):
+async def run_full_mission_ui(payload: dict | None = None,
+                              request: Request = None):  # noqa: RUF013
     """UI convenience endpoint to run a natural language mission directly from UI.
 
     Accepts: {
@@ -105,7 +106,21 @@ async def run_full_mission_ui(payload: dict | None = None):
     """
     import time
 
+    from .. import ratelimit
     from ..issuer import ISSUER_LABEL, issue_mission
+
+    # Unauthenticated on purpose — the cockpit's mission scene calls it, and
+    # a reviewer should not need a key to watch the agent shop. It can end
+    # in a real Razorpay test order, so it gets a ceiling.
+    who = (request.client.host if request is not None and request.client
+           else "unknown")
+    if not ratelimit.allow(who, bucket="agent_mission", limit=8):
+        raise HTTPException(429, detail={
+            "ok": False,
+            "error": {"error_code": "RATE_LIMITED",
+                      "message": "too many agent missions from this client",
+                      "retry_after_seconds": ratelimit.retry_after(
+                          who, bucket="agent_mission")}})
 
     if not payload:
         payload = {}

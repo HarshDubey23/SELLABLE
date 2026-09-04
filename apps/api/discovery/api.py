@@ -1,9 +1,14 @@
-"""Real-World Product Discovery API Router & UI.
+"""Product discovery and the storefront checkout. JSON only.
 
-Exposes endpoints to search the live web, extract real retail product listings,
-verify and normalize untrusted data, compare options against merchant catalog,
-validate recommendations through Policy Gateway, and execute real Razorpay test orders
-with cryptographic single-use approval bindings.
+Search queries live retail sources and returns what they actually said,
+with provenance attached. Checkout runs the canonical money path — quote,
+gateway, approval binding, execution state machine — and reports every
+outcome in one envelope so a client cannot mistake an unknown result for
+a successful one.
+
+The discovery studio page that used to live here was retired when the
+product collapsed to three surfaces; `/discovery` now redirects to the
+storefront.
 """
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -117,7 +122,8 @@ async def api_search_products(req: DiscoverySearchReq) -> DiscoveryPipelineResul
 
 
 @router.post("/checkout")
-async def api_discovery_checkout(req: DiscoveryCheckoutReq) -> dict[str, Any]:
+async def api_discovery_checkout(req: DiscoveryCheckoutReq,
+                                 request: Request) -> dict[str, Any]:
     """Buy the merchant SKU — through the SAME executor the API path uses.
 
     This route used to be a second money path: it signed its own mission,
@@ -138,9 +144,22 @@ async def api_discovery_checkout(req: DiscoveryCheckoutReq) -> dict[str, Any]:
     manufactures an order id and never reports a payment that did not
     happen.
     """
-    from .. import issuer
+    from .. import issuer, ratelimit
     from .. import money as money_mod
     from .. import tools as tools_mod
+
+    # This is the customer's checkout, so it has no API key — that is right
+    # for a storefront. It does create a real Razorpay test order when
+    # credentials are configured, so it gets a ceiling instead: an
+    # unauthenticated route that spends is a route that needs one.
+    who = request.client.host if request.client else "unknown"
+    if not ratelimit.allow(who, bucket="storefront_checkout", limit=12):
+        raise HTTPException(429, detail={
+            "ok": False,
+            "error": {"error_code": "RATE_LIMITED",
+                      "message": "too many checkouts from this client",
+                      "retry_after_seconds": ratelimit.retry_after(
+                          who, bucket="storefront_checkout")}})
 
     now_ts = int(time.time())
     mission_id = f"msn_disc_{now_ts}_{uuid.uuid4().hex[:8]}"

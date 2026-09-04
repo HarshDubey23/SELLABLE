@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from apps.api.payment_state import (
     IllegalStateTransitionError,

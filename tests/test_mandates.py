@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_mandates.py - Mandate signature and expiry tests.
 """
 import os

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Strict Money Type abstraction for SELLABLE.
 
 Rules:
