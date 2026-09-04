@@ -20,4 +20,13 @@ def _isolated_db(tmp_path, monkeypatch):
     from apps.api.audit import chain as audit_chain
     audit_chain._chain.clear()
     audit_chain._load_from_db()
+
+    # The rate limiter is process-global and time-windowed, so without this
+    # a test that deliberately exhausts a bucket leaves the next sixty
+    # seconds of tests getting 429s. That makes the suite pass or fail on
+    # how fast the machine is, which is how this first showed up: green
+    # locally and on Ubuntu, red on one Windows runner.
+    from apps.api import ratelimit
+    ratelimit.reset()
     yield
+    ratelimit.reset()
