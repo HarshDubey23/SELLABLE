@@ -73,6 +73,9 @@ def verify_call(seq, **kw):
 
 def _run_all():
     global PASS_COUNT, FAIL_COUNT
+    from apps.api.store import db as store
+    store.execute("DELETE FROM bindings")
+
     # 1. Happy path
     reset_consumed()
     make(100, mission_id="MSN-A", proposal_hash="h-A", quote_id="Q-A",

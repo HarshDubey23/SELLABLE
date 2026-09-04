@@ -38,8 +38,8 @@ from .store import db as store
 from .tools import orders, quotes
 from .tools import router as tools_router
 from .ui import router as ui_router
-from .web.product_page import router as product_router
 from .web.judge_page import router as judge_page_router
+from .web.product_page import router as product_router
 from .webhook.receiver import payment_ledger, processed_event_ids
 from .webhook.receiver import router as webhook_router
 

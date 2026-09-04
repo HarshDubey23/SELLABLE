@@ -67,10 +67,12 @@ def make_intent(mission_id="MSN-1", user="u1", ceiling=100000,
 
 def make_cart(mission_id="MSN-1", cart_hash="h", amount=100000,
               signed_offset=0, version=MANDATE_VERSION):
+    now = int(time.time())
     return sign_cart(CartMandate(
         mission_id=mission_id, cart_hash=cart_hash,
         amount_paise=amount,
-        signed_at=int(time.time()) + signed_offset,
+        signed_at=now + signed_offset,
+        expires_at=now + 3600,
         version=version,
     ), KEY)
 

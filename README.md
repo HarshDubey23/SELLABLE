@@ -183,10 +183,10 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **330 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **329 passed**, 2 skipped (browser E2E — needs Playwright and a running server) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
-| Gateway latency | p50 0.018 ms · p95 0.029 ms · p99 0.041 ms, over 2,000 in-process evaluations |
+| Gateway latency | p50 0.018 ms · p95 0.040 ms · p99 0.041 ms, over 2,000 in-process evaluations |
 | Catalog | 40 SKUs |
 
 Test coverage by area — the shape matters more than the total:

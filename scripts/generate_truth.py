@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import platform
 import re
 import statistics
 import subprocess
@@ -155,7 +156,7 @@ def gateway_latency_facts(iterations: int = 2000) -> dict:
         "p99_ms": pct(0.99),
         "mean_ms": round(statistics.mean(samples), 4),
         "max_ms": round(samples[-1], 4),
-        "measured_on": f"{os.uname().sysname} python{sys.version_info.major}."
+        "measured_on": f"{platform.system()} python{sys.version_info.major}."
                        f"{sys.version_info.minor}",
         "note": ("in-process evaluation of R1-R12 only; excludes HTTP, "
                  "persistence and the audit append. Machine-dependent."),
