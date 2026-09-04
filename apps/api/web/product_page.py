@@ -434,7 +434,8 @@ const esc = s => String(s == null ? '' : s)
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const S = {query:'', budget_paise:300000, discovery:null, sku:null,
-           fault:'none', exec_id:null, provider:null, issuer:null};
+           fault:'none', exec_id:null, provider:null, issuer:null,
+           viaReconciliation:false};
 
 /* ── the rail advances only when a step actually completed ─────────── */
 const STEPS = ['discover','gateway','auth','exec','done'];
@@ -712,24 +713,48 @@ document.querySelectorAll('[data-fault]').forEach(b => b.addEventListener('click
   b.classList.add('on');
 }));
 
-const SM = [
+/* The machine is not a straight line. APPROVED -> EXECUTION_PENDING ->
+   REMOTE_ATTEMPTED is the path every attempt walks; the last three are
+   branches. RECONCILIATION_REQUIRED is only ever reached when the
+   provider's answer was lost, so it must not be drawn as a completed
+   step on a purchase that went straight through — that would show the
+   buyer a recovery that never happened. */
+const SM_PATH = [
   ['APPROVED','Authorization exists. Nothing has been sent anywhere.'],
   ['EXECUTION_PENDING','About to contact the payment provider.'],
-  ['REMOTE_ATTEMPTED','Written to disk before the call, so a crash here is recoverable.'],
+  ['REMOTE_ATTEMPTED','Written to disk before the call, so a crash here is recoverable.']
+];
+const SM_BRANCH = [
   ['RECONCILIATION_REQUIRED','Outcome unknown. Nothing is assumed; no blind retry.'],
   ['EXECUTED','The provider accepted and returned an order.'],
   ['FAILED','No money moved.']
 ];
-function renderSM(cur){
-  const i = SM.findIndex(s => s[0] === cur);
-  $('exec-sm').innerHTML = SM.map((s, ix) => {
+function renderSM(cur, viaReconciliation){
+  const pathIx = SM_PATH.findIndex(s => s[0] === cur);
+  const terminal = cur === 'EXECUTED' || cur === 'FAILED';
+  const rows = [];
+
+  SM_PATH.forEach(([n, x], ix) => {
     let cls = 'smr';
-    if (ix < i && s[0] !== 'EXECUTED' && s[0] !== 'FAILED') cls += ' done';
-    else if (s[0] === cur) cls += cur === 'EXECUTED' ? ' done'
-      : cur === 'FAILED' ? ' bad' : cur === 'RECONCILIATION_REQUIRED' ? ' warn' : ' cur';
-    return '<div class="' + cls + '"><span class="d"></span>' +
-      '<span class="n">' + esc(s[0]) + '</span><span class="x">' + esc(s[1]) + '</span></div>';
-  }).join('');
+    if (cur === n) cls += ' cur';
+    else if (terminal || cur === 'RECONCILIATION_REQUIRED' || ix < pathIx) cls += ' done';
+    rows.push([cls, n, x]);
+  });
+
+  SM_BRANCH.forEach(([n, x]) => {
+    let cls = 'smr';
+    if (cur === n){
+      cls += n === 'EXECUTED' ? ' done' : n === 'FAILED' ? ' bad' : ' warn';
+    } else if (n === 'RECONCILIATION_REQUIRED' && viaReconciliation && terminal){
+      cls += ' warn';   /* it really did pass through here */
+    }
+    rows.push([cls, n, x]);
+  });
+
+  $('exec-sm').innerHTML = rows.map(([cls, n, x]) =>
+    '<div class="' + cls + '"><span class="d"></span>' +
+    '<span class="n">' + esc(n) + '</span><span class="x">' + esc(x) + '</span></div>'
+  ).join('');
 }
 
 $('approve').addEventListener('click', async function(){
@@ -739,7 +764,8 @@ $('approve').addEventListener('click', async function(){
   step('auth','done'); step('exec','active'); say('contacting the payment provider…');
   $('exec').classList.add('on');
   $('recon').classList.remove('on');
-  renderSM('EXECUTION_PENDING');
+  S.viaReconciliation = false;
+  renderSM('EXECUTION_PENDING', false);
   $('exec').scrollIntoView({behavior: REDUCED ? 'auto' : 'smooth', block:'start'});
 
   try {
@@ -751,7 +777,8 @@ $('approve').addEventListener('click', async function(){
     /* `ok` is the only thing that means success. 202 is a 2xx. */
     const state = b.execution_state || (b.ok ? 'EXECUTED' : 'FAILED');
     S.exec_id = b.execution_id || null;
-    renderSM(state);
+    S.viaReconciliation = (state === 'RECONCILIATION_REQUIRED');
+    renderSM(state, S.viaReconciliation);
     $('exec-ids').textContent = [
       b.execution_id ? 'execution      ' + b.execution_id : '',
       b.order_id ? 'provider order ' + b.order_id : '',
@@ -798,7 +825,7 @@ $('recon-go').addEventListener('click', async function(){
     const r = await jfetch('/discovery/reconcile/' + encodeURIComponent(S.exec_id),
                            {method:'POST'});
     const d = r.body;
-    renderSM(d.state);
+    renderSM(d.state, S.viaReconciliation);
     if (d.state === 'EXECUTED'){
       step('exec','done'); step('done','done');
       say('reconciled — the order existed after all');
