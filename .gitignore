@@ -23,3 +23,4 @@ live_demo.py
 smoke_*.py
 dbg_*.py
 
+Claude outputs/
