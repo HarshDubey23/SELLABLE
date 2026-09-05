@@ -80,6 +80,22 @@ def ask(system: str, user: str) -> dict:
                             {"role": "user", "content": user}
                         ],
                         "temperature": 0.1,
+                        # ASK FOR WHAT WE ACTUALLY USE.
+                        #
+                        # With no max_tokens, OpenRouter reserves the
+                        # model's maximum -- 16,384 for gpt-4o-mini -- and
+                        # refuses the call with HTTP 402 unless the account
+                        # can afford all of it. A balance that could pay for
+                        # three thousand tokens was turned away from a
+                        # request that needs a few hundred, and every agent
+                        # in the system dropped to its deterministic
+                        # fallback for no reason but arithmetic.
+                        #
+                        # Every reply this codebase asks for is one small
+                        # JSON object: a merchant's offer terms, a buyer's
+                        # basket and weights, a recovery decision. 900 is
+                        # generous for all of them.
+                        "max_tokens": 900,
                     },
                     timeout=8.0
                 )
