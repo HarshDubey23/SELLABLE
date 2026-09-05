@@ -713,8 +713,15 @@ _MATCH_STOPWORDS = {
 
 
 def _match_tokens(text: str) -> list[str]:
+    """Meaningful words only. Numbers are budgets, not product types.
+
+    Leaving digits in mattered: "wireless bluetooth headphones under 2000"
+    ends in "2000", and the head-noun rule below reads the last token, so
+    the rule was matching against a price.
+    """
     return [t for t in re.split(r"[^\w]+", (text or "").lower())
-            if len(t) > 2 and t not in _MATCH_STOPWORDS]
+            if len(t) > 2 and not t.isdigit()
+            and t not in _MATCH_STOPWORDS]
 
 
 def _score_catalog_item(item: dict, tokens: list[str]) -> int:
@@ -760,6 +767,18 @@ def _score_catalog_item(item: dict, tokens: list[str]) -> int:
             identity += 4
     if identity == 0:
         return 0
+
+    # THE LAST NOUN IS THE THING; THE REST DESCRIBE IT.
+    #
+    # "wireless bluetooth headphones" recommended a Bluetooth SPEAKER.
+    # "bluetooth" and "wireless" each matched the speaker, "headphones"
+    # matched the headphones once, and the speaker won on rating. But
+    # "wireless" and "bluetooth" say how a thing connects -- "headphones"
+    # says what it is. In English the head noun of a shopping phrase is
+    # almost always last, so a family that matches it outranks anything
+    # matched only on its adjectives.
+    if tokens and tokens[-1] in family:
+        identity += 20
 
     # The category alone must never carry a match -- "book" would then
     # answer every query containing the word book with an arbitrary book.
