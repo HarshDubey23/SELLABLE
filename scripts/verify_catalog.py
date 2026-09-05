@@ -32,8 +32,16 @@ def verify() -> None:
     errors = []
 
     # 1. Count check
-    if len(CATALOG) != 40:
-        errors.append(f"Expected 40 SKUs, got {len(CATALOG)}")
+    # The forty hand-authored SKUs are the frozen core and every one of
+    # their prices is pinned above. The catalog is larger than that now --
+    # the extended SKUs exist so a recommendation has alternatives to
+    # compare against -- so the check is that the core is intact and
+    # unshadowed, not that the total is still forty.
+    missing = sorted(set(EXPECTED_PRICES) - set(CATALOG))
+    if missing:
+        errors.append(f"frozen core SKUs missing from CATALOG: {missing}")
+    if len(CATALOG) < len(EXPECTED_PRICES):
+        errors.append(f"CATALOG smaller than the frozen core: {len(CATALOG)}")
 
     # 2. All SKUs have required fields
     for sku, p in CATALOG.items():

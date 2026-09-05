@@ -121,6 +121,15 @@ def parse_budget_paise(text: str, default_paise: int = 600000) -> int:
     return default_paise
 
 
+# Words that qualify an occasion rather than name a product type. They
+# legitimately appear in product names ("Travel Yoga Mat", "Pro Grip"),
+# which is why they must not be able to carry a match on their own.
+_CONTEXT_WORDS = {
+    "travel", "gift", "daily", "everyday", "portable", "premium", "pro",
+    "professional", "basic", "classic", "compact", "light", "lite",
+    "starter", "essential", "essentials", "ultimate", "advanced", "elite",
+}
+
 _STOP = {"a", "an", "the", "and", "or", "for", "with", "under", "below",
          "within", "budget", "rs", "inr", "me", "my", "i", "want", "need",
          "buy", "get", "best", "good", "complete", "set", "setup", "kit",
@@ -156,32 +165,84 @@ def keyword_plan(mission_text: str, catalog: dict[str, Any],
         # name and category say what it *is*, and only that can make it
         # an answer. Description and attributes still count, but only to
         # order items that already qualified.
-        identity = " ".join([str(item.get("name", "")),
-                             str(item.get("category", ""))]).lower()
+        # The product family names what the thing IS, which is a stronger
+        # signal than either the name or the category.
+        family = str((item.get("attributes") or {}).get("family", "")).lower()
+        identity = " ".join([
+            str(item.get("name", "")),
+            str(item.get("category", "")).replace("_", " "),
+            family,
+        ]).lower()
         blurb = " ".join([
             str(item.get("description", "")),
             " ".join(str(v) for v in (item.get("attributes") or {}).values()),
         ]).lower()
 
-        identity_hits = sum(1 for w in words if w in identity)
+        # CONTEXT WORDS DESCRIBE AN OCCASION, NOT A PRODUCT.
+        #
+        # "Camera and lens for travel" matched a Liforme Travel Yoga Mat,
+        # because "travel" is in its name. Exactly the charger-for-a-camera
+        # bug wearing a different hat: a word that says when or why you
+        # would use something is not a word that says what it is. Stripped
+        # before matching, so they can still appear in names without
+        # dragging the wrong product into an answer.
+        # Whole words. "mat" must not match "basmati".
+        identity_words = set(re.findall(r"[a-z]+", identity))
+        blurb_words = set(re.findall(r"[a-z]+", blurb))
+        meaningful = [w for w in words if w not in _CONTEXT_WORDS]
+        identity_hits = sum(1 for w in meaningful if w in identity_words)
         if not identity_hits:
             continue
-        blurb_hits = sum(1 for w in words if w in blurb)
+
+        # A WHOLE FAMILY WORD BEATS A WORD INSIDE ONE.
+        #
+        # "Best laptop for coding" put laptop STANDS above laptops, because
+        # "laptop" is inside the family name "laptop stand" and a substring
+        # hit scored the same as naming the thing outright. Matching whole
+        # words in the family, and weighting that above everything else,
+        # puts the laptop first and leaves the stand as an accessory.
+        family_words = set(family.split())
+        exact_family = sum(1 for w in meaningful if w in family_words)
+        blurb_hits = sum(1 for w in meaningful if w in blurb_words)
+        score = exact_family * 40 + identity_hits * 10 + blurb_hits
         # Cheaper first among equal matches, so a fallback basket has a
         # chance of fitting the budget.
-        scored.append((-(identity_hits * 10 + blurb_hits),
-                       item["price_paise"], sku))
+        scored.append((-score, item["price_paise"], sku))
 
     scored.sort()
+
+    # ONE BASKET SHOULD NOT BE FIVE OF THE SAME THING.
+    #
+    # "A complete cricket setup" returned three cricket balls and two more
+    # cricket balls, because they were the cheapest things that matched and
+    # nothing stopped the list filling up with one family. A setup means a
+    # bat AND a ball AND pads. Families are taken round-robin, so the
+    # basket spreads before it doubles up.
+    by_family: dict[str, list[tuple[int, str]]] = {}
+    for _score, price, sku in scored:
+        fam = str((catalog[sku].get("attributes") or {}).get(
+            "family", catalog[sku]["category"]))
+        by_family.setdefault(fam, []).append((price, sku))
+
     picked: list[str] = []
     running = 0
-    for _, price, sku in scored:
-        if len(picked) >= max_items:
+    depth = 0
+    while len(picked) < max_items and depth < 3:
+        progressed = False
+        for fam in list(by_family):
+            if len(picked) >= max_items:
+                break
+            if depth >= len(by_family[fam]):
+                continue
+            price, sku = by_family[fam][depth]
+            if running + price > budget:
+                continue
+            picked.append(sku)
+            running += price
+            progressed = True
+        if not progressed:
             break
-        if running + price > budget:
-            continue
-        picked.append(sku)
-        running += price
+        depth += 1
 
     if not picked:
         # Nothing matched. Returning "the closest available item" would mean

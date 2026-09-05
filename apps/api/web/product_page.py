@@ -142,6 +142,32 @@ main.results{max-width:1080px;margin:0 auto;padding:26px 0 40px}
 .buy:disabled{opacity:.5;cursor:default}
 
 /* ── section headers, evidence grid ────────────────────────────────── */
+/* The comparison. This is the panel that used to not exist, which is why
+   the page could only ever say "no price comparison is claimed" -- the
+   external retail providers are frequently down, and there was nothing
+   else to compare against. The catalog is ours and always answers. */
+.cmp{margin:22px 0 6px}
+.cmp-note{font-size:12.5px;color:var(--text-lo);margin:6px 0 12px;max-width:70ch}
+.cmp-rows{border:1px solid var(--border);border-radius:var(--r-panel);
+  overflow:hidden;background:var(--bg-panel)}
+.crow{display:grid;grid-template-columns:1fr 116px 62px 1.05fr;gap:12px;
+  align-items:center;padding:11px 14px;border-bottom:1px solid var(--border)}
+.crow:last-child{border-bottom:none}
+.crow.pick{background:var(--teal-soft);border-left:3px solid var(--teal);
+  padding-left:11px}
+.crow-n{font-size:13px;color:var(--text-hi);line-height:1.35}
+.crow-n .sku{font-family:var(--mono);font-size:10px;color:var(--text-lo);
+  display:block;margin-top:2px}
+.crow-p{font-family:var(--mono);font-size:14px;color:var(--text-hi);
+  text-align:right;font-variant-numeric:tabular-nums}
+.crow-r{font-family:var(--mono);font-size:12px;color:var(--text-mid);
+  text-align:right}
+.crow-w{font-size:12px;color:var(--text-lo)}
+.crow.pick .crow-w{color:var(--teal);font-weight:600}
+@media (max-width:760px){
+  .crow{grid-template-columns:1fr auto;gap:5px}
+  .crow-r,.crow-w{grid-column:1 / -1}
+}
 .sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:14px;
   margin:26px 0 12px;flex-wrap:wrap}
 .sec-t{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.16em;
@@ -328,6 +354,17 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
              stroke-width="2.5" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
       </button>
     </div>
+  </div>
+
+  <div class="cmp" id="cmp" style="display:none">
+    <div class="sec-h">
+      <span class="sec-t">What else the agent looked at</span>
+      <span class="sec-n" id="cmp-n"></span>
+    </div>
+    <p class="cmp-note">Every one of these is in stock, in the merchant catalog,
+      and inside your signed ceiling. The differences are subtractions between
+      the rows &mdash; nothing here is written by a model.</p>
+    <div class="cmp-rows" id="cmp-rows"></div>
   </div>
 
   <div class="probe" id="probe" style="display:none">
@@ -594,6 +631,24 @@ function render(d){
     $('probe-d').textContent = p.why;
     $('probe').dataset.sku = p.sku;
   } else { $('probe').style.display = 'none'; }
+
+  /* what else was considered — the comparison that always works */
+  const alts = d.catalog_shortlist || [];
+  if (alts.length > 1){
+    $('cmp').style.display = 'block';
+    $('cmp-n').textContent = alts.length + ' considered, ' +
+      'all within your ceiling';
+    $('cmp-rows').innerHTML = alts.map(function(a){
+      return '<div class="crow' + (a.is_recommended ? ' pick' : '') + '">' +
+        '<div class="crow-n">' + esc(a.name) +
+          '<span class="sku">' + esc(a.sku) + ' · ' + esc(a.category) + '</span></div>' +
+        '<div class="crow-p">' + esc(rupees(a.price_inr)) + '</div>' +
+        '<div class="crow-r">' + esc(a.rating.toFixed(1)) + '★</div>' +
+        '<div class="crow-w">' + (a.is_recommended
+            ? 'the agent’s pick' : esc(a.why_not)) + '</div>' +
+        '</div>';
+    }).join('');
+  } else { $('cmp').style.display = 'none'; }
 
   /* evidence cards */
   const listings = (d.listings || []);

@@ -323,9 +323,11 @@ def test_the_catalog_answers_what_it_stocks_and_refuses_what_it_does_not():
 
     served = ["A complete cricket setup under Rs 6,000",
               "A gaming PC under Rs 80,000",
-              "Best laptop for coding under Rs 90,000"]
+              "Best laptop for coding under Rs 90,000",
+              # Monitors, keyboards and mice are stocked now, so refusing
+              # this would be the catalog lying about itself.
+              "Best monitor keyboard and mouse combo under Rs 35,000"]
     refused = ["Camera and lens for travel under Rs 1,50,000",
-               "Best monitor keyboard and mouse combo under Rs 35,000",
                "a submarine"]
 
     for mission in served:
@@ -436,3 +438,41 @@ def test_a_merchant_is_shown_its_own_last_offer_and_no_one_elses():
         if other.merchant_id != "NOVATECH":
             assert other.merchant_id not in user
             assert other.display_name not in user
+
+
+def test_an_occasion_word_in_a_name_cannot_answer_a_different_request():
+    """Asked for a camera, the catalog must not offer a travel yoga mat.
+
+    "Camera and lens for travel" matched the Liforme Travel Yoga Mat,
+    because "travel" is in its name. The same shape as the charger that
+    answered a camera request on "compact travel size": a word saying
+    when or why you would use a thing is not a word saying what it is.
+    """
+    from apps.api.market.agents.buyer import keyword_plan
+    from apps.api.products import CATALOG
+
+    travel_named = [s for s, i in CATALOG.items()
+                    if "travel" in i["name"].lower()]
+    assert travel_named, "this test is meaningless with no travel-named product"
+
+    plan = keyword_plan("Camera and lens for travel under Rs 1,50,000",
+                        CATALOG)
+    assert plan is None or not (set(plan.skus) & set(travel_named))
+
+
+def test_a_setup_spans_families_rather_than_repeating_one():
+    """"A complete cricket setup" returned three cricket balls.
+
+    They were the cheapest matching items and nothing stopped one family
+    filling the basket. A setup means a bat and a ball and pads, so
+    families are taken round-robin before any of them doubles up.
+    """
+    from apps.api.market.agents.buyer import keyword_plan
+    from apps.api.products import CATALOG
+
+    plan = keyword_plan("A complete cricket setup under Rs 6,000", CATALOG)
+    assert plan is not None and len(plan.skus) >= 3
+
+    families = [str((CATALOG[s].get("attributes") or {}).get(
+        "family", CATALOG[s]["category"])) for s in plan.skus]
+    assert len(set(families)) >= 3,         f"a setup should span families, got {families}"
