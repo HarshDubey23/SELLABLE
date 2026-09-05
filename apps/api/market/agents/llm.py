@@ -157,7 +157,12 @@ async def ask_model(*, system: str, user: str, schema: type[T],
         try:
             resp = await asyncio.wait_for(
                 asyncio.to_thread(_ask_sync, system, user), timeout=remaining)
-        except TimeoutError:
+        # asyncio.TimeoutError, not the builtin. They are the same class
+        # from 3.11 on, but on 3.10 wait_for raises
+        # concurrent.futures.TimeoutError, which does not inherit from the
+        # builtin -- so `except TimeoutError` there catches nothing and the
+        # timeout escapes as an unhandled error. CI runs 3.10.
+        except asyncio.TimeoutError:
             last_error = f"timed out after {timeout_s:.0f}s"
             break
         except Exception as exc:                       # provider blew up

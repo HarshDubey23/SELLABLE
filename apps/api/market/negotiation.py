@@ -383,7 +383,11 @@ async def run_round(negotiation_id: str, *, allow_llm: bool = True,
             asyncio.gather(*[_one(m) for m in manifests],
                            return_exceptions=True),
             timeout=ROUND_DEADLINE_SECONDS)
-    except TimeoutError:
+    # asyncio.TimeoutError rather than the builtin: identical from 3.11
+    # on, but on 3.10 wait_for raises concurrent.futures.TimeoutError,
+    # which is not a builtin TimeoutError. Catching the wrong one there
+    # would let a slow provider take down the whole round.
+    except asyncio.TimeoutError:
         results = [TimeoutError("round deadline elapsed")] * len(manifests)
 
     from ..products import CATALOG
