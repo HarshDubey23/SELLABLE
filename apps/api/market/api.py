@@ -35,9 +35,15 @@ router = APIRouter(prefix="/market", tags=["market"])
 # enough that a page cannot spend someone else's provider budget by
 # holding down a button, and high enough that a reviewer clicking through
 # the whole demo twice never meets it.
-_OPEN_LIMIT = 10
-_ROUND_LIMIT = 20
-_SETTLE_LIMIT = 6
+# Head-room for someone actually working the demo. The old settle ceiling
+# of six a minute was reached in ordinary use -- the buttons did not
+# disable while a round was running, so a nine-second wait looked like a
+# dead control, people clicked again, and the limit that was meant to
+# stop abuse ended up blocking the demo. The buttons disable now, and
+# these are set where a human clicking deliberately will never meet them.
+_OPEN_LIMIT = 30
+_ROUND_LIMIT = 60
+_SETTLE_LIMIT = 20
 
 
 def _guard(request: Request, bucket: str, limit: int) -> None:
