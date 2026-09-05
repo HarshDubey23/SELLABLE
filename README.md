@@ -195,7 +195,7 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **463 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **566 passed**, 5 skipped (browser E2E — needs Playwright and a running server) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
 | Gateway latency | **p95 under 5 ms** over 2,000 in-process evaluations. The exact figure is machine-dependent and lives in `truth.json`; CI asserts the bound, not a number it cannot reproduce |
@@ -348,7 +348,7 @@ apps/api/
   ├── recovery/               executor-side payment recovery (NOT under agent/)
   ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
-tests/                        542 tests
+tests/                        566 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents

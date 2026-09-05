@@ -28,6 +28,20 @@ verify-readme:
 test:
 	pytest -q
 
+# Everything CI runs, in the order CI runs it, so a green run here means a
+# green run there. This exists because a README whose test count had
+# drifted from docs/generated/truth.json turned CI red on a branch whose
+# whole test suite passed locally -- the drift check was a Makefile target
+# nothing called. A gate nobody runs before pushing is a gate that only
+# ever reports, never prevents.
+ci:
+	python scripts/doctor.py
+	pytest -q
+	ruff check apps/api/gateway/
+	mypy --strict apps/api/gateway/
+	python scripts/verify_readme.py
+	python scripts/final_verify.py --strict
+
 smoke:
 	@echo "== 8 curl verifications ==" && bash scripts/smoke.sh
 
