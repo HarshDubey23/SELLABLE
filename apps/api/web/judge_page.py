@@ -2108,6 +2108,13 @@ async function mkProbe(){
 /* The market pays through the same money path as the storefront, so it
    opens the same box. Razorpay's own Checkout takes the payment details;
    nothing here ever sees them. */
+
+/* One line, kept truthful as the payment state moves. */
+function mkSetPayState(text){
+  const el = $('mk-pay-state');
+  if (el) el.textContent = text;
+}
+
 function mkOpenRazorpay(order, settlement){
   const out = $('mk-settled');
   if (!order || order.provider !== 'razorpay_test') return;
@@ -2126,6 +2133,7 @@ function mkOpenRazorpay(order, settlement){
     theme: {color: '#6C47FF'},
     prefill: {email: 'demo@sellable.test', contact: '9999999999'},
     handler: function(resp){
+      mkSetPayState('payment submitted, not yet confirmed');
       out.insertAdjacentHTML('beforeend',
         '<div class="mk-probe" style="border-color:rgba(45,212,191,.45)">' +
         '<div class="code" style="color:var(--teal)">PAYMENT SUBMITTED</div>' +
@@ -2135,6 +2143,7 @@ function mkOpenRazorpay(order, settlement){
           'lag this by a moment.</div></div>');
     },
     modal: {ondismiss: function(){
+      mkSetPayState('closed without paying');
       out.insertAdjacentHTML('beforeend',
         '<div class="panel-sub" style="margin-top:9px">Checkout closed. The ' +
         'order exists and is unpaid &mdash; reopen it at <a class="vi" ' +
@@ -2143,6 +2152,7 @@ function mkOpenRazorpay(order, settlement){
     }},
   });
   rzp.on('payment.failed', function(r){
+    mkSetPayState('payment failed, nothing captured');
     const e = (r && r.error) || {};
     out.insertAdjacentHTML('beforeend',
       '<div class="mk-probe"><div class="code">PAYMENT FAILED &middot; ' +
@@ -2163,8 +2173,18 @@ async function mkSettle(){
   mkOpenRazorpay(o, s);
   box.innerHTML = '<div class="mk-settled">' +
     '<div class="amt">' + esc(s.amount_display) + '</div>' +
-    '<div class="panel-sub">paid to ' + esc(s.merchant_id) +
-      ' &middot; ' + esc(d.mode.payments_label) + '</div>' +
+    '<div class="panel-sub" style="margin-top:-4px">amount authorized and ' +
+      'ordered &mdash; not captured</div>' +
+    /* NOT "paid to". NOTHING HAS BEEN PAID.
+       This said "paid to GEARHUB" the moment an order was created, and
+       kept saying it after the checkout was closed without paying. It is
+       the exact overclaim the storefront rail was already fixed for, and
+       the one this whole project exists not to make: an order is a
+       request to collect money, and until a signature-verified webhook
+       says otherwise nobody has paid anybody. */
+    '<div class="panel-sub">order placed with ' + esc(s.merchant_id) +
+      ' &middot; ' + esc(d.mode.payments_label) +
+      ' &middot; <b id="mk-pay-state">awaiting payment</b></div>' +
     '<div class="mk-facts">' +
     '<div class="mk-fact"><div class="k">Order</div><div class="v">' + esc(o.order_id) + '</div></div>' +
     '<div class="mk-fact"><div class="k">Execution</div><div class="v">' + esc(o.execution_state) + '</div></div>' +
