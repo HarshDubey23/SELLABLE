@@ -180,6 +180,28 @@ class PolicyProbe(BaseModel):
     why: str
 
 
+class CatalogAlternative(BaseModel):
+    """One product the agent considered, and how it compares to the pick.
+
+    Every field is read from the catalog or computed by subtraction from
+    it. Nothing here is generated prose, which is what makes the
+    comparison checkable rather than persuasive.
+    """
+
+    sku: str
+    name: str
+    category: str
+    price_paise: int
+    price_inr: float
+    rating: float
+    is_recommended: bool
+    price_delta_paise: int          # vs the recommended pick; negative = cheaper
+    price_delta_inr: float
+    rating_delta: float
+    why_not: str                    # empty for the recommended item
+    key_attributes: dict[str, Any] = Field(default_factory=dict)
+
+
 class DiscoveryPipelineResult(BaseModel):
     query: str
     budget_paise: int
@@ -193,6 +215,12 @@ class DiscoveryPipelineResult(BaseModel):
     error_message: str | None = None
     listings: list[WebProductListing]          # EXTERNAL evidence only
     merchant_offer: MerchantOffer | None = None
+    # The alternatives the agent weighed inside the merchant catalog. This
+    # is the comparison that always works: external retail evidence
+    # depends on a third party that is frequently down, but the catalog is
+    # ours and server-authoritative. Before this existed the page could
+    # only ever say "no price comparison is claimed".
+    catalog_shortlist: list[CatalogAlternative] = Field(default_factory=list)
     policy_probe: PolicyProbe | None = None
     comparison: ComparisonSummary | None = None
     recommendation: RecommendationDecision | None = None
@@ -674,21 +702,104 @@ def search_live_web_providers(query: str, max_results: int = 10) -> tuple[list[W
     return unique_listings[:max_results], providers_hit, errors
 
 
-def _match_merchant_catalog(query: str, budget_paise: int) -> tuple[str | None, dict | None]:
-    """Token-overlap match against the server-side catalog."""
-    q_tokens = [t for t in re.split(r"[^\w]+", query.lower()) if len(t) > 2]
-    best_sku, best_item, best_score = None, None, 0
+# Words that say nothing about what a product IS.
+_MATCH_STOPWORDS = {
+    "the", "a", "an", "and", "or", "for", "with", "under", "below", "within",
+    "budget", "rs", "inr", "best", "good", "cheap", "cheapest", "buy", "get",
+    "need", "want", "some", "any", "new", "top", "quality", "price", "than",
+    "less", "more", "around", "about", "upto", "max", "maximum", "please",
+    "me", "my", "i", "of", "to", "in", "on", "at", "is", "are", "that", "this",
+}
+
+
+def _match_tokens(text: str) -> list[str]:
+    return [t for t in re.split(r"[^\w]+", (text or "").lower())
+            if len(t) > 2 and t not in _MATCH_STOPWORDS]
+
+
+def _score_catalog_item(item: dict, tokens: list[str]) -> int:
+    """How well one product answers this query.
+
+    WHAT A THING IS, VS WHAT IS SAID ABOUT IT.
+
+    The original scorer did a substring scan over name, category and
+    description together and took the highest overlap. That is how "yoga
+    mat" came back with a cricket ball: no yoga mat existed, "mat"
+    appears inside other words, and something always scores. It also
+    matched "algorithms book" to a book about none of that, because
+    "book" is in every book's category.
+
+    Identity beats description. A hit in the product family or the name
+    is worth a great deal; a hit in the category is worth a little; a hit
+    in the description or the attributes only ever breaks ties among
+    products that already qualified. An item with no identity hit at all
+    scores zero and is not an answer.
+    """
+    attrs = item.get("attributes") or {}
+
+    # WHOLE WORDS, NOT SUBSTRINGS.
+    #
+    # This compared with `token in text`, so "yoga mat" matched Basmati
+    # Rice: "mat" sits inside "basmati", and inside "aromatic" in its
+    # description. Three separate wrong-product bugs in this project have
+    # now come from substring matching, so the words are tokenised once
+    # and compared as words.
+    family = set(_match_tokens(str(attrs.get("family", ""))))
+    name = set(_match_tokens(str(item.get("name", ""))))
+    category = set(_match_tokens(
+        str(item.get("category", "")).replace("_", " ")))
+    blurb = set(_match_tokens(
+        str(item.get("description", "")) + " "
+        + " ".join(str(v).replace("_", " ") for v in attrs.values())))
+
+    identity = 0
+    for t in tokens:
+        if t in family:
+            identity += 6
+        elif t in name:
+            identity += 4
+    if identity == 0:
+        return 0
+
+    # The category alone must never carry a match -- "book" would then
+    # answer every query containing the word book with an arbitrary book.
+    soft = sum(2 for t in tokens if t in category)
+    soft += sum(1 for t in tokens if t in blurb)
+    return identity + soft
+
+
+def shortlist_merchant_catalog(query: str, budget_paise: int,
+                               limit: int = 6) -> list[tuple[str, dict, int]]:
+    """The alternatives a shopper would actually weigh, best first.
+
+    Returns (sku, item, score). Only items inside the budget: a shortlist
+    is a list of things that can be bought, and an option the signed
+    mandate would refuse is not an option.
+    """
+    tokens = _match_tokens(query)
+    if not tokens:
+        return []
+
+    scored: list[tuple[int, int, str, dict]] = []
     for sku, item in CATALOG.items():
-        text = (f"{item['name']} {item['category']} "
-                f"{item.get('description', '')}").lower()
-        score = sum(2 for token in q_tokens if token in text)
-        if score > best_score:
-            best_sku, best_item, best_score = sku, item, score
-    if best_score < 2 or best_item is None:
+        if item["price_paise"] > budget_paise:
+            continue
+        score = _score_catalog_item(item, tokens)
+        if score >= 4:                      # at least one identity hit
+            # Better score first; among equals, better rated; then cheaper.
+            scored.append((-score, -int(float(item.get("rating", 0)) * 10),
+                           sku, item))
+    scored.sort(key=lambda r: (r[0], r[1], r[3]["price_paise"], r[2]))
+    return [(sku, item, -neg) for neg, _r, sku, item in scored[:limit]]
+
+
+def _match_merchant_catalog(query: str, budget_paise: int) -> tuple[str | None, dict | None]:
+    """The single best catalog answer, or nothing at all."""
+    top = shortlist_merchant_catalog(query, budget_paise, limit=1)
+    if not top:
         return None, None
-    if best_item["price_paise"] > budget_paise:
-        return None, None
-    return best_sku, best_item
+    sku, item, _score = top[0]
+    return sku, item
 
 
 def _find_policy_probe(category: str | None,
@@ -717,6 +828,60 @@ def _find_policy_probe(category: str | None,
              f"talked into proposing it will be refused by R1_BUDGET before any "
              f"approval binding exists."),
     )
+
+
+def _build_shortlist(query: str, budget_paise: int,
+                     winner_sku: str | None) -> list[CatalogAlternative]:
+    """The considered set, with the differences stated as subtractions.
+
+    `why_not` is assembled from the two facts a shopper actually trades
+    off — price and rating — and only ever says something the numbers on
+    the same row already support.
+    """
+    rows = shortlist_merchant_catalog(query, budget_paise, limit=6)
+    if not rows:
+        return []
+
+    winner = next((item for sku, item, _ in rows if sku == winner_sku), None)
+    if winner is None:
+        _sku, winner, _score = rows[0]
+        winner_sku = rows[0][0]
+
+    out: list[CatalogAlternative] = []
+    for sku, item, _score in rows:
+        d_price = item["price_paise"] - winner["price_paise"]
+        d_rating = round(float(item.get("rating", 0))
+                         - float(winner.get("rating", 0)), 1)
+        if sku == winner_sku:
+            why = ""
+        elif d_price < 0 and d_rating < 0:
+            why = (f"Rs {abs(d_price) / 100:,.0f} cheaper but rated "
+                   f"{abs(d_rating):.1f} lower")
+        elif d_price > 0 and d_rating > 0:
+            why = (f"rated {d_rating:.1f} higher but Rs {d_price / 100:,.0f} "
+                   f"more")
+        elif d_price > 0:
+            why = f"Rs {d_price / 100:,.0f} more for no better rating"
+        elif d_price < 0:
+            why = f"Rs {abs(d_price) / 100:,.0f} cheaper, same rating"
+        else:
+            why = f"same price, rated {d_rating:+.1f}"
+
+        attrs = item.get("attributes") or {}
+        keep = {k: v for k, v in attrs.items() if k != "family"}
+        out.append(CatalogAlternative(
+            sku=sku, name=item["name"], category=item["category"],
+            price_paise=item["price_paise"],
+            price_inr=round(item["price_paise"] / 100, 2),
+            rating=float(item.get("rating", 0)),
+            is_recommended=(sku == winner_sku),
+            price_delta_paise=d_price,
+            price_delta_inr=round(d_price / 100, 2),
+            rating_delta=d_rating,
+            why_not=why,
+            key_attributes=dict(list(keep.items())[:4]),
+        ))
+    return out
 
 
 def run_real_product_discovery(query: str,
@@ -886,6 +1051,9 @@ def run_real_product_discovery(query: str,
         error_message=error_message,
         listings=external,
         merchant_offer=merchant_offer,
+        catalog_shortlist=_build_shortlist(
+            sanitized_query, budget_paise,
+            merchant_offer.sku if merchant_offer else None),
         policy_probe=probe,
         comparison=comparison,
         recommendation=recommendation,

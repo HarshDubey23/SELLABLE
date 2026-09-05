@@ -397,6 +397,28 @@ CATALOG = {
                  "stock": 22},
 }
 
+# ---------------------------------------------------------------------
+# THE EXTENDED CATALOG
+#
+# The forty SKUs above are the frozen core: hand-authored, price-locked,
+# and carrying the adversarial injection payloads. Everything below comes
+# from scripts/generate_catalog.py.
+#
+# It exists because a recommendation needs alternatives to be a
+# recommendation. With forty SKUs there were two cricket bats and no yoga
+# mat at all, so asking for a yoga mat returned a cricket ball -- the
+# matcher took the best token overlap available, and the best available
+# was wrong. A shortlist needs something to shortlist from.
+#
+# Core entries always win a key collision, so nothing generated can ever
+# shadow a frozen SKU or its price.
+# ---------------------------------------------------------------------
+from .catalog_extended import EXTENDED_CATALOG  # noqa: E402
+
+CORE_CATALOG = dict(CATALOG)
+CATALOG = {**EXTENDED_CATALOG, **CORE_CATALOG}
+
+
 # Day 5: floor/ceiling pricing for bounded negotiation.
 from .negotiation.catalog_pricing import apply_floor_ceiling
 

@@ -96,7 +96,14 @@ def test_status_reflects_live_providers_only(monkeypatch):
     assert result.provider_errors, "provider errors must be surfaced, not swallowed"
     # The merchant match is still reported — but as the merchant's own offer.
     assert result.merchant_offer is not None
-    assert result.merchant_offer.sku == "BAT-001"
+    # A cricket bat, not one specific SKU. This used to pin BAT-001,
+    # which was only ever the answer because the catalog held two bats.
+    # With a real shortlist to choose from the best match moves, and a
+    # test that breaks when the catalog improves is testing the catalog.
+    from apps.api.products import CATALOG
+    matched = CATALOG[result.merchant_offer.sku]
+    assert matched["category"] == "cricket"
+    assert "bat" in matched["name"].lower()
     assert result.merchant_offer.is_untrusted is False
 
 
