@@ -881,6 +881,7 @@ def _scene_market() -> str:
   basket through the same gateway, the same approval binding and the same execution
   machine as every other purchase here.</p>
 
+<div id="mk-err-low"></div>
 <div id="mk-probe-out"></div>
 <div id="mk-settled"></div>
 """
@@ -934,6 +935,7 @@ def render_judge_page() -> str:
 
 <main class="wrap">{body}</main>
 {FOOTER}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>{PROVIDER_BADGE_JS}</script>
 <script>{_JS}</script>
 </body>
@@ -1966,6 +1968,53 @@ function mkRender(d){
     ? 'Ask ' + winner + ' for faster delivery' : 'Counter';
 }
 
+
+/* ── one action at a time ──────────────────────────────────────────────
+   None of these buttons disabled while their request was in flight. A
+   round takes the better part of ten seconds against three live models,
+   so the control sat there looking idle, people clicked it again, and
+   the rate limit that exists to stop abuse ended up blocking the demo
+   with RATE_LIMITED on the one button that spends money.
+
+   So: every action disables the whole row, names what it is doing on the
+   button that was pressed, and puts any error next to the buttons rather
+   than at the top of the scene where it cannot be seen from here. */
+const MK_BTNS = ['mk-open','mk-round','mk-counter','mk-probe','mk-override',
+                 'mk-accept','mk-settle'];
+let MK_BUSY = false;
+
+function mkBusy(on, activeId, label){
+  MK_BUSY = on;
+  MK_BTNS.forEach(function(id){
+    const b = $(id);
+    if (!b) return;
+    if (on){
+      if (!b.dataset.idleLabel) b.dataset.idleLabel = b.textContent;
+      b.disabled = true;
+      if (id === activeId) b.textContent = label || 'Working…';
+    } else {
+      if (b.dataset.idleLabel){ b.textContent = b.dataset.idleLabel; }
+      delete b.dataset.idleLabel;
+      // Re-enable everything, then let mkRender put back the states it
+      // actually governs. Restoring only the label left "Open the market"
+      // disabled for good, because mkRender never touches that one.
+      b.disabled = false;
+    }
+  });
+}
+
+async function mkAction(activeId, label, fn){
+  if (MK_BUSY) return;
+  $('mk-err').innerHTML = '';
+  $('mk-err-low').innerHTML = '';
+  mkBusy(true, activeId, label);
+  try { await fn(); }
+  finally {
+    mkBusy(false);
+    if (MK) mkRender(MK);          /* restore the correct enabled states */
+  }
+}
+
 async function mkCall(url, opts, what){
   const err = $('mk-err'); err.innerHTML = '';
   const box = $('mk-floor');
@@ -1973,9 +2022,14 @@ async function mkCall(url, opts, what){
   const r = await jfetch(url, opts);
   if(!r.ok){
     const e = (r.body && r.body.detail && r.body.detail.error) || {};
-    err.innerHTML = '<div class="state-error">' + esc(e.error_code || r.status) +
+    const html = '<div class="state-error">' + esc(e.error_code || r.status) +
       '<span class="m">' + esc(e.message || r.parseError || 'request failed') +
-      (e.hint ? ' &mdash; ' + esc(e.hint) : '') + '</span></div>';
+      (e.hint ? ' &mdash; ' + esc(e.hint) : '') +
+      (e.retry_after_seconds != null
+        ? ' &middot; try again in ' + esc(e.retry_after_seconds) + 's' : '') +
+      '</span></div>';
+    err.innerHTML = html;
+    if ($('mk-err-low')) $('mk-err-low').innerHTML = html;
     if(what) box.innerHTML = '';
     return null;
   }
@@ -2050,6 +2104,55 @@ async function mkProbe(){
       esc(p.note) + '</div></div>';
 }
 
+
+/* The market pays through the same money path as the storefront, so it
+   opens the same box. Razorpay's own Checkout takes the payment details;
+   nothing here ever sees them. */
+function mkOpenRazorpay(order, settlement){
+  const out = $('mk-settled');
+  if (!order || order.provider !== 'razorpay_test') return;
+  if (!window.Razorpay || !order.razorpay_key_id || !order.order_id){
+    return;
+  }
+  const rzp = new Razorpay({
+    key: order.razorpay_key_id,
+    order_id: order.order_id,
+    amount: order.amount_paise,
+    currency: 'INR',
+    name: 'SELLABLE',
+    description: 'Negotiated with ' + (settlement.merchant_id || 'the market'),
+    notes: {negotiation_id: settlement.negotiation_id || '',
+            transcript_hash: (settlement.transcript_hash || '').slice(0, 32)},
+    theme: {color: '#6C47FF'},
+    prefill: {email: 'demo@sellable.test', contact: '9999999999'},
+    handler: function(resp){
+      out.insertAdjacentHTML('beforeend',
+        '<div class="mk-probe" style="border-color:rgba(45,212,191,.45)">' +
+        '<div class="code" style="color:var(--teal)">PAYMENT SUBMITTED</div>' +
+        '<div class="why">Razorpay accepted payment ' +
+          esc(resp.razorpay_payment_id || '') + '. Settlement is still only ' +
+          'recorded from a signature-verified webhook, so the ledger may ' +
+          'lag this by a moment.</div></div>');
+    },
+    modal: {ondismiss: function(){
+      out.insertAdjacentHTML('beforeend',
+        '<div class="panel-sub" style="margin-top:9px">Checkout closed. The ' +
+        'order exists and is unpaid &mdash; reopen it at <a class="vi" ' +
+        'href="/checkout/' + esc(order.order_id) + '">/checkout/' +
+        esc(order.order_id) + '</a>.</div>');
+    }},
+  });
+  rzp.on('payment.failed', function(r){
+    const e = (r && r.error) || {};
+    out.insertAdjacentHTML('beforeend',
+      '<div class="mk-probe"><div class="code">PAYMENT FAILED &middot; ' +
+      esc(e.code || 'unknown') + '</div><div class="why">' +
+      esc(e.description || '') + ' The order still exists and no money moved.' +
+      '</div></div>');
+  });
+  rzp.open();
+}
+
 async function mkSettle(){
   const box = $('mk-settled');
   loading(box, 'gateway to approval binding to execution machine to Razorpay');
@@ -2057,6 +2160,7 @@ async function mkSettle(){
     {method:'POST'});
   if(!d){ box.innerHTML = ''; return; }
   const s = d.settlement, o = s.order || {};
+  mkOpenRazorpay(o, s);
   box.innerHTML = '<div class="mk-settled">' +
     '<div class="amt">' + esc(s.amount_display) + '</div>' +
     '<div class="panel-sub">paid to ' + esc(s.merchant_id) +
@@ -2089,18 +2193,25 @@ document.querySelectorAll('.hero-jump').forEach(function(b){
 document.querySelectorAll('.mk-seed').forEach(function(b){
   b.addEventListener('click', function(){
     $('mk-text').value = b.dataset.mission;
-    mkOpen();
+    mkAction('mk-open', 'Reading the mission…', mkOpen);
   });
 });
-if($('mk-open'))     $('mk-open').addEventListener('click', mkOpen);
-if($('mk-round'))    $('mk-round').addEventListener('click', mkRound);
-if($('mk-counter'))  $('mk-counter').addEventListener('click', mkCounter);
-if($('mk-accept'))   $('mk-accept').addEventListener('click', mkAccept);
-if($('mk-override')) $('mk-override').addEventListener('click', mkOverride);
-if($('mk-probe'))    $('mk-probe').addEventListener('click', mkProbe);
-if($('mk-settle'))   $('mk-settle').addEventListener('click', mkSettle);
+if($('mk-open'))     $('mk-open').addEventListener('click', function(){
+  mkAction('mk-open', 'Reading the mission…', mkOpen); });
+if($('mk-round'))    $('mk-round').addEventListener('click', function(){
+  mkAction('mk-round', 'Three merchants answering…', mkRound); });
+if($('mk-counter'))  $('mk-counter').addEventListener('click', function(){
+  mkAction('mk-counter', 'Sending the counter…', mkCounter); });
+if($('mk-accept'))   $('mk-accept').addEventListener('click', function(){
+  mkAction('mk-accept', 'Claiming the winner…', mkAccept); });
+if($('mk-override')) $('mk-override').addEventListener('click', function(){
+  mkAction('mk-override', 'Re-running on new weights…', mkOverride); });
+if($('mk-probe'))    $('mk-probe').addEventListener('click', function(){
+  mkAction('mk-probe', 'Sending an illegal offer…', mkProbe); });
+if($('mk-settle'))   $('mk-settle').addEventListener('click', function(){
+  mkAction('mk-settle', 'Gateway → binding → Razorpay…', mkSettle); });
 if($('mk-text'))     $('mk-text').addEventListener('keydown', function(e){
-  if(e.key === 'Enter') mkOpen();
+  if(e.key === 'Enter') mkAction('mk-open', 'Reading the mission…', mkOpen);
 });
 if($('mk-floor')) mkLoadWho();
 """
