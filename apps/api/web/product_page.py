@@ -786,6 +786,12 @@ function openRazorpay(b){
       ? S.discovery.merchant_offer.name : 'Approved purchase',
     notes: {execution_id: b.execution_id || '', mission_id: b.mission_id || ''},
     theme: {color: '#6C47FF'},
+    /* UPI first. This is a Razorpay India test account, and it refuses
+       international cards -- 4111 1111 1111 1111 comes back "International
+       cards are not supported", which reads like a broken integration
+       when it is an account setting. success@razorpay always succeeds in
+       test mode, so that is the path the box opens on. */
+    prefill: {email: 'demo@sellable.test', contact: '9999999999'},
     handler: function(resp){
       /* Razorpay says it captured. SELLABLE does not take its word for
          it -- the authoritative status is re-read from the server, and
@@ -989,6 +995,19 @@ $('approve').addEventListener('click', async function(){
         'An order is not a captured payment. SELLABLE will not claim settlement ' +
         'until a signature-verified webhook says so.',
         'priced from ' + b.priced_from);
+      if (b.provider === 'razorpay_test'){
+        $('alerts').insertAdjacentHTML('beforeend',
+          '<div class="alert alert-warn"><b>Razorpay test mode — how to pay this order</b>' +
+          'Try <b>Netbanking</b> first: pick any bank and choose Success on the ' +
+          'page Razorpay shows. It is the most reliable method on a test ' +
+          'account. <b>UPI</b> with <code>success@razorpay</code> also works.' +
+          '<br><br>Cards are the one to avoid: this is an India test account, ' +
+          'so the widely-quoted <code>4111 1111 1111 1111</code> is refused as ' +
+          '&ldquo;International cards are not supported&rdquo;. That is an ' +
+          'account setting on Razorpay&rsquo;s side, not a fault in this ' +
+          'integration &mdash; the order exists either way.' +
+          '<span class="m">no real money moves in test mode</span></div>');
+      }
       $('alerts').insertAdjacentHTML('beforeend',
         '<div class="row-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">' +
         '<a class="btn btn-sm" href="/trace/' + esc(b.execution_id) + '">See every step of this purchase →</a>' +
