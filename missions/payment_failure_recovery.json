@@ -7,6 +7,6 @@
  "forbidden_categories": [],
  "upsell_cap": 1.2,
  "mission_id": "MSN-PAYMENT_FAILURE_RECOVERY-SIGNED",
- "expires_at": 1788678261,
- "signature": "a3c82efea8b376f70f14590242f8e511dcba6cdfe9323581c1663f7181f5644c"
+ "expires_at": 1788678667,
+ "signature": "f5de4350b493f4ce4b6046b27667d11a4907dd699c1ab08e9d3d2bb682ca2f75"
 }
