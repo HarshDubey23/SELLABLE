@@ -165,8 +165,8 @@ There are three pages, and that is deliberate:
 | | |
 |---|---|
 | **`/`** | the shop. Search, evidence, recommendation, authorization, payment, recovery |
-| **`/judge`** | the cockpit. Seven scenes a reviewer can run: the gauntlet, a live mission, a negotiation, an attack you write yourself, a real provider timeout, and a ledger block you verify in your own browser |
-| **`/trace/{ref}`** | one purchase, end to end, read back out of SQLite |
+| **`/judge`** | the cockpit. Eight scenes a reviewer can run: the gauntlet, a live mission, a negotiation, three merchant LLMs bidding for one order, an attack you write yourself, a real provider timeout, and a ledger block you verify in your own browser |
+| **`/trace/{ref}`** | one purchase, end to end, read back out of SQLite — including the negotiation it came from, if it came from one |
 
 Everything the project used to show on nine separate pages now lives in
 those three. The old paths still redirect rather than 404.
@@ -195,7 +195,7 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **571 passed**, 6 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **576 passed**, 6 skipped (browser E2E — needs Playwright and a running server) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
 | Gateway latency | **p95 under 5 ms** over 2,000 in-process evaluations. The exact figure is machine-dependent and lives in `truth.json`; CI asserts the bound, not a number it cannot reproduce |
@@ -348,7 +348,7 @@ apps/api/
   ├── recovery/               executor-side payment recovery (NOT under agent/)
   ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
-tests/                        571 tests
+tests/                        576 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents
@@ -397,14 +397,39 @@ database layer, which SQLite is the wrong tool for.
 catalog price is correct". Write access to `products.py` or the database
 defeats all of it.
 
-**The storefront checkout is unauthenticated, and unthrottled.**
-`/tools/*` sits behind an API key because those are the *agent's*
-endpoints. `/discovery/checkout` is the *customer's*, so it has no key —
-which is right for a storefront, but it means anyone who can reach the
-server can create orders, and `R6_RATE_LIMIT` doesn't bite because each
-checkout mints a fresh mission id. Harmless on the simulated provider;
-with real test keys it will create real test-mode orders. A real
-deployment needs a session and a per-IP limit here.
+**The browser-facing routes are unauthenticated.** `/tools/*` sits
+behind an API key because those are the *agent's* endpoints.
+`/discovery/checkout` and `/market/*` are driven from a page, and the
+only way a page could send that key is if the server wrote it into the
+HTML — publishing the credential to anyone who can load it. So they take
+a per-client ceiling instead: 12 checkouts a minute, and 6 market
+settlements. `R6_RATE_LIMIT` does not bite on its own here because each
+checkout mints a fresh mission id, which is why the ceiling is separate.
+Harmless on the simulated provider; with real test keys, anyone who can
+reach the server can create real test-mode orders up to that rate. A
+real deployment needs a session here, not just a limit.
+
+**A keyless reviewer never sees a merchant refused organically.** The
+scripted fallback merchants are deterministic and always bid inside their
+manifests, so on a clone with no keys every offer passes policy. The
+refusal is still reachable — the market scene has a button that sends a
+deliberately out-of-policy offer through the real engine — but it is a
+probe the reviewer fires rather than something a merchant did. With a
+provider key, merchants breach their own margin floors on their own,
+which is the more convincing version and the one this cannot promise.
+
+**Countered merchants usually hold rather than improve.** Given its own
+previous offer and a named target, a live model moved in the requested
+direction in none of three trials and held its terms in all three. That
+is a legitimate negotiation outcome and nothing here forces improvement,
+but the counter round reads better than it measures. The deterministic
+merchants do move, so the mechanism is provably wired.
+
+**The keyword planner matches whole words.** Without a provider key the
+mission is matched against catalog names and categories by substring, so
+"laptop" finds a laptop and "laptops" does not. It refuses rather than
+substituting when nothing matches, which is the important half, but it
+refuses more often than a person would.
 
 **`eval/` is a simulation.** A seeded run of the policy gateway over
 synthetic missions. It is useful for regression, it is not a live-model
