@@ -70,6 +70,35 @@ _OUTCOME_HEADLINE = {
 }
 
 
+def _as_error(detail: Any) -> dict[str, Any]:
+    """Normalise the two refusal shapes this system raises into one.
+
+    Most refusals carry a nested dict: {"error": {"error_code": ...,
+    "message": ...}}. The mandate verifier carries a flat one, where
+    "error" is a plain string and the code lives beside it:
+    {"error": "MANDATE_REJECTED", "code": "MANDATE_CART_STALE"}.
+
+    This function exists because the envelope assumed the first shape and
+    called .get() on the second, so every mandate rejection reaching
+    /discovery/checkout raised AttributeError instead of returning a
+    refusal -- the refusal path itself crashed, which is the one path that
+    must not. A caller then saw a 500 where it should have seen a clean,
+    machine-readable no.
+    """
+    if not isinstance(detail, dict):
+        return {"message": str(detail)} if detail else {}
+
+    inner = detail.get("error")
+    if isinstance(inner, dict):
+        return inner
+    if isinstance(inner, str):
+        # The flat shape. The human-readable label is in "error" and the
+        # machine-readable code is in "code".
+        return {"error_code": str(detail.get("code") or inner),
+                "message": str(detail.get("detail") or inner)}
+    return {k: v for k, v in detail.items() if k != "error"}
+
+
 def _outcome_envelope(detail: Any, *, mission_id: str, sku: str,
                       product_name: str, amount_paise: int,
                       proposal_hash: str, approve_seq: int,
@@ -83,7 +112,7 @@ def _outcome_envelope(detail: Any, *, mission_id: str, sku: str,
     """
     from .. import money as money_mod
 
-    err = (detail or {}).get("error", {}) if isinstance(detail, dict) else {}
+    err = _as_error(detail)
     code = str(err.get("error_code") or "CHECKOUT_REFUSED")
     return {
         "ok": False,
@@ -217,12 +246,23 @@ async def api_discovery_checkout(req: DiscoveryCheckoutReq,
             ),
         )
 
+    # STAMPED WHEN SIGNED, NOT WHEN THE REQUEST STARTED.
+    #
+    # now_ts was read at the top of this function, before issuing the
+    # mission, quoting, and running the whole gateway -- and the approval
+    # binding is registered inside that last step, with its own clock
+    # read. Passing the older stamp here meant the cart mandate could
+    # claim to be signed seconds before the approval it authorizes, and
+    # the executor's staleness check (correctly) refused it as
+    # MANDATE_CART_STALE. On a fast machine the gap was under the one
+    # second of tolerance and nothing showed; on a loaded CI runner it
+    # was not, and the same commit passed on one branch and failed on
+    # another. Nothing was stale -- the clock was just read too early.
     intent_blob, cart_blob = issuer.issue_mandates(
         mission_id=mission_id,
         proposal_hash=verdict["proposal_hash"],
         amount_paise=quote["total_paise"],
         ceiling_paise=req.budget_paise,
-        now_ts=now_ts,
     )
 
     try:
@@ -299,8 +339,7 @@ async def api_discovery_reconcile(execution_id: str) -> dict[str, Any]:
         # tell" with a 202, and 202 is a 2xx. Flatten it so `state` is
         # always top-level and a client checking `response.ok` cannot read
         # an unresolved outcome as a resolved one.
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
-        err = detail.get("error", {}) if isinstance(detail, dict) else {}
+        err = _as_error(exc.detail)
         return JSONResponse(status_code=exc.status_code, content={
             "ok": False,
             "execution_id": execution_id,

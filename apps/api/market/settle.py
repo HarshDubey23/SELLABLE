@@ -329,14 +329,21 @@ async def settle(negotiation_id: str, *,
                       transcript_hash=row["transcript_hash"] or "",
                       now_ts=now_ts)
 
+    # Read the clock again here rather than reusing now_ts from the top
+    # of this function. The approval binding was registered a moment ago
+    # inside evaluate_proposal, with its own clock read, and a mandate
+    # stamped before that looks older than the approval it authorizes --
+    # which the executor refuses as MANDATE_CART_STALE. The gap is
+    # normally under the one second of tolerance and normally invisible.
+    signed_ts = int(time.time())
     intent_mandate = sign_intent(IntentMandate(
         mission_id=row["mission_id"], user_id=f"user_{row['mission_id']}",
-        ceiling_paise=total, expires_at=now_ts + MANDATE_TTL_SECONDS,
+        ceiling_paise=total, expires_at=signed_ts + MANDATE_TTL_SECONDS,
     ), mandate_key)
     cart_mandate = sign_cart(CartMandate(
         mission_id=row["mission_id"], cart_hash=proposal_hash,
-        amount_paise=total, signed_at=now_ts,
-        expires_at=now_ts + MANDATE_TTL_SECONDS,
+        amount_paise=total, signed_at=signed_ts,
+        expires_at=signed_ts + MANDATE_TTL_SECONDS,
     ), mandate_key)
 
     audit_chain.append("market", "settlement_authorized", {
