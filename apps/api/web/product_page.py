@@ -301,7 +301,7 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
       <div class="step" id="s-exec" role="listitem">
         <span class="sdot">4</span><span class="slabel">Execute</span></div>
       <div class="step" id="s-done" role="listitem">
-        <span class="sdot">5</span><span class="slabel">Settled</span></div>
+        <span class="sdot">5</span><span class="slabel">Settlement</span></div>
       <div class="rail-bar" id="rail-bar"></div>
     </div>
     <div class="status m" id="status"></div>
@@ -450,7 +450,13 @@ function step(name, state){
     const p = $(EL[s]);
     if (!/stop|wait/.test(p.className)) p.className = 'step done';
   });
-  $('rail-bar').style.width = (PCT[name] || 0) + '%';
+  /* A step that is waiting has not been reached, so the bar stops at the
+     step before it. Filling to 100% while step 5 sits amber would say
+     "finished" in the one channel a reader takes in fastest. */
+  const pct = (state === 'wait' && i > 0)
+    ? (PCT[STEPS[i - 1]] || 0)
+    : (PCT[name] || 0);
+  $('rail-bar').style.width = pct + '%';
 }
 function say(msg){ $('status').textContent = msg; }
 function showRail(){ $('rail-wrap').classList.add('on'); }
@@ -589,7 +595,19 @@ function render(d){
   const listings = (d.listings || []);
   const grid = $('grid');
   grid.innerHTML = '';
-  $('ev-n').textContent = listings.length + ' source' + (listings.length === 1 ? '' : 's');
+  /* COUNT WHAT THE COUNT MEANS.
+     This said "1 source" directly under a banner saying "no real market
+     evidence this time". Both were true -- one listing came back, and
+     none of it was a price we could compare against -- but a reader sees
+     the two lines together and concludes the page is contradicting
+     itself. So the header now says how many of those sources actually
+     counted, and only mentions it when the two numbers differ. */
+  const usable = listings.filter(l => l.evidence_class === 'OBSERVED').length;
+  const noun = listings.length === 1 ? ' source' : ' sources';
+  $('ev-n').textContent = listings.length + noun +
+    (listings.length && usable !== listings.length
+      ? (usable ? ' · ' + usable + ' usable' : ' · none usable for comparison')
+      : '');
   $('empty').style.display = listings.length ? 'none' : 'block';
   const CHIP = {OBSERVED:'chip-ok', FX_CONVERTED:'chip-warn',
                 MOCK_SOURCE:'chip-dim', UNVERIFIED:'chip-dim'};
@@ -788,8 +806,16 @@ $('approve').addEventListener('click', async function(){
     ].filter(Boolean).join('\n');
 
     if (b.ok){
-      step('exec','done'); step('done','done');
-      say('order created · ' + b.order_id);
+      /* THE RAIL MUST NOT CLAIM WHAT THE COPY DENIES.
+         This marked step 5, "Settled", as complete the moment an order
+         was created -- directly above an alert saying an order is not a
+         captured payment and settlement is not claimed until a
+         signature-verified webhook says so. The page contradicted
+         itself, and it did it in the direction this whole project exists
+         to avoid: claiming money moved when it has not. Order created is
+         step 4. Step 5 waits for the webhook. */
+      step('exec','done'); step('done','wait');
+      say('order created · ' + b.order_id + ' · awaiting settlement');
       alertBox('ok', 'Order created — ' + b.order_id,
         'An order is not a captured payment. SELLABLE will not claim settlement ' +
         'until a signature-verified webhook says so.',
@@ -827,7 +853,9 @@ $('recon-go').addEventListener('click', async function(){
     const d = r.body;
     renderSM(d.state, S.viaReconciliation);
     if (d.state === 'EXECUTED'){
-      step('exec','done'); step('done','done');
+      /* Same rule. Reconciliation proves the order exists at the
+         provider; it says nothing about capture. */
+      step('exec','done'); step('done','wait');
       say('reconciled — the order existed after all');
       $('recon').classList.remove('on');
       alertBox('ok', 'Reconciled: the order exists',
