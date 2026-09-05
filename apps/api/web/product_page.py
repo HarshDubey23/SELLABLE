@@ -242,6 +242,7 @@ main.results{max-width:1080px;margin:0 auto;padding:26px 0 40px}
   border:1px solid var(--border);border-radius:var(--r-panel);padding:20px 24px;
   display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
 .jstrip-t{font-size:14px;font-weight:600;margin-bottom:4px}
+.jstrip-go{display:flex;flex-direction:column;gap:7px;align-items:stretch}
 .jstrip-s{font-size:13px;color:var(--text-mid);max-width:62ch}
 
 @media (max-width:820px){
@@ -382,11 +383,14 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
   <div>
     <div class="jstrip-t">Reviewing this for Razorpay?</div>
     <div class="jstrip-s">The cockpit runs the same code you just used, plus the parts
-      a shopper never sees: eight adversarial scenarios, a custom attack you write
-      yourself, a real provider timeout, and a ledger block you can verify in your own
-      browser.</div>
+      a shopper never sees: <b>three language models bidding against each other for one
+      order</b>, eight adversarial scenarios, a custom attack you write yourself, a real
+      provider timeout, and a ledger block you can verify in your own browser.</div>
   </div>
-  <a class="btn btn-primary" href="/judge">Open the cockpit &rarr;</a>
+  <div class="jstrip-go">
+    <a class="btn btn-primary" href="/judge">Open the cockpit &rarr;</a>
+    <a class="btn btn-sm" href="/judge#market">Watch the merchants bid &rarr;</a>
+  </div>
 </div></div>
 
 <div class="ov" id="ov" role="dialog" aria-modal="true" aria-labelledby="mtitle">

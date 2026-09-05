@@ -3,13 +3,13 @@
 EIGHT SCENES, ONE PAGE
 ----------------------
   A  Sentinel        live status, read from real endpoints on a poll
-  B  Gauntlet        every built-in attack, one button, real latencies
-  C  Mission         the agent actually shops; the timeline is its trace
-  D  Negotiation     buyer vs merchant, with the policy clamp visible
-  E  Two locks       write your own attack; watch both layers refuse it
-  F  Kill & resurrect  really kill the process, watch recovery classify it
-  G  Trust nothing   verify a chain block in your own browser, then break it
-  H  The market     three merchant LLMs bid; the server decides what it costs
+  B  The market      three merchant LLMs bid; the server decides what it costs
+  C  Gauntlet        every built-in attack, one button, real latencies
+  D  Mission         the agent actually shops; the timeline is its trace
+  E  Negotiation     buyer vs merchant, with the policy clamp visible
+  F  Two locks       write your own attack; watch both layers refuse it
+  G  Kill & resurrect  really kill the process, watch recovery classify it
+  H  Trust nothing   verify a chain block in your own browser, then break it
 
 WHY IT IS ONE PAGE
 ------------------
@@ -55,15 +55,18 @@ def _esc(v: Any) -> str:
     return html.escape("" if v is None else str(v))
 
 
+# The market sits second on purpose. It is the thing a reviewer is least
+# likely to have seen anywhere else, and burying the most distinctive
+# scene at position eight is how a demo gets missed rather than judged.
 SCENES = [
     ("sentinel", "A", "Sentinel"),
-    ("gauntlet", "B", "Gauntlet"),
-    ("mission", "C", "Mission"),
-    ("negotiation", "D", "Negotiation"),
-    ("locks", "E", "Two locks"),
-    ("recovery", "F", "Kill &amp; resurrect"),
-    ("trust", "G", "Trust nothing"),
-    ("market", "H", "The market"),
+    ("market", "B", "The market"),
+    ("gauntlet", "C", "Gauntlet"),
+    ("mission", "D", "Mission"),
+    ("negotiation", "E", "Negotiation"),
+    ("locks", "F", "Two locks"),
+    ("recovery", "G", "Kill &amp; resurrect"),
+    ("trust", "H", "Trust nothing"),
     ("evidence", "—", "Evidence"),
 ]
 
@@ -291,6 +294,39 @@ table.t td{color:var(--text-mid)}
    the server computed them. A card that never earns a teal rule never
    earned a price, and you can see that from across the room without
    reading a word. */
+/* Each merchant is a standing agent with a rulebook, not a result row.
+   The rulebook is printed on the card because it is the only way a
+   refusal is checkable: "asked 22%, allowed 15%" means nothing unless
+   the 15% is visible and came from somewhere. */
+.mk-who{padding:11px 13px;border-bottom:1px solid var(--border);
+  background:var(--bg-inset)}
+.mk-who-top{display:flex;align-items:baseline;justify-content:space-between;
+  gap:8px}
+.mk-name{font-family:var(--sans);font-size:15px;font-weight:600;
+  color:var(--text-hi);letter-spacing:-.01em}
+.mk-strat{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--violet)}
+.mk-caps{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.mk-cap{font-family:var(--mono);font-size:9.5px;color:var(--text-lo);
+  border:1px solid var(--border-hi);border-radius:var(--r-chip);
+  padding:2px 6px;white-space:nowrap}
+.mk-cap b{color:var(--text-mid);font-weight:700}
+.mk-think{padding:26px 13px;text-align:center;font-family:var(--mono);
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--violet)}
+.mk-think .dots::after{content:'';animation:mkdots 1.2s steps(4,end) infinite}
+@keyframes mkdots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.mk-think .dots::after{content:'...'}}
+.mk-idle{padding:22px 13px;text-align:center;font-size:11.5px;
+  color:var(--text-lo)}
+.mk-breach{font-family:var(--mono);font-size:10.5px;color:var(--text-mid);
+  margin-top:5px}
+.mk-breach b{color:var(--red)}
+.hero-point{margin-top:14px;font-size:14px;color:var(--text-mid)}
+.hero-jump{font:inherit;font-weight:600;color:var(--violet);background:none;
+  border:none;border-bottom:1px solid var(--violet-line);padding:0 1px;
+  cursor:pointer}
+.hero-jump:hover{color:var(--text-hi);border-bottom-color:var(--text-hi)}
 .mk-ask{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 6px}
 .mk-ask #mk-mode{display:flex;gap:6px;flex-wrap:wrap}
 .mk-ask input[type=text]{
@@ -491,8 +527,8 @@ def _scene_gauntlet() -> str:
 <div id="g-state"></div>
 <div class="board" id="g-board" hidden>
   <div class="brow h">
-    <span></span><span>Scenario</span><span>Verdict</span><span>Refused by</span>
-    <span>Latency</span><span>Money</span><span></span>
+    <span></span><span>Attack</span><span>Outcome</span><span>Stopped by</span>
+    <span>Latency</span><span>Razorpay calls</span><span></span>
   </div>
 </div>
 <div id="g-banner"></div>
@@ -824,6 +860,7 @@ def _scene_market() -> str:
 <div id="mk-err"></div>
 <div id="mk-brief"></div>
 <div class="mk-floor" id="mk-floor"></div>
+<p class="sl" id="mk-floor-note" style="margin-top:-2px">Three merchants, each its own model with its own strategy and its own signed limits. The limits are printed on every card, so when the policy engine refuses an offer you can check the refusal against the rule it broke without leaving the page.</p>
 <div id="mk-state"></div>
 <div id="mk-why"></div>
 
@@ -860,13 +897,13 @@ def render_judge_page() -> str:
 
     panels = {
         "sentinel": _scene_sentinel(truth),
+        "market": _scene_market(),
         "gauntlet": _scene_gauntlet(),
         "mission": _scene_mission(),
         "negotiation": _scene_negotiation(),
         "locks": _scene_locks(),
         "recovery": _scene_recovery(),
         "trust": _scene_trust(),
-        "market": _scene_market(),
         "evidence": _scene_evidence(truth),
     }
     body = "".join(
@@ -886,6 +923,9 @@ def render_judge_page() -> str:
   <p>Eight scenes. Each one runs the production code path in front of you &mdash; the
      same gateway, the same binding, the same executor, the same ledger the storefront
      uses. Nothing here is a mock-up, and no number on this page was typed in.</p>
+  <p class="hero-point">Start at <button class="hero-jump" data-jump="market">B
+     &middot; The market</button> &mdash; three language models bid for one order and
+     none of them can name a price.</p>
 </header>
 
 <nav class="scenes" role="tablist" aria-label="Scenes">
@@ -1117,10 +1157,22 @@ $('g-run').addEventListener('click', async function(){
         '<span class="ix">' + String(i+1).padStart(2,'0') + '</span>' +
         '<span><span class="nm">' + esc(s.label) + '</span>' +
           '<span class="id">' + esc(s.id) + '</span></span>' +
-        '<span class="chip ' + (s.decision === 'REJECT' ? 'chip-bad' : 'chip-dim') + '">' +
-          esc(s.decision || '—') + '</span>' +
+        /* THE COLUMN SAYS WHAT HAPPENED, NOT WHAT ONE LAYER THOUGHT.
+           This used to print s.decision, which is only the *gateway's*
+           verdict. Scenarios 07 and 08 are legal at the gateway on
+           purpose -- they exist to prove the second lock -- so the
+           column read APPROVE on two rows of an attack table. Anyone
+           scanning it saw two attacks apparently succeed. The outcome
+           leads now, and the gateway's opinion is the supporting line,
+           which is also the more interesting fact: it says which of the
+           two locks did the work. */
+        '<span class="chip ' + (s.safe ? 'chip-ok' : 'chip-bad') + '">' +
+          (s.safe ? 'BLOCKED' : 'GOT THROUGH') + '</span>' +
         '<span class="m" style="font-size:11px">' + esc(s.blocked_by) +
-          '<span class="id">' + layer + '</span></span>' +
+          '<span class="id">' + layer +
+          (s.decision === 'APPROVE'
+            ? ' &middot; gateway allowed it, the binding did not'
+            : '') + '</span></span>' +
         '<span class="m" style="font-size:11.5px">' + esc(s.latency_ms) + ' ms</span>' +
         '<span class="m" style="color:' + (s.money_calls ? 'var(--red)' : 'var(--teal)') + '">' +
           esc(s.money_calls) + '</span>' +
@@ -1133,9 +1185,19 @@ $('g-run').addEventListener('click', async function(){
     stagger(rows, 70);
     const T = d.totals, allSafe = T.blocked === T.total && T.money_boundary_calls === 0;
     setTimeout(() => {
+      /* Which lock did the work. Six attacks never reach the money
+         boundary at all; two are allowed through the gateway on purpose
+         and stopped by the binding. Saying so here is what stops a
+         reader wondering why an attack table contains the word APPROVE. */
+      const byGateway = d.results.filter(r => r.refused_layer === 'gateway').length;
+      const byBinding = d.results.filter(r => r.refused_layer === 'binding').length;
       banner.innerHTML = '<div class="banner' + (allSafe ? '' : ' bad') + '">' +
         '<div class="banner-t"><span id="g-n">' + T.blocked + '</span>/' + T.total +
         ' BLOCKED &middot; ' + T.money_boundary_calls + ' MONEY API CALLS</div>' +
+        '<div class="banner-s">' + byGateway + ' stopped by the deterministic ' +
+        'gateway &middot; ' + byBinding + ' allowed past it on purpose and stopped ' +
+        'by the approval binding &mdash; a system whose only defence is its first ' +
+        'has not been tested</div>' +
         '<div class="banner-s">measured_on: ' + esc(d.measured_on) +
         ' &middot; wall time ' + T.wall_time_ms + ' ms &middot; ' +
         'same runner the test suite asserts against</div></div>';
@@ -1738,6 +1800,63 @@ function mkBrief(d){
     '</div>';
 }
 
+/* The manifests, fetched once. A merchant is shown before it has said
+   anything, because "who is bidding" is part of what makes this legible. */
+let MK_WHO = {};
+
+function mkCaps(m){
+  if (!m) return '';
+  const rows = [
+    ['line', m.max_line_discount_pct + '%'],
+    ['bundle', m.max_bundle_discount_pct + '%'],
+    ['delivery', m.delivery_days_range[0] + '-' + m.delivery_days_range[1] + 'd'],
+    ['warranty', m.allowed_warranty_years.join('/') + 'y'],
+    ['margin floor', m.min_margin_pct + '%'],
+  ];
+  return '<div class="mk-caps">' + rows.map(function(r){
+    return '<span class="mk-cap">' + esc(r[0]) + ' <b>' + esc(r[1]) + '</b></span>';
+  }).join('') + '</div>';
+}
+
+function mkWho(id){
+  const m = MK_WHO[id];
+  return '<div class="mk-who"><div class="mk-who-top">' +
+    '<span class="mk-name">' + esc(m ? m.display_name : id) + '</span>' +
+    '<span class="mk-strat">' + esc(m ? m.strategy : '') + '</span></div>' +
+    mkCaps(m) + '</div>';
+}
+
+async function mkLoadWho(){
+  const r = await jfetch('/market/merchants');
+  if (!r.ok || !r.body) return;
+  MK_WHO = {};
+  r.body.merchants.forEach(function(m){ MK_WHO[m.merchant_id] = m; });
+  $('mk-mode').innerHTML = mkMode(r.body.mode);
+  mkFloorIdle();
+}
+
+function mkOrder(){
+  const ids = Object.keys(MK_WHO);
+  return ids.length ? ids.sort() : ['BYTECART','GEARHUB','NOVATECH'];
+}
+
+/* The floor before anyone has bid: three agents, waiting. */
+function mkFloorIdle(){
+  $('mk-floor').innerHTML = mkOrder().map(function(id){
+    return '<div class="mk-bid pending">' + mkWho(id) +
+      '<div class="mk-idle">waiting for a mission</div></div>';
+  }).join('');
+}
+
+/* The floor while the three models are answering, all at once. */
+function mkFloorThinking(){
+  $('mk-floor').innerHTML = mkOrder().map(function(id){
+    return '<div class="mk-bid model">' + mkWho(id) +
+      '<div class="mk-think"><span class="dots">reading the basket</span></div>' +
+      '</div>';
+  }).join('');
+}
+
 function mkBid(o, winnerId){
   const i = o.intent || {};
   const cls = !o.accepted ? 'refused' : (o.merchant_id === winnerId ? 'won' : 'model');
@@ -1758,15 +1877,37 @@ function mkBid(o, winnerId){
       '<div class="by">server-side catalog recomputation</div></div>'
     : '<div class="mk-refused"><div class="code">' + esc(o.reason) + '</div>' +
       '<div class="why">' + esc((o.verdict && o.verdict.reason_human) ||
-        'refused by the merchant policy engine before it was priced') + '</div></div>';
+        'refused by the merchant policy engine before it was priced') + '</div>' +
+      mkBreach(o) + '</div>';
 
-  return '<div class="mk-bid ' + cls + '">' +
-    '<div class="mk-bid-h"><span class="mk-bid-id">' + esc(o.merchant_id) + '</span>' +
-    '<span class="mk-bid-strat">round ' + esc(o.round) + '</span></div>' +
+  return '<div class="mk-bid ' + cls + '">' + mkWho(o.merchant_id) +
+    '<div class="mk-bid-h"><span class="mk-bid-id">' +
+      (cls === 'won' ? 'ACCEPTED' : 'round ' + esc(o.round)) + '</span>' +
+    '<span class="mk-bid-strat">' + (cls === 'won' ? 'round ' + esc(o.round) : '') +
+      '</span></div>' +
     '<div class="mk-terms">' + terms + '</div>' + foot +
     '<div class="mk-src' + (o.is_llm ? ' llm' : '') + '"><span class="d"></span>' +
     esc(o.agent_label || '') + (o.latency_ms ? ' &middot; ' + esc(o.latency_ms) + 'ms' : '') +
     '</div></div>';
+}
+
+/* The two numbers that disagree, printed next to each other. A reason
+   code alone asks the reader to take the refusal on faith. */
+function mkBreach(o){
+  const b = (o.verdict && o.verdict.breach) || null;
+  if (!b) return '';
+  const pairs = [];
+  if (b.offered_pct != null && b.manifest_cap_pct != null)
+    pairs.push('asked <b>' + esc(b.offered_pct) + '%</b>, manifest allows ' +
+               esc(b.manifest_cap_pct) + '%');
+  if (b.resulting_margin_pct != null && b.manifest_floor_pct != null)
+    pairs.push('would leave <b>' + esc(b.resulting_margin_pct) +
+               '%</b> margin, floor is ' + esc(b.manifest_floor_pct) + '%');
+  if (b.threshold_paise != null && b.short_by_paise != null)
+    pairs.push('short by <b>' + rupees(b.short_by_paise) + '</b> of the ' +
+               rupees(b.threshold_paise) + ' free-shipping threshold');
+  return pairs.length
+    ? '<div class="mk-breach">' + pairs.join('<br>') + '</div>' : '';
 }
 
 function mkWhy(d){
@@ -1854,9 +1995,10 @@ async function mkOpen(){
 }
 
 async function mkRound(){
+  mkFloorThinking();
   const d = await mkCall('/market/' + encodeURIComponent(MK.negotiation_id) + '/round',
-    {method:'POST'}, 'three merchants answering at once');
-  if(d) mkRender(d);
+    {method:'POST'});
+  if(d) mkRender(d); else mkFloorIdle();
 }
 
 async function mkCounter(){
@@ -1932,6 +2074,18 @@ async function mkSettle(){
   mkRender(d);
 }
 
+/* A deep link lands on the scene it names, so /judge#market opens the
+   market rather than dropping the reader on Sentinel to go hunting. */
+(function(){
+  const want = (location.hash || '').replace('#','');
+  if (want && KEYS.indexOf(want) >= 0) show(want);
+})();
+document.querySelectorAll('.hero-jump').forEach(function(b){
+  b.addEventListener('click', function(){
+    show(b.dataset.jump);
+    document.querySelector('.scenes').scrollIntoView({block:'start'});
+  });
+});
 document.querySelectorAll('.mk-seed').forEach(function(b){
   b.addEventListener('click', function(){
     $('mk-text').value = b.dataset.mission;
@@ -1948,6 +2102,7 @@ if($('mk-settle'))   $('mk-settle').addEventListener('click', mkSettle);
 if($('mk-text'))     $('mk-text').addEventListener('keydown', function(e){
   if(e.key === 'Enter') mkOpen();
 });
+if($('mk-floor')) mkLoadWho();
 """
 
 
