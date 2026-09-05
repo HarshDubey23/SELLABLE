@@ -598,20 +598,46 @@ Propose which items to buy:"""
                        f"Payment captured for {order_id}", recovery)
 
         # ============ STEP 9: AUTHORITATIVE STATUS + HONEST BRANCH ====
+        # The webhook and the local ledger can lag the API by a second or
+        # two, so this polls rather than reading once. It reports a change
+        # and nothing else: emitting the same line on every pass filled
+        # the timeline with six identical rows saying "Final status:
+        # created", which reads like something retrying and failing when
+        # in fact nothing had happened yet.
         final_status = None
-        for _ in range(6):  # webhook/ledger may lag the API slightly
+        polls = 0
+        for _ in range(6):
+            polls += 1
             try:
                 status_resp = await client.get(
                     f"{base_url}/tools/check_payment/{order_id}")
                 payment_status = status_resp.json()
-                final_status = payment_status.get("local_status")
-                trace.emit("executor", "payment_status",
-                           f"Final status: {final_status}", payment_status)
+                observed = payment_status.get("local_status")
+                if observed != final_status:
+                    final_status = observed
+                    trace.emit("executor", "payment_status",
+                               f"Payment status: {final_status}",
+                               payment_status)
                 if final_status in ("captured", "refunded", "failed"):
                     break
             except Exception as e:
                 trace.emit("executor", "status_check_failed", str(e))
             await asyncio.sleep(1.0)
+
+        # An order that is still only "created" has not failed. Nobody has
+        # paid it yet, which is the expected state when no human has opened
+        # the checkout and no webhook can reach a machine on localhost.
+        # Saying so beats leaving a reader to infer it from a status that
+        # simply stopped changing.
+        if final_status not in ("captured", "refunded", "failed"):
+            trace.emit(
+                "executor", "payment_awaiting_capture",
+                f"Order {order_id} exists and is unpaid after {polls} "
+                f"check(s). An order is not a payment: capture needs "
+                f"someone to complete the checkout, and settlement is only "
+                f"claimed from a signature-verified webhook.",
+                {"order_id": order_id, "local_status": final_status,
+                 "polls": polls})
 
         result_payload: dict[str, Any] = {
             "order_id": order_id,

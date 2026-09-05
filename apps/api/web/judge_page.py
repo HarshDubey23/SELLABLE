@@ -942,22 +942,87 @@ function tstamp(sec){
 
 /* M1 — stagger rows that have ALREADY arrived from the server. */
 function stagger(nodes, step){
+  /* CONTENT MUST NOT DEPEND ON AN ANIMATION TO BECOME VISIBLE.
+     `.stagger` sets opacity:0 and relies on a CSS keyframe to bring it
+     back. That is fine when the keyframe runs. It is not fine when it
+     does not -- a throttled background tab, a compositor that has
+     stopped painting, a browser in a power-saving state -- because the
+     resting state of the class is invisible, so the rows just never
+     appear. The reader sees an empty panel and concludes the feature is
+     broken.
+
+     So every staggered node is un-staggered once the animation should
+     have finished. If it ran, this changes nothing anyone can see. If it
+     never ran, the content shows up anyway. */
   if (REDUCED) return;
+  step = step || 70;
   nodes.forEach((n, i) => {
     n.classList.add('stagger');
-    n.style.animationDelay = (i * (step || 70)) + 'ms';
+    n.style.animationDelay = (i * step) + 'ms';
   });
+  const settle = nodes.length * step + 400;
+  setTimeout(() => nodes.forEach(n => {
+    n.classList.remove('stagger');
+    n.style.animationDelay = '';
+  }), settle);
 }
 /* M3 — count a real number up, once it has arrived. */
+/* The mission's own words for its outcome. The raw enum went straight
+   into the headline chip, so a reader saw "payment_failed" or
+   "order_created_payment_pending" -- and the chip was coloured green
+   whenever an order existed, which meant a failed payment was shown in
+   the success colour. The colour now follows the outcome, not the
+   presence of a row. */
+const MISSION_STATUS = {
+  completed:
+    ['Paid and captured', 'chip-ok'],
+  order_created_payment_pending:
+    ['Order created, not yet paid', 'chip-warn'],
+  payment_authorized_capture_pending:
+    ['Authorized, capture pending', 'chip-warn'],
+  payment_failed_then_link_issued:
+    ['Payment failed, recovery link issued', 'chip-warn'],
+  payment_failed:
+    ['Payment failed, nothing captured', 'chip-bad'],
+};
+function missionStatus(raw){
+  const hit = MISSION_STATUS[raw];
+  return hit ? {label: hit[0], cls: hit[1]}
+             : {label: String(raw || 'unknown'), cls: 'chip-dim'};
+}
 function countUp(el, target, suffix){
+  /* THE TRUE VALUE IS WRITTEN FIRST. THE ANIMATION IS DECORATION.
+     This used to render a literal 0 into the DOM and rely on
+     requestAnimationFrame to walk it up to the real number. rAF is
+     throttled or suspended whenever the page is not being painted -- a
+     background tab, a power-saving mode, a browser that has decided the
+     window is not visible -- and when it never runs, the number simply
+     stays at its starting value.
+
+     The number this drives is "N/8 BLOCKED" on the security scoreboard.
+     A reviewer who opened the cockpit in a background tab, or switched
+     away for the second it takes to run, came back to "0/8 BLOCKED"
+     sitting under eight rows that each say REJECTED. The most important
+     figure on the page, stuck at the one value that means the opposite
+     of the truth.
+
+     So the correct value goes in immediately and unconditionally. The
+     animation only ever overwrites it with intermediate frames, and a
+     timer guarantees the final value even if not one frame is drawn. */
   suffix = suffix || '';
-  if (REDUCED || target === 0){ el.textContent = target + suffix; return; }
+  const final = target + suffix;
+  el.textContent = final;
+  if (REDUCED || target === 0) return;
+
   const t0 = performance.now(), dur = 600;
+  let done = false;
   (function step(now){
+    if (done) return;
     const p = Math.min(1, (now - t0) / dur);
     el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))) + suffix;
-    if (p < 1) requestAnimationFrame(step);
+    if (p < 1) requestAnimationFrame(step); else done = true;
   })(performance.now());
+  setTimeout(() => { done = true; el.textContent = final; }, dur + 200);
 }
 /* M2 — typewriter over text the server already sent. Click to skip. */
 function typewriter(el, text){
@@ -1069,7 +1134,7 @@ $('g-run').addEventListener('click', async function(){
     const T = d.totals, allSafe = T.blocked === T.total && T.money_boundary_calls === 0;
     setTimeout(() => {
       banner.innerHTML = '<div class="banner' + (allSafe ? '' : ' bad') + '">' +
-        '<div class="banner-t"><span id="g-n">0</span>/' + T.total +
+        '<div class="banner-t"><span id="g-n">' + T.blocked + '</span>/' + T.total +
         ' BLOCKED &middot; ' + T.money_boundary_calls + ' MONEY API CALLS</div>' +
         '<div class="banner-s">measured_on: ' + esc(d.measured_on) +
         ' &middot; wall time ' + T.wall_time_ms + ' ms &middot; ' +
@@ -1101,7 +1166,7 @@ $('m-run').addEventListener('click', async function(){
     const d = r.body, events = d.events || [];
     if (!events.length){
       st.innerHTML = '<div class="state-empty">The agent returned no trace events. ' +
-        'Status: ' + esc(d.status) + '</div>';
+        'Status: ' + esc(missionStatus(d.status).label) + '</div>';
       return;
     }
     tl.innerHTML = '';
@@ -1123,11 +1188,14 @@ $('m-run').addEventListener('click', async function(){
     tl.hidden = false;
     stagger(nodes, 60);
     const ord = d.order;
+    const ms = missionStatus(d.status);
     sum.innerHTML = '<div class="' + (ord ? 'authoritative' : 'advisory') + '" style="margin-top:14px">' +
       '<div class="panel-head"><span class="panel-title">Mission outcome</span>' +
-      '<span class="chip ' + (ord ? 'chip-ok' : 'chip-warn') + '">' + esc(d.status) + '</span></div>' +
+      '<span class="chip ' + ms.cls + '">' + esc(ms.label) + '</span></div>' +
       (ord ? '<div class="m" style="font-size:19px;font-weight:700">' + rupees(ord.amount) +
-             '</div><div class="panel-sub">order ' + esc(ord.id) + ' &middot; priced from the server catalog</div>'
+             '</div><div class="panel-sub">order ' + esc(ord.id) +
+             ' &middot; priced from the server catalog &middot; ' + esc(ms.label.toLowerCase()) +
+             '</div>'
            : '<div class="panel-sub">No order was created. The agent produced no ' +
              'proposal the gateway would approve, and nothing was charged.</div>') +
       '</div>';
