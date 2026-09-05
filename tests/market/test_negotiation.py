@@ -334,3 +334,105 @@ def test_the_catalog_answers_what_it_stocks_and_refuses_what_it_does_not():
     for mission in refused:
         assert keyword_plan(mission, CATALOG) is None, \
             f"should refuse rather than substitute something: {mission}"
+
+
+# --------------------------------------------------------- the counter
+
+def test_a_counter_issued_through_the_api_actually_reaches_the_merchant():
+    """A counter that is recorded but never delivered is theatre.
+
+    issue_counter writes the counter, moves the state and changes the
+    transcript hash. None of that asks anybody anything. run_round used
+    to take the counter only as an argument, and the HTTP route that runs
+    a round has no way to pass one -- so every counter sent from the page
+    was written down, displayed, hashed into the transcript, and dropped
+    before a merchant was asked to respond.
+
+    This calls run_round the way the route does: with no counter
+    argument at all.
+    """
+    async def go(nid: str) -> None:
+        await neg.run_round(nid, allow_llm=False)
+
+    row = asyncio.run(_opened())
+    nid = row["negotiation_id"]
+    asyncio.run(go(nid))
+
+    def delivery(round_no: int) -> dict[str, int]:
+        return {o["merchant_id"]: json.loads(o["intent_json"])["delivery_days"]
+                for o in neg.offers_for(nid) if o["round"] == round_no}
+
+    before = delivery(1)
+    winner = neg.rank(nid)["winner"]["merchant_id"]
+    neg.issue_counter(nid, merchant_id=winner, ask="FASTER_DELIVERY")
+
+    asyncio.run(go(nid))                       # no counter passed
+    after = delivery(2)
+
+    assert after[winner] < before[winner], \
+        "the merchant that was asked for faster delivery did not move"
+    for other in before:
+        if other != winner:
+            assert after[other] == before[other], \
+                f"{other} changed, but the counter was not addressed to it"
+
+
+def test_a_counter_never_makes_the_offer_it_asked_about_worse():
+    """Asked to improve one dimension, a merchant must not go backwards on it.
+
+    Before merchants were shown their own previous offer, "improve your
+    offer" had nothing to improve on: GEARHUB, asked for faster
+    delivery, came back with 4 days changed to 7. It was not refusing --
+    it had never been told what it had already said.
+    """
+    row = asyncio.run(_opened())
+    nid = row["negotiation_id"]
+    asyncio.run(neg.run_round(nid, allow_llm=False))
+
+    winner = neg.rank(nid)["winner"]["merchant_id"]
+    was = {o["merchant_id"]: json.loads(o["intent_json"])
+           for o in neg.offers_for(nid) if o["round"] == 1}[winner]
+
+    for ask, field, better in (("FASTER_DELIVERY", "delivery_days", "lower"),
+                               ("LONGER_WARRANTY", "warranty_years", "higher"),
+                               ("LOWER_PRICE", "line_discount_pct", "higher")):
+        fresh = asyncio.run(_opened())
+        fid = fresh["negotiation_id"]
+        asyncio.run(neg.run_round(fid, allow_llm=False))
+        neg.issue_counter(fid, merchant_id=winner, ask=ask)
+        asyncio.run(neg.run_round(fid, allow_llm=False))
+
+        now = {o["merchant_id"]: json.loads(o["intent_json"])
+               for o in neg.offers_for(fid) if o["round"] == 2}
+        if winner not in now:
+            continue
+        if better == "lower":
+            assert now[winner][field] <= was[field], f"{ask} made {field} worse"
+        else:
+            assert now[winner][field] >= was[field], f"{ask} made {field} worse"
+
+
+def test_a_merchant_is_shown_its_own_last_offer_and_no_one_elses():
+    """Showing the previous offer is only safe because it is its own."""
+    from apps.api.market import merchants as merchants_mod
+    from apps.api.market.agents.merchant import build_prompt
+    from apps.api.market.intents import OfferIntent
+
+    merchants_mod.seed()
+    basket = [{"sku": "BAT-001", "name": "bat", "category": "cricket",
+               "price_paise": 149900}]
+    previous = OfferIntent(
+        merchant_id="NOVATECH", basket_sku_set=("BAT-001",),
+        line_discount_pct=7, bundle_discount_pct=0, shipping="STANDARD",
+        delivery_days=2, warranty_years=1, round=1, offer_id="off-prev-1")
+
+    _system, user = build_prompt(
+        manifest=merchants_mod.get("NOVATECH"), basket=basket,
+        mission_text=MISSION, round_no=2, counter=None, previous=previous)
+
+    assert "What you offered last round" in user
+    assert "delivery 2 day(s)" in user
+    for other in merchants_mod.all_manifests():
+        if other.merchant_id != "NOVATECH":
+            assert other.merchant_id not in user
+            assert other.display_name not in user
