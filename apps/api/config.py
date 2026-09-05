@@ -49,7 +49,14 @@ OPTIONAL_DEMO = (
     "SELLABLE_DB_PATH",
 )
 
-_CANONICAL_GEMINI_MODEL = "google/gemini-1.5-flash"
+# The default must be the model that actually gets called. config.py
+# used to fall back to google/gemini-1.5-flash while llm/gemini.py fell
+# back to openai/gpt-4o-mini, so a fresh clone with no OPENROUTER_MODEL
+# set printed one model in the boot banner and on /diagnostics while
+# sending every request to a different one. A banner naming a model that
+# never runs is the same species of untruth as a badge saying "live"
+# when it is simulated.
+_CANONICAL_GEMINI_MODEL = "openai/gpt-4o-mini"
 _CANONICAL_GEMINI_FALLBACKS = (
     "openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct,anthropic/claude-3-haiku"
 )
