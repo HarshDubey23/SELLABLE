@@ -387,14 +387,25 @@ window is now reported as inconclusive rather than as failure. That is a
 mitigation, not a solution — the real answer is a provider lookup keyed
 on something we chose, which this API does not offer.
 
-**Live retail discovery is frequently unavailable.** The search provider
-it depends on has stopped returning results, so most searches report
-`SEARCH_UNAVAILABLE` or `MOCK_SOURCES_ONLY` and the recommendation stands
-on the merchant catalog with no market comparison claimed. This is
-visible on the storefront rather than hidden, and SELLABLE can only ever
-sell what is in its own catalog — external listings were never a payable
-amount. It does mean the "compare against live retail" part of the demo
-often has nothing to show.
+**Live retail discovery has never produced a usable price.** This is the
+weakest claim in the project and it is worth stating exactly. The search
+does reach real whitelisted storefronts — a query for headphones returned
+six of them, a query for yoga mats four. But every listing came back
+`UNVERIFIED`: the page matched the query and published no price the
+parser could read. Across every query tried, the count of `OBSERVED`
+listings — a price seen verbatim in INR — is **zero**.
+
+So the price comparison against live retail, which the storefront was
+originally built around, has never once run on real data. What the
+storefront actually compares is the merchant catalog against itself: the
+alternatives the agent weighed, all in stock, all inside the signed
+ceiling, with the differences stated as subtractions. That comparison is
+server-authoritative and always works, which is why it is the one on the
+page.
+
+Everything downstream is unaffected — external listings were never a
+payable amount and SELLABLE can only sell what it stocks — but a reader
+should not take "checks live retail" to mean "and gets an answer".
 
 **Single-node concurrency.** Single-use consumption and the execution
 dispatch claim are conditional `UPDATE`s against one SQLite file. Correct
