@@ -480,6 +480,7 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
 </div>
 
 {FOOTER}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>{PROVIDER_BADGE_JS}</script>
 <script>{{JS}}</script>
 </body>
@@ -752,6 +753,83 @@ $('probe-go').addEventListener('click', async function(){
   }
 });
 
+
+/* ── the payment box ───────────────────────────────────────────────────
+   Creating an order is a request to collect money. It is not collecting
+   it. Until this existed the flow stopped at "order created" and there
+   was no way to go further from the page, which is a fair reading of
+   "why did no money move" -- nothing had asked anyone to pay.
+
+   This hands the order to Razorpay's own Checkout, which is the only
+   thing that ever sees card or UPI details. SELLABLE never receives
+   them. The key passed here is the publishable key id, which is what
+   that SDK takes; the secret stays on the server and is never sent to a
+   browser.
+   ──────────────────────────────────────────────────────────────────── */
+function openRazorpay(b){
+  if (b.provider !== 'razorpay_test'){
+    say('simulated provider — there is no real checkout to open');
+    return;
+  }
+  if (!window.Razorpay || !b.razorpay_key_id || !b.order_id){
+    say('order created · complete it at /checkout/' + (b.order_id || ''));
+    return;
+  }
+
+  const rzp = new Razorpay({
+    key: b.razorpay_key_id,
+    order_id: b.order_id,
+    amount: b.amount_paise,
+    currency: 'INR',
+    name: 'SELLABLE',
+    description: (S.discovery && S.discovery.merchant_offer)
+      ? S.discovery.merchant_offer.name : 'Approved purchase',
+    notes: {execution_id: b.execution_id || '', mission_id: b.mission_id || ''},
+    theme: {color: '#6C47FF'},
+    handler: function(resp){
+      /* Razorpay says it captured. SELLABLE does not take its word for
+         it -- the authoritative status is re-read from the server, and
+         settlement is still only claimed from a signed webhook. */
+      say('payment submitted · verifying with the server…');
+      confirmPayment(b, resp);
+    },
+    modal: {ondismiss: function(){
+      say('checkout closed · the order is still open and unpaid');
+    }},
+  });
+  rzp.on('payment.failed', function(resp){
+    const e = (resp && resp.error) || {};
+    alertBox('bad', 'Payment failed — ' + esc(e.code || 'unknown'),
+      esc(e.description || ''),
+      'the order still exists and no money moved');
+  });
+  rzp.open();
+}
+
+async function confirmPayment(b, resp){
+  try {
+    const r = await jfetch('/tools/check_payment/' + encodeURIComponent(b.order_id));
+    const st = r.body || {};
+    if (st.paid){
+      step('done','done');
+      say('payment captured · ' + esc(resp.razorpay_payment_id || ''));
+      alertBox('ok', 'Payment captured',
+        'The provider confirms this order is paid. SELLABLE still records ' +
+        'settlement only from a signature-verified webhook, which is why the ' +
+        'ledger and this page can disagree for a moment.',
+        'payment ' + esc(resp.razorpay_payment_id || ''));
+    } else {
+      say('submitted · provider still reports ' + esc(st.status || 'created'));
+      alertBox('warn', 'Submitted, not yet confirmed',
+        'Razorpay accepted the payment but its authoritative status is still ' +
+        esc(st.status || 'created') + '. Nothing is claimed until it is.',
+        'payment ' + esc(resp.razorpay_payment_id || ''));
+    }
+  } catch(e){
+    alertBox('warn', 'Could not re-read the payment status', e.message);
+  }
+}
+
 /* ── authorization ─────────────────────────────────────────────────── */
 $('buy').addEventListener('click', openModal);
 $('mclose').addEventListener('click', closeModal);
@@ -916,6 +994,7 @@ $('approve').addEventListener('click', async function(){
         '<a class="btn btn-sm" href="/trace/' + esc(b.execution_id) + '">See every step of this purchase →</a>' +
         '<a class="btn btn-sm" href="/api/v1/receipt/' + esc(b.execution_id) + '" target="_blank" rel="noopener">Receipt JSON</a>' +
         '</div>');
+      openRazorpay(b);
     } else if (state === 'RECONCILIATION_REQUIRED'){
       step('exec','wait'); say('outcome unknown — reconciliation required');
       $('recon').classList.add('on');
