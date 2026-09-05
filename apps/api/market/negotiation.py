@@ -364,19 +364,59 @@ async def run_round(negotiation_id: str, *, allow_llm: bool = True,
 
     transition(negotiation_id, AWAITING_OFFERS, current_round=round_no)
 
+    # A COUNTER IS ONLY WORTH ISSUING IF IT ARRIVES.
+    #
+    # issue_counter records the counter, moves the state to
+    # COUNTER_ISSUED and changes the transcript hash. None of that
+    # reaches a merchant. run_round used to accept the counter only as an
+    # argument, and the HTTP route that runs a round has no way to supply
+    # one -- so every counter sent from the page was written down,
+    # displayed, hashed into the transcript, and then quietly dropped
+    # before anyone was asked to respond to it.
+    #
+    # The durable record is the authority. A counter filed for this round
+    # is picked up here whether or not the caller thought to pass it.
+    if counter is None:
+        pending = store.query_one(
+            "SELECT * FROM market_counters WHERE negotiation_id = ? "
+            "AND round = ? ORDER BY created_at DESC LIMIT 1",
+            (negotiation_id, round_no))
+        if pending is not None:
+            counter = BuyerCounter(
+                merchant_id=pending["merchant_id"],
+                ask=pending["ask"],            # type: ignore[arg-type]
+                round=pending["round"],
+                note=pending["note"] or "")
+
     basket = _catalog_basket(json.loads(row["basket_json"]))
     manifests = merchants_mod.all_manifests()
+
+    # Each merchant's own most recent offer, so it can be shown what it
+    # said last time. Keyed by merchant, and a merchant is only ever
+    # handed its own -- this is the same dict the isolation rule forbids
+    # sharing across, so it is read per merchant and never passed whole.
+    last_offer: dict[str, OfferIntent] = {}
+    for prior in offers_for(negotiation_id):
+        try:
+            last_offer[prior["merchant_id"]] = OfferIntent.model_validate(
+                json.loads(prior["intent_json"]))
+        except (ValueError, TypeError):
+            continue
 
     # All three concurrently, under one hard deadline. A merchant that
     # does not answer in time is simply not in this round; the round is
     # never held open by one slow provider.
-    async def _one(m: merchants_mod.CapabilityManifest) -> tuple[OfferIntent, dict[str, Any]]:
-        # Only the merchant the counter was addressed to hears about it.
-        mine = counter if (counter and counter.merchant_id == m.merchant_id) else None
+    async def _one(m: merchants_mod.CapabilityManifest
+                   ) -> tuple[OfferIntent, dict[str, Any]]:
+        # Only the merchant the counter was addressed to hears about it,
+        # and only its own previous offer comes back to it.
+        mine = (counter if (counter and counter.merchant_id == m.merchant_id)
+                else None)
         return await merchant_agent.make_offer(
             negotiation_id=negotiation_id, manifest=m, basket=basket,
             mission_text=row["mission_text"], round_no=round_no,
-            counter=mine, allow_llm=allow_llm)
+            counter=mine, previous=last_offer.get(m.merchant_id),
+            allow_llm=allow_llm)
 
     try:
         results = await asyncio.wait_for(

@@ -91,8 +91,18 @@ Reply with ONE JSON object and nothing else:
 
 def build_prompt(*, manifest: CapabilityManifest, basket: list[dict[str, Any]],
                  mission_text: str, round_no: int,
-                 counter: BuyerCounter | None) -> tuple[str, str]:
-    """Assemble this merchant's view. Nothing about a rival can enter here."""
+                 counter: BuyerCounter | None,
+                 previous: OfferIntent | None = None) -> tuple[str, str]:
+    """Assemble this merchant's view. Nothing about a rival can enter here.
+
+    `previous` is this merchant's OWN last offer and nobody else's, which
+    is what makes including it compatible with the isolation rule. It is
+    also what makes a counter mean anything: asking a merchant to
+    "improve" while showing it no offer to improve on produced a round
+    two uncorrelated with round one -- GEARHUB, asked for faster
+    delivery, came back with 4 days changed to 7. It was not ignoring the
+    request; it had never been told what it had already said.
+    """
     system = _SYSTEM.format(
         display_name=manifest.display_name,
         strategy_brief=manifest.strategy_brief,
@@ -117,6 +127,17 @@ def build_prompt(*, manifest: CapabilityManifest, basket: list[dict[str, Any]],
         "",
         f"Round {round_no}.",
     ]
+    if previous is not None:
+        parts += [
+            "",
+            "What you offered last round:",
+            f"  line discount {previous.line_discount_pct}%",
+            f"  bundle discount {previous.bundle_discount_pct}%",
+            f"  shipping {previous.shipping}",
+            f"  delivery {previous.delivery_days} day(s)",
+            f"  warranty {previous.warranty_years} year(s)",
+        ]
+
     if counter is not None:
         # The ask is a named dimension. There is no way to pass along what
         # a competitor offered, because BuyerCounter has no field for it.
@@ -130,7 +151,33 @@ def build_prompt(*, manifest: CapabilityManifest, basket: list[dict[str, Any]],
         parts += ["", f"The buyer has come back to you: {asks[counter.ask]}"]
         if counter.note:
             parts += [f"Their note: {counter.note}"]
-        parts += ["Improve your offer if your limits allow it."]
+
+        # Name the number to beat. "Improve your offer" is not actionable
+        # on its own, and a model given only that will re-roll rather than
+        # move in the requested direction.
+        if previous is not None:
+            targets = {
+                "FASTER_DELIVERY":
+                    f"Offer FEWER than {previous.delivery_days} delivery "
+                    f"days, down to your minimum of "
+                    f"{manifest.min_delivery_days}.",
+                "LOWER_PRICE":
+                    f"Offer a LARGER discount than "
+                    f"{previous.line_discount_pct}% per line, up to your "
+                    f"cap, while keeping your margin legal.",
+                "LONGER_WARRANTY":
+                    f"Offer MORE than {previous.warranty_years} warranty "
+                    f"year(s), from the years you are allowed to sell.",
+                "FREE_SHIPPING":
+                    "Set shipping to FREE if the goods total earns it.",
+                "MORE_INCLUDED":
+                    "Add eligible items to the basket.",
+            }
+            parts += [targets[counter.ask]]
+            parts += ["Keep the rest of your offer at least as good as it "
+                      "was. Do not go backwards on the other terms."]
+        else:
+            parts += ["Improve your offer if your limits allow it."]
 
     return system, "\n".join(parts)
 
@@ -244,7 +291,9 @@ def _offer_id(negotiation_id: str, merchant_id: str, round_no: int) -> str:
 async def make_offer(*, negotiation_id: str, manifest: CapabilityManifest,
                      basket: list[dict[str, Any]], mission_text: str,
                      round_no: int, counter: BuyerCounter | None = None,
-                     allow_llm: bool = True) -> tuple[OfferIntent, dict[str, Any]]:
+                     previous: OfferIntent | None = None,
+                     allow_llm: bool = True
+                     ) -> tuple[OfferIntent, dict[str, Any]]:
     """One merchant's offer for one round, plus how it was produced.
 
     Returns the intent and a provenance record. The provenance is not
@@ -253,7 +302,7 @@ async def make_offer(*, negotiation_id: str, manifest: CapabilityManifest,
     """
     system, user = build_prompt(manifest=manifest, basket=basket,
                                 mission_text=mission_text, round_no=round_no,
-                                counter=counter)
+                                counter=counter, previous=previous)
 
     result = llm_mod.LLMResult(ok=False, mode=llm_mod.LLM_DISABLED,
                                error="llm not attempted")
