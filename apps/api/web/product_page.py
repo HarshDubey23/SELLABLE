@@ -168,6 +168,23 @@ main.results{max-width:1080px;margin:0 auto;padding:26px 0 40px}
   .crow{grid-template-columns:1fr auto;gap:5px}
   .crow-r,.crow-w{grid-column:1 / -1}
 }
+/* THE ANSWER GOES WHERE THE QUESTION WAS ASKED.
+   The probe's result used to be written into the alerts box at the top
+   of the results, which sits about a thousand pixels above the button
+   that triggers it. You clicked, the gateway refused, and the refusal
+   appeared a screen and a half away -- so the button read as broken. */
+.probe-out{margin-top:12px}
+.probe-out:empty{display:none}
+.probe-res{border-radius:var(--r-panel);padding:12px 14px;
+  border:1px solid rgba(255,77,94,.4);background:var(--red-soft)}
+.probe-res.good{border-color:rgba(45,212,191,.45);background:var(--teal-soft)}
+.probe-res-t{font-family:var(--mono);font-size:12px;font-weight:700;
+  color:var(--red);letter-spacing:.04em}
+.probe-res.good .probe-res-t{color:var(--teal)}
+.probe-res-b{font-size:12.5px;color:var(--text-mid);margin-top:6px;line-height:1.5}
+.probe-res-f{display:flex;flex-wrap:wrap;gap:14px;margin-top:9px}
+.probe-res-f span{font-family:var(--mono);font-size:11px;color:var(--text-lo)}
+.probe-res-f b{color:var(--text-hi)}
 .sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:14px;
   margin:26px 0 12px;flex-wrap:wrap}
 .sec-t{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.16em;
@@ -374,6 +391,7 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
     </div>
     <div class="probe-d" id="probe-d">&mdash;</div>
     <button class="btn" id="probe-go">Ask the agent to buy this instead &rarr;</button>
+    <div class="probe-out" id="probe-out"></div>
   </div>
 
   <div class="exec" id="exec">
@@ -631,6 +649,7 @@ function render(d){
     $('probe-d').textContent = p.why;
     $('probe').dataset.sku = p.sku;
   } else { $('probe').style.display = 'none'; }
+  $('probe-out').innerHTML = '';
 
   /* what else was considered — the comparison that always works */
   const alts = d.catalog_shortlist || [];
@@ -701,19 +720,32 @@ $('probe-go').addEventListener('click', async function(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({sku:sku, budget_paise:S.budget_paise})});
     const b = r.body;
+    const out = $('probe-out');
     if (b.ok){
       step('gateway','stop');
-      alertBox('bad', 'Unexpected: the gateway allowed it',
-        'This should not happen. Please report it.');
+      out.innerHTML = '<div class="probe-res"><div class="probe-res-t">' +
+        'UNEXPECTED — THE GATEWAY ALLOWED IT</div>' +
+        '<div class="probe-res-b">This should not happen. Please report it.</div></div>';
     } else {
       step('gateway','stop'); say('refused by ' + (b.rule_id || b.status));
-      alertBox('warn', 'Refused — ' + (b.rule_id || b.status),
-        b.headline || b.message || '',
-        'money boundary calls during this request: ' +
-        b.money_boundary_calls_during_request +
-        ' · execution opened: ' + (b.execution_state === null ? 'none' : b.execution_state));
+      out.innerHTML = '<div class="probe-res good">' +
+        '<div class="probe-res-t">REFUSED &middot; ' +
+          esc(b.rule_id || b.status) + '</div>' +
+        '<div class="probe-res-b">' + esc(b.headline || b.message || '') + '</div>' +
+        '<div class="probe-res-f">' +
+          '<span>Razorpay calls <b>' +
+            esc(b.money_boundary_calls_during_request) + '</b></span>' +
+          '<span>execution opened <b>' +
+            esc(b.execution_state === null ? 'none' : b.execution_state) + '</b></span>' +
+          '<span>approval issued <b>none</b></span>' +
+        '</div></div>';
     }
-  } catch(e){ alertBox('bad', 'Request failed', e.message); }
+    out.scrollIntoView({block:'nearest', behavior: REDUCED ? 'auto' : 'smooth'});
+  } catch(e){
+    $('probe-out').innerHTML = '<div class="probe-res"><div class="probe-res-t">' +
+      'REQUEST FAILED</div><div class="probe-res-b">' + esc(e.message) +
+      '</div></div>';
+  }
   finally {
     this.disabled = false;
     this.textContent = 'Ask the agent to buy this instead →';
