@@ -171,18 +171,26 @@ There are three pages, and that is deliberate:
 Everything the project used to show on nine separate pages now lives in
 those three. The old paths still redirect rather than 404.
 
-**With no Razorpay keys**, payments run on a **simulated provider**: no
-network calls, order ids prefixed `order_sim_`, and every surface —
-API responses, the UI, the audit chain — labelled `simulated`. The full
-authorization → execution → reconciliation path still runs. Nothing is
-ever described as live when it isn't.
+**With no keys at all**, everything still works and says so. Payments
+run on a **simulated provider** — no network calls, order ids prefixed
+`order_sim_`, every surface labelled `simulated`. The three market
+merchants run their **deterministic strategies** instead of language
+models, labelled `scripted fallback merchant`. The full authorization →
+execution → reconciliation path runs either way, and two keyless runs of
+the same mission produce the same offers, so what you see is what this
+README describes.
 
-**With test-mode keys** in `.env`, the same code path calls
-`api.razorpay.com`. Nothing else changes.
+**With test-mode Razorpay keys and an OpenRouter key** in `.env`, the
+same code path calls `api.razorpay.com` and the merchants become three
+real models bidding concurrently. Nothing else changes — same routes,
+same gateway, same binding. Nothing is ever described as live when it
+isn't, and the label is read from the provider machinery rather than
+written by hand.
 
 ```bash
-python run.py --check --no-browser   # verify and exit (CI / clean-checkout check)
+python run.py --check --no-browser   # verify and exit (clean-checkout check)
 make test                            # the suite
+make ci                              # everything CI runs, in CI's order
 make truth                           # regenerate the evidence file
 ```
 
