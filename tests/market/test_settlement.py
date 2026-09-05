@@ -349,3 +349,65 @@ def test_cheapest_weights_pick_the_cheapest_offer(accepted):
     offers = [o for o in neg.offers_for(nid) if o["accepted"]]
     cheapest = min(offers, key=lambda o: o["total_paise"])
     assert neg.rank(nid)["winner"]["merchant_id"] == cheapest["merchant_id"]
+
+
+# ------------------------------------------------------------- the trace
+
+def test_the_trace_shows_the_negotiation_the_purchase_came_from(accepted):
+    """A settled market purchase is legible end to end on one page."""
+    from apps.api.web.trace_page import build_trace, render_trace
+
+    out = asyncio.run(settle.settle(accepted))
+    execution_id = out["order"]["execution_id"]
+
+    data = build_trace(execution_id)
+    market = data["negotiation"]
+    assert market is not None, "the trace did not find the negotiation"
+    assert market["negotiation_id"] == accepted
+    assert market["winner_merchant_id"] == out["merchant_id"]
+    assert len(market["offers"]) == 3
+    assert any(o["won"] for o in market["offers"])
+    assert market["transcript_intact"] is True
+
+    html = render_trace(data)
+    assert "Negotiation transcript" in html
+    assert out["transcript_hash"][:16] in html
+
+
+def test_a_trace_of_an_ordinary_purchase_has_no_negotiation(client_free=None):
+    """Most purchases never negotiated, and the trace must not invent one."""
+    from apps.api.web.trace_page import build_trace
+
+    row = store.query_one(
+        "SELECT execution_id FROM payment_executions "
+        "WHERE approve_seq NOT IN (SELECT settlement_approve_seq "
+        "FROM market_negotiations "
+        "WHERE settlement_approve_seq IS NOT NULL) LIMIT 1")
+    if row is None:
+        pytest.skip("no non-market execution in this database")
+
+    assert build_trace(row["execution_id"])["negotiation"] is None
+
+
+def test_the_trace_says_so_when_the_transcript_no_longer_matches(accepted):
+    """The hash is only worth putting on the page if a mismatch shows.
+
+    A page that always prints "intact" is decoration. This edits a row
+    after settlement and checks the trace reports the disagreement rather
+    than rendering the reassuring version.
+    """
+    from apps.api.web.trace_page import build_trace, render_trace
+
+    out = asyncio.run(settle.settle(accepted))
+    execution_id = out["order"]["execution_id"]
+    assert build_trace(execution_id)["negotiation"]["transcript_intact"]
+
+    store.execute(
+        "UPDATE market_offers SET reason = 'tampered' WHERE negotiation_id = ?",
+        (accepted,))
+
+    market = build_trace(execution_id)["negotiation"]
+    assert market["transcript_intact"] is False
+    assert (market["transcript_hash_recomputed"]
+            != market["transcript_hash_recorded"])
+    assert "TRANSCRIPT ALTERED" in render_trace(build_trace(execution_id))

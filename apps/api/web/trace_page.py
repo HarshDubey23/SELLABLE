@@ -106,6 +106,7 @@ def build_trace(ref: str) -> dict[str, Any]:
 
     return {
         "ref": ref,
+        "negotiation": _negotiation_for(execution["approve_seq"]),
         "execution": dict(execution),
         "quote": dict(quote) if quote else None,
         "items": items,
@@ -119,6 +120,73 @@ def build_trace(ref: str) -> dict[str, Any]:
         "price_authority": ("every amount on this page is the server-side "
                             "catalog price, re-derived at quote time. No "
                             "model and no web listing can set it."),
+    }
+
+
+def _negotiation_for(approve_seq: Any) -> dict[str, Any] | None:
+    """The market this purchase came out of, if it came out of one.
+
+    Linked by the settlement claim rather than by anything the page is
+    handed, so a trace cannot be pointed at a negotiation it did not
+    settle. Most purchases here never negotiated and this is None.
+
+    The transcript hash is recomputed live and shown next to the one the
+    binding pinned. If a row has been edited since, the two differ on
+    screen -- which is the whole point of putting a hash in a binding, so
+    it should be visible rather than merely asserted.
+    """
+    if approve_seq is None:
+        return None
+
+    row = store.query_one(
+        "SELECT * FROM market_negotiations WHERE settlement_approve_seq = ?",
+        (approve_seq,))
+    if row is None:
+        return None
+
+    from ..market import negotiation as neg
+
+    nid = row["negotiation_id"]
+    offers = []
+    for o in neg.offers_for(nid):
+        try:
+            intent = json.loads(o["intent_json"])
+            provenance = json.loads(o["provenance_json"])
+        except (ValueError, TypeError):
+            intent, provenance = {}, {}
+        offers.append({
+            "merchant_id": o["merchant_id"],
+            "round": o["round"],
+            "accepted": bool(o["accepted"]),
+            "reason": o["reason"],
+            "total_paise": o["total_paise"],
+            "line_discount_pct": intent.get("line_discount_pct"),
+            "bundle_discount_pct": intent.get("bundle_discount_pct"),
+            "delivery_days": intent.get("delivery_days"),
+            "warranty_years": intent.get("warranty_years"),
+            "agent_label": provenance.get("label"),
+            "is_llm": bool(provenance.get("is_llm")),
+            "won": o["offer_id"] == row["winner_offer_id"],
+        })
+
+    recorded = row["transcript_hash"] or ""
+    try:
+        live = neg.transcript_hash(nid)
+    except Exception:                       # a trace must still render
+        live = ""
+
+    return {
+        "negotiation_id": nid,
+        "state": row["state"],
+        "mission_text": row["mission_text"],
+        "budget_paise": row["budget_paise"],
+        "rounds": row["current_round"],
+        "winner_merchant_id": row["winner_merchant_id"],
+        "transcript_hash_recorded": recorded,
+        "transcript_hash_recomputed": live,
+        "transcript_intact": bool(recorded) and recorded == live,
+        "offers": offers,
+        "counters": [dict(c) for c in neg.counters_for(nid)],
     }
 
 
@@ -314,6 +382,54 @@ def render_trace(data: dict[str, Any]) -> str:
         bchip, bcls = "none", "chip-dim"
     steps.append(_step(n, "Cryptographic approval binding", "authoritative",
                        bchip, bcls, body))
+
+    # 4b — the negotiation, when this purchase came out of one
+    market = data.get("negotiation")
+    if market:
+        n += 1
+        rows = []
+        for o in market["offers"]:
+            price = (_rupees(o["total_paise"]) if o["accepted"]
+                     else f'refused · {_esc(o["reason"])}')
+            mark = " ← accepted" if o["won"] else ""
+            rows.append((
+                f'{_esc(o["merchant_id"])} · round {_esc(o["round"])}{mark}',
+                f'{price} · {_esc(o["line_discount_pct"])}% line, '
+                f'{_esc(o["bundle_discount_pct"])}% bundle, '
+                f'{_esc(o["delivery_days"])}d, '
+                f'{_esc(o["warranty_years"])}y · {_esc(o["agent_label"])}'))
+
+        intact = market["transcript_intact"]
+        tchip = "transcript intact" if intact else "TRANSCRIPT ALTERED"
+        tcls = "chip-ok" if intact else "chip-bad"
+        note = ('The hash the binding pinned still matches the transcript '
+                'recomputed from the rows just now. Edit any offer, counter '
+                'or verdict and these two stop agreeing, the binding stops '
+                'matching, and no order can be created.'
+                if intact else
+                'The recomputed hash does NOT match the one the binding '
+                'pinned. Something in this negotiation changed after it was '
+                'settled.')
+
+        body = ('<p class="note">Three merchants competed for this order. '
+                'None of them could name a price: what each one sent was a '
+                'set of terms with no amount field in it, and every rupee '
+                'figure below was computed by the server from the catalog '
+                'and from the signed manifest that merchant is held to.</p>'
+                + _kv([("mission", _esc(market["mission_text"])),
+                       ("budget ceiling", _rupees(market["budget_paise"])),
+                       ("rounds", _esc(market["rounds"])),
+                       ("winner", _esc(market["winner_merchant_id"]))])
+                + '<p class="note" style="margin-top:14px">Every offer, '
+                  'including the ones policy refused:</p>'
+                + _kv(rows)
+                + f'<p class="note" style="margin-top:14px">{note}</p>'
+                + _kv([("hash in the binding",
+                        _esc(market["transcript_hash_recorded"])),
+                       ("hash recomputed now",
+                        _esc(market["transcript_hash_recomputed"] or "—"))]))
+        steps.append(_step(n, "Negotiation transcript", "authoritative",
+                           tchip, tcls, body))
 
     # 5 — execution
     n += 1
