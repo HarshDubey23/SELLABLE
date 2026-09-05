@@ -303,10 +303,12 @@ PAGE = f"""{head("SELLABLE — shop with AI that cannot touch your money", _CSS)
 <section class="wrap hero">
   <div class="eyebrow">Agentic commerce &middot; Razorpay Track 01</div>
   <h1>Shop with an AI that <span class="no">cannot</span> touch your money.</h1>
-  <p class="sub">It searches real retailers, compares what it finds, and recommends
-    one thing. It never decides what you pay &mdash; the price comes from the
-    merchant's server, a deterministic policy gateway checks it against your budget,
-    and your approval is a single-use key bound to that exact cart.</p>
+  <p class="sub">It weighs everything the merchant stocks, checks live retail for a
+    second opinion, and recommends one thing &mdash; telling you plainly when the
+    market gave it nothing to go on, which is most of the time. It never decides what
+    you pay: the price comes from the merchant's server, a deterministic policy gateway
+    checks it against your budget, and your approval is a single-use key bound to that
+    exact cart.</p>
 
   <div class="search">
     <div class="srow">
