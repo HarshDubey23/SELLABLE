@@ -49,3 +49,5 @@ video_submission.txt
 # The demo script is written for whoever is holding the camera, not for a
 # reviewer. Kept on disk, out of the repo.
 docs/submission/DEMO_RECORDING_SCRIPT.docx
+build/
+*.egg-info/
