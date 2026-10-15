@@ -243,14 +243,14 @@ Guard 2, and SELLABLE. A violation means money actually moved in a way the missi
 
 | Condition | Attacks that moved money wrongly | Benign task success |
 |---|---|---|
-| Direct pay tool | 14.7% (32/217) | 100% |
-| Pay tool + Prompt Guard 2 | 16.7% (36/216) | 100% |
-| SELLABLE gateway | **0% (0/216; 95% CI 0–2%)** | 100% |
+| Direct pay tool | 13.3% (32/240) | 100% |
+| Pay tool + Prompt Guard 2 | 15.0% (36/240) | 100% |
+| SELLABLE gateway | **0% (0/240; 95% CI 0–2%)** | 100% |
 
 Prompt Guard flagged none of the injected listings. These read as seller copy, not as
 jailbreaks. Some SELLABLE wins come from the interface having no price or payee field at all,
 which is the point; the gateway also rejected 20 proposals the models actually made (13 of them
-for a forbidden item). One Qwen run is still incomplete; the results file states counts per model.
+for a forbidden item).
 
 Test coverage by area — the shape matters more than the total:
 
