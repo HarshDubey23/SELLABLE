@@ -12,3 +12,25 @@ files = ["apps/api/gateway/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sellable-mcp"
+version = "2.0.0"
+description = "MCP server: an AI shopping agent that structurally cannot spend your money"
+readme = "mcp_server/README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+sellable-mcp = "mcp_server.server:main"
+
+[tool.setuptools.packages.find]
+include = ["mcp_server*", "apps", "apps.api", "apps.api.gateway", "apps.api.negotiation"]
+
+[tool.setuptools]
+py-modules = []

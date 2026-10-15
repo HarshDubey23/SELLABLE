@@ -143,6 +143,19 @@ Reconciliation then resolves it against the only system that knows:
 
 You can watch all three: [execution lifecycle](docs/architecture/execution-lifecycle.md).
 
+## Use it from your own AI agent (MCP)
+
+SELLABLE also ships as an **MCP server**: any MCP client (Claude Desktop, Claude Code, Cursor
+and others) can shop through the same deterministic gateway with one line of config and no
+clone. The agent proposes `{sku, qty}`; you sign the budget on your own machine.
+
+```bash
+claude mcp add sellable -- uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp
+uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new --budget 2000 --category books
+```
+
+Setup for other clients, the tool list and its tests: [`mcp_server/README.md`](mcp_server/README.md).
+
 ## Quick start
 
 ```bash
