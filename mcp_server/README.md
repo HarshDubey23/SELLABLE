@@ -24,8 +24,8 @@ orders are recorded locally and nothing is charged.
 
 ## Install (one line, no clone)
 
-You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config (Cursor:
-`~/.cursor/mcp.json`; VS Code, Windsurf and other clients use the same `mcpServers` block):
+You need [uv](https://docs.astral.sh/uv/). Claude Desktop (`claude_desktop_config.json`), Cursor
+(`~/.cursor/mcp.json`) and Windsurf (`mcp_config.json`) take this `mcpServers` block:
 
 ```json
 {
@@ -37,6 +37,29 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config 
   }
 }
 ```
+
+**VS Code** reads `.vscode/mcp.json`, which uses a top-level `servers` key instead:
+
+```json
+{
+  "servers": {
+    "sellable": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+    }
+  }
+}
+```
+
+**Claude Code** adds it with one command:
+
+```bash
+claude mcp add --transport stdio sellable -- uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp
+```
+
+**n8n** can't use it: n8n's MCP Client Tool connects to a remote (SSE) endpoint, and this server
+runs locally over stdio.
 
 Prefer pip? Run `pip install git+https://github.com/HarshDubey23/SELLABLE`, then use
 `"command": "sellable-mcp"` with no args.

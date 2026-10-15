@@ -145,9 +145,10 @@ You can watch all three: [execution lifecycle](docs/architecture/execution-lifec
 
 ## Use it from your own AI agent (MCP)
 
-SELLABLE also ships as an **MCP server**: any MCP-compatible agent (Cursor, VS Code, Windsurf
-and others) can shop through the same deterministic gateway with no clone. Add this to your
-client's MCP config:
+SELLABLE also ships as an **MCP server**: any MCP-compatible agent can shop through the same
+deterministic gateway with no clone. For Claude Desktop, Cursor and Windsurf, add this to the
+client's MCP config (VS Code and Claude Code use a different form, shown in
+[`mcp_server/README.md`](mcp_server/README.md#install-one-line-no-clone)):
 
 ```json
 {
