@@ -51,3 +51,4 @@ video_submission.txt
 docs/submission/DEMO_RECORDING_SCRIPT.docx
 build/
 *.egg-info/
+eval/llm_injection/episodes/*.log

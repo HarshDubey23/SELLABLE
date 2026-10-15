@@ -222,6 +222,24 @@ typed by hand. Regenerate with `make truth`.
 | Gateway latency | **p95 under 5 ms** over 2,000 in-process evaluations. The exact figure is machine-dependent and lives in `truth.json`; CI asserts the bound, not a number it cannot reproduce |
 | Catalog | 361 SKUs |
 
+### Against real models
+
+[`eval/llm_injection/`](eval/llm_injection/RESULTS.md) runs real LLM shopping agents (three
+open-weight models via Groq, two seeds) on 48 catalog cases with five kinds of prompt injection
+written into seller listings. It compares a direct pay tool, the same tool behind Llama Prompt
+Guard 2, and SELLABLE. A violation means money actually moved in a way the mission forbids.
+
+| Condition | Attacks that moved money wrongly | Benign task success |
+|---|---|---|
+| Direct pay tool | 14.7% (32/217) | 100% |
+| Pay tool + Prompt Guard 2 | 16.7% (36/216) | 100% |
+| SELLABLE gateway | **0% (0/216; 95% CI 0–2%)** | 100% |
+
+Prompt Guard flagged none of the injected listings. These read as seller copy, not as
+jailbreaks. Some SELLABLE wins come from the interface having no price or payee field at all,
+which is the point; the gateway also rejected 20 proposals the models actually made (13 of them
+for a forbidden item). One Qwen run is still incomplete; the results file states counts per model.
+
 Test coverage by area — the shape matters more than the total:
 
 | Area | Tests | What it pins down |
