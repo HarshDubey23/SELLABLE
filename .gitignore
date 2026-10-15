@@ -41,7 +41,6 @@ docs/generated/*.tmp
 *.bundle
 PUSH*.bat
 PUSH*.md
-Claude outputs/
 artifacts/
 video_submission.txt
 

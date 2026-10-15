@@ -58,7 +58,7 @@ OPTIONAL_DEMO = (
 # when it is simulated.
 _CANONICAL_GEMINI_MODEL = "openai/gpt-4o-mini"
 _CANONICAL_GEMINI_FALLBACKS = (
-    "openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct,anthropic/claude-3-haiku"
+    "openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct,google/gemini-2.0-flash-001"
 )
 
 

@@ -145,16 +145,28 @@ You can watch all three: [execution lifecycle](docs/architecture/execution-lifec
 
 ## Use it from your own AI agent (MCP)
 
-SELLABLE also ships as an **MCP server**: any MCP client (Claude Desktop, Claude Code, Cursor
-and others) can shop through the same deterministic gateway with one line of config and no
-clone. The agent proposes `{sku, qty}`; you sign the budget on your own machine.
+SELLABLE also ships as an **MCP server**: any MCP-compatible agent (Cursor, VS Code, Windsurf
+and others) can shop through the same deterministic gateway with no clone. Add this to your
+client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "sellable": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+    }
+  }
+}
+```
+
+Then give the agent a budget from your own terminal:
 
 ```bash
-claude mcp add sellable -- uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp
 uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new --budget 2000 --category books
 ```
 
-Setup for other clients, the tool list and its tests: [`mcp_server/README.md`](mcp_server/README.md).
+Setup details, the tool list and its tests: [`mcp_server/README.md`](mcp_server/README.md).
 
 ## Quick start
 

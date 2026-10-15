@@ -24,7 +24,8 @@ orders are recorded locally and nothing is charged.
 
 ## Install (one line, no clone)
 
-You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client config:
+You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config (Cursor:
+`~/.cursor/mcp.json`; VS Code, Windsurf and other clients use the same `mcpServers` block):
 
 ```json
 {
@@ -35,14 +36,6 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client config:
     }
   }
 }
-```
-
-- **Claude Desktop:** Settings → Developer → Edit Config (`claude_desktop_config.json`).
-- **Cursor:** `~/.cursor/mcp.json`.
-- **Claude Code:**
-
-```bash
-claude mcp add sellable -- uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp
 ```
 
 Prefer pip? Run `pip install git+https://github.com/HarshDubey23/SELLABLE`, then use

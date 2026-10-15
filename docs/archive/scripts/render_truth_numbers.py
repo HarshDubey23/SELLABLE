@@ -61,7 +61,7 @@ def main():
         },
         'model': {
             'configured_model': os.environ.get('OPENROUTER_MODEL', 'google/gemini-1.5-flash'),
-            'fallback_models': ['openai/gpt-4o-mini', 'meta-llama/llama-3.1-8b-instruct', 'anthropic/claude-3-haiku'],
+            'fallback_models': ['openai/gpt-4o-mini', 'meta-llama/llama-3.1-8b-instruct', 'google/gemini-2.0-flash-001'],
         }
     }
 
