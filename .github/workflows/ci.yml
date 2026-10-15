@@ -1,5 +1,5 @@
 name: CI & Zero-Excuse Reliability Gate
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 # A failing job that only says "exit code 1" costs an hour of guessing.
 # Every gate below surfaces its own summary as a GitHub annotation, which
