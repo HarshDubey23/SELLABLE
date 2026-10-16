@@ -22,10 +22,44 @@ a hash-chained audit log.
 No dependencies beyond the Python standard library. Payments use a **simulated provider**:
 orders are recorded locally and nothing is charged.
 
-## Install (one line, no clone)
+## Install (no clone)
 
-You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config (Cursor:
-`~/.cursor/mcp.json`; VS Code, Windsurf and other clients use the same `mcpServers` block):
+This is a **local STDIO server**: your MCP client starts it on your computer and everything,
+including the signing key, stays in `~/.sellable` (Windows: `%USERPROFILE%\.sellable`; override
+with `SELLABLE_HOME`). It is not a hosted service.
+
+**1. Install [uv](https://docs.astral.sh/uv/).**
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Open a new terminal afterwards so `uvx` is on your PATH.
+
+**2. Add it to your client.** Each client has its own file and format.
+
+<details open><summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add sellable -- uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp
+```
+
+`claude mcp list` should show `sellable … ✓ Connected`.
+</details>
+
+<details><summary><b>Claude Desktop</b>, <b>Cursor</b> and <b>Windsurf</b></summary>
+
+| Client | Config file |
+|---|---|
+| Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` (Windows), `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) |
+| Cursor | `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 
 ```json
 {
@@ -38,6 +72,31 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config 
 }
 ```
 
+Restart the client after saving. If a GUI client can't find `uvx`, replace `"uvx"` with the
+full path from `where uvx` (Windows) or `which uvx`.
+</details>
+
+<details><summary><b>VS Code</b></summary>
+
+VS Code uses a different shape: the top-level key is `servers`, not `mcpServers`. Save as
+`.vscode/mcp.json` and use the tools from Copilot Chat in agent mode.
+
+```json
+{
+  "servers": {
+    "sellable": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+    }
+  }
+}
+```
+</details>
+
+**n8n is not supported.** n8n's MCP Client Tool node connects to remote HTTP servers, and this
+server is STDIO only.
+
 Prefer pip? Run `pip install git+https://github.com/HarshDubey23/SELLABLE`, then use
 `"command": "sellable-mcp"` with no args.
 
@@ -46,14 +105,23 @@ Prefer pip? Run `pip install git+https://github.com/HarshDubey23/SELLABLE`, then
 Missions are signed with a key that lives in `~/.sellable/key` and is never exposed as a tool:
 
 ```bash
-uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new \
-    --budget 2000 --category books --category stationery --forbid electronics --hours 24
+uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new --budget 2000 --category books --category stationery --forbid electronics --hours 24
 ```
+
+(One line, so it pastes into PowerShell, Command Prompt and bash alike.)
 
 Then ask your agent something like *"buy me two novels for my nephew"*. It will call
 `list_missions` → `search_catalog` → `propose_purchase` → `place_order`.
 
 Other commands: `mission list`, `mission revoke <id>`, `orders`, `audit verify`, `config`.
+
+## Stop, revoke, remove
+
+1. Revoke any open mission: `sellable-mcp mission revoke <id>`. Already-approved orders on a
+   revoked mission are refused too.
+2. Remove the `sellable` entry from your client config (Claude Code: `claude mcp remove sellable`)
+   and restart the client.
+3. To erase everything, delete `~/.sellable` (the signing key, missions, orders and audit log).
 
 ## Tools
 
