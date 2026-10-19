@@ -22,3 +22,12 @@ services:
         sync: false
       - key: APP_API_KEY
         sync: false
+  # The remote MCP server: standard library only, no install step.
+  - type: web
+    name: sellable-mcp
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: python --version
+    startCommand: python -m mcp_server.server serve --http --sandbox --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

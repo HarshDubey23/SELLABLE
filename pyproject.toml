@@ -34,3 +34,6 @@ include = ["mcp_server*", "apps", "apps.api", "apps.api.gateway", "apps.api.nego
 
 [tool.setuptools]
 py-modules = []
+
+[tool.setuptools.package-data]
+mcp_server = ["landing.html"]

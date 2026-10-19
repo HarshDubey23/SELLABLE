@@ -22,7 +22,40 @@ a hash-chained audit log.
 No dependencies beyond the Python standard library. Payments use a **simulated provider**:
 orders are recorded locally and nothing is charged.
 
-## Install (one line, no clone)
+## Connect without installing anything (remote MCP)
+
+A public sandbox runs at **https://sellable-mcp.onrender.com/mcp**. Every connection gets its own
+throwaway store and a signed ₹2,000 mission for books and stationery, with electronics forbidden.
+Payments are simulated. Open the URL's home page to try it in the browser first.
+
+```json
+{ "mcpServers": { "sellable": { "url": "https://sellable-mcp.onrender.com/mcp" } } }
+```
+
+- **Claude**: Settings → Connectors → Add custom connector → paste the URL.
+- **ChatGPT**: Settings → Connectors → Advanced → Developer mode → Create → paste the URL, no auth.
+- **Cursor, VS Code, Windsurf**: the JSON above in your `mcpServers` block.
+
+Want a different demo mission? The person configuring the client sets it in the URL, never the
+agent: `/mcp?budget=5000&category=cricket&category=fitness&forbid=electronics&hours=6`.
+Values are clamped (₹100 to ₹1,00,000, 1 to 24 hours, real categories only).
+
+The free host sleeps when idle, so the first request after a while can take about a minute.
+
+### Host your own
+
+```bash
+# public demo, like the one above
+sellable-mcp serve --http --sandbox --host 0.0.0.0 --port 8765
+
+# private: your own signed missions, every request needs the token
+SELLABLE_MCP_TOKEN=$(openssl rand -hex 24) sellable-mcp serve --http --host 0.0.0.0 --port 8765
+```
+
+Streamable HTTP, JSON responses, one `Mcp-Session-Id` per client, 90 requests a minute per IP,
+`SELLABLE_ALLOWED_ORIGINS` to restrict browser origins. Still standard library only.
+
+## Install locally (one line, no clone)
 
 You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config (Cursor:
 `~/.cursor/mcp.json`; VS Code, Windsurf and other clients use the same `mcpServers` block):

@@ -10,11 +10,17 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 [![Track](https://img.shields.io/badge/Razorpay%20Buildathon-AI%20Growth%20%26%20Agentic%20Commerce-0C2340)](https://razorpay.com/buildathon)
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [The hard part](#the-hard-part-what-happens-when-you-dont-know-what-happened) · [Architecture](docs/architecture/) · [What I'd fix next](#limitations)
+[Try it live](https://sellable-mcp.onrender.com) · [Quick start](#quick-start) · [How it works](#how-it-works) · [The hard part](#the-hard-part-what-happens-when-you-dont-know-what-happened) · [Architecture](docs/architecture/) · [What I'd fix next](#limitations)
 
 </div>
 
 ---
+
+> **Plug it into your agent in one paste.** SELLABLE runs as a remote MCP server:
+> add `https://sellable-mcp.onrender.com/mcp` to Claude, ChatGPT, Cursor or VS Code and ask it to
+> buy you two novels. Each connection gets its own signed sandbox mission and simulated payments.
+> Or open [the home page](https://sellable-mcp.onrender.com) and try to make it overspend from your
+> browser. Details in [mcp_server/README.md](mcp_server/README.md).
 
 ## The problem
 

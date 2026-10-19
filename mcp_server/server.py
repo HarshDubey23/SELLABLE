@@ -19,6 +19,7 @@ Payments are executed by a simulated provider and recorded locally; nothing is c
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sys
 import time
@@ -426,9 +427,22 @@ def main() -> None:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    if len(sys.argv) > 1 and sys.argv[1] not in ("serve",):
+    argv = sys.argv[1:]
+    if argv and argv[0] == "serve" and "--http" in argv:
+        import argparse
+        ap = argparse.ArgumentParser(prog="sellable-mcp serve --http")
+        ap.add_argument("--http", action="store_true")
+        ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+        ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8765)))
+        ap.add_argument("--sandbox", action="store_true",
+                        help="public demo: a throwaway store and signed demo mission per session")
+        a = ap.parse_args(argv[1:])
+        from mcp_server.http_server import run
+        run(a.host, a.port, a.sandbox)
+        return
+    if argv and argv[0] not in ("serve",):
         from mcp_server.cli import main as cli_main
-        raise SystemExit(cli_main(sys.argv[1:]))
+        raise SystemExit(cli_main(argv))
     serve()
 
 

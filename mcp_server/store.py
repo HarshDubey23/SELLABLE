@@ -85,7 +85,7 @@ def save_missions(m: dict[str, dict[str, Any]]) -> None:
 
 
 def new_mission(*, intent: str, budget_paise: int, allowed: list[str], forbidden: list[str],
-                hours: float) -> dict[str, Any]:
+                hours: float, by: str = "user-cli") -> dict[str, Any]:
     k = key(create=True)
     assert k is not None
     mid = "m_" + secrets.token_hex(6)
@@ -101,7 +101,7 @@ def new_mission(*, intent: str, budget_paise: int, allowed: list[str], forbidden
     m[mid] = record
     save_missions(m)
     append_audit({"type": "MISSION_SIGNED", "mission_id": mid, "budget_paise": int(budget_paise),
-                  "allowed": sorted(allowed), "by": "user-cli"})
+                  "allowed": sorted(allowed), "by": by})
     return record
 
 
