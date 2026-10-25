@@ -141,6 +141,35 @@ class DefiniteRemoteFailure(Exception):
         super().__init__(f"{code}: {message}")
 
 
+class MissionBudgetExhausted(Exception):
+    """Opening this execution would take the mission over its budget."""
+
+    def __init__(self, committed_paise: int, amount_paise: int, cap_paise: int):
+        self.committed_paise = committed_paise
+        self.amount_paise = amount_paise
+        self.cap_paise = cap_paise
+        super().__init__(
+            f"{committed_paise} paise already committed + {amount_paise} "
+            f"exceeds the mission budget of {cap_paise}")
+
+
+class MissionRevoked(Exception):
+    """The mission was revoked; nothing more may be opened under it."""
+
+
+# Money a mission has committed: everything except definitive failures.
+# An execution whose outcome is unknown (RECONCILIATION_REQUIRED) or still
+# in flight counts, because it may yet have moved money.
+_COMMITTED_SQL = (
+    "SELECT COALESCE(SUM(amount_paise), 0) AS c FROM payment_executions "
+    "WHERE mission_id = ? AND state != 'FAILED'")
+
+
+def committed_spend(mission_id: str) -> int:
+    row = store.query_one(_COMMITTED_SQL, (mission_id,))
+    return int(row["c"]) if row else 0
+
+
 # ------------------------------------------------------------------ ids
 
 def derive_execution_id(mission_id: str, proposal_hash: str,
@@ -159,31 +188,56 @@ def derive_execution_id(mission_id: str, proposal_hash: str,
 def open_execution(*, mission_id: str, proposal_hash: str, approve_seq: int,
                    quote_id: str, amount_paise: int, currency: str,
                    idempotency_key: str, provider: str,
-                   now_ts: int | None = None) -> tuple[dict[str, Any], bool]:
+                   now_ts: int | None = None,
+                   budget_cap_paise: int | None = None,
+                   check_revoked: bool = False) -> tuple[dict[str, Any], bool]:
     """Atomically claim an execution row.
 
     Returns (row, created). `created` is False when a row for this
     authorization already existed — the caller MUST then inspect its
     state rather than starting a second attempt.
+
+    With `budget_cap_paise`, a NEW row is only opened if the mission's
+    committed spend plus this amount stays within the cap; with
+    `check_revoked`, only if the mission has not been revoked. Both checks
+    and the insert run in one write transaction, so two purchases racing
+    under one mission cannot both pass a check that only one of them fits.
+    Raises MissionBudgetExhausted / MissionRevoked.
     """
     now_ts = now_ts if now_ts is not None else int(time.time())
     execution_id = derive_execution_id(mission_id, proposal_hash, approve_seq)
 
-    try:
-        store.execute(
-            "INSERT INTO payment_executions "
-            "(execution_id, mission_id, approve_seq, proposal_hash, quote_id, "
-            " amount_paise, currency, idempotency_key, state, provider, "
-            " attempts, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-            (execution_id, mission_id, approve_seq, proposal_hash, quote_id,
-             amount_paise, currency, idempotency_key, APPROVED, provider,
-             now_ts, now_ts),
-        )
-        created = True
-    except sqlite3.IntegrityError:
-        # Another request already claimed this authorization.
-        created = False
+    created = False
+    with store.transaction() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM payment_executions WHERE execution_id = ?",
+            (execution_id,)).fetchone()
+        if existing is None:
+            if check_revoked and conn.execute(
+                    "SELECT 1 FROM mission_revocations WHERE mission_id = ?",
+                    (mission_id,)).fetchone() is not None:
+                raise MissionRevoked(mission_id)
+            if budget_cap_paise is not None:
+                committed = int(conn.execute(
+                    _COMMITTED_SQL, (mission_id,)).fetchone()["c"])
+                if committed + amount_paise > budget_cap_paise:
+                    raise MissionBudgetExhausted(
+                        committed, amount_paise, budget_cap_paise)
+            try:
+                conn.execute(
+                    "INSERT INTO payment_executions "
+                    "(execution_id, mission_id, approve_seq, proposal_hash, "
+                    " quote_id, amount_paise, currency, idempotency_key, "
+                    " state, provider, attempts, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+                    (execution_id, mission_id, approve_seq, proposal_hash,
+                     quote_id, amount_paise, currency, idempotency_key,
+                     APPROVED, provider, now_ts, now_ts),
+                )
+                created = True
+            except sqlite3.IntegrityError:
+                # Another process claimed this authorization first.
+                created = False
 
     row = get(execution_id)
     if row is None:  # pragma: no cover - only if the DB vanished mid-call

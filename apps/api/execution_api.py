@@ -99,7 +99,9 @@ def reconcile(execution_id: str):
     try:
         remote = provider.find_order_by_correlation(
             proposal_hash=row["proposal_hash"],
-            amount_paise=row["amount_paise"])
+            amount_paise=row["amount_paise"],
+            execution_id=row["execution_id"],
+            quote_id=row["quote_id"])
     except Exception as exc:
         # Cannot read authoritative state => cannot conclude anything.
         chain.append("reconciler", "reconcile_unavailable",

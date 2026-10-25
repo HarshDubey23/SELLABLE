@@ -6,3 +6,6 @@ pydantic>=2.0.0,<3.0.0
 requests>=2.30.0,<3.0.0
 httpx>=0.25.0,<1.0.0
 google-genai>=1.0.0,<3.0.0
+# User-held mandate custody (Ed25519). Imported lazily; only needed when
+# USER_MANDATE_PUBLIC_KEY is set.
+cryptography>=41.0.0,<60.0.0

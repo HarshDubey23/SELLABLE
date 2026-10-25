@@ -48,6 +48,7 @@ class MandateError(Exception):
         "MANDATE_BAD_CURRENCY": "mandate currency not supported",
         "MANDATE_MISSION_MISMATCH": "mandate mission_id differs from approved proposal",
         "MANDATE_CART_STALE": "cart mandate signed_at is older than the approval",
+        "MANDATE_ALG_NOT_ALLOWED": "this server only accepts user-signed (Ed25519) mandates",
     }
 
     def __init__(self, code: str, detail: str = "") -> None:
@@ -74,6 +75,74 @@ def _key() -> str:
     if not key:
         raise MandateError("MANDATE_MISSING", "USER_MANDATE_KEY is not configured")
     return key
+
+
+# ---- custody --------------------------------------------------------------
+#
+# With an HMAC, the key that checks a mandate is the key that makes one, so
+# a server able to verify the user's signature can also forge it. Setting
+# USER_MANDATE_PUBLIC_KEY switches verification to Ed25519: the server
+# holds only the user's public key, the private key stays in the user's
+# wallet, and HMAC mandates are refused outright. Without it the server
+# keeps the shared-key behaviour (and says so via custody_mode()), which
+# is what the keyless browser demo uses.
+
+ED25519 = "Ed25519"
+
+
+def _b64d(value: str) -> bytes:
+    value = value.strip()
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def _b64e(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _public_key() -> bytes | None:
+    raw = os.environ.get("USER_MANDATE_PUBLIC_KEY", "").strip()
+    return _b64d(raw) if raw else None
+
+
+def custody_mode() -> str:
+    """'user-held-ed25519' when the server can verify but not sign."""
+    return "user-held-ed25519" if _public_key() else "shared-hmac"
+
+
+def generate_keypair() -> tuple[str, str]:
+    """(private_key, public_key), both raw 32 bytes, base64url. The private
+    half belongs in the user's wallet; only the public half on the server."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    raw_sk = sk.private_bytes(serialization.Encoding.Raw,
+                              serialization.PrivateFormat.Raw,
+                              serialization.NoEncryption())
+    raw_pk = sk.public_key().public_bytes(serialization.Encoding.Raw,
+                                          serialization.PublicFormat.Raw)
+    return _b64e(raw_sk), _b64e(raw_pk)
+
+
+def _sign_ed25519(payload: dict[str, Any], private_key: str) -> str:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.from_private_bytes(_b64d(private_key))
+    return _b64e(sk.sign(_canonical(payload)))
+
+
+def _verify_signature(blob: dict[str, Any], payload: dict[str, Any]) -> bool:
+    public_key = _public_key()
+    if public_key is None:
+        return _verify(str(blob["sig"]), payload, _key())
+    if blob.get("alg") != ED25519:
+        raise MandateError("MANDATE_ALG_NOT_ALLOWED")
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    try:
+        Ed25519PublicKey.from_public_bytes(public_key).verify(
+            _b64d(str(blob["sig"])), _canonical(payload))
+        return True
+    except (InvalidSignature, ValueError):
+        return False
 
 
 @dataclass(frozen=True)
@@ -118,6 +187,19 @@ def sign_cart(mandate: CartMandate, key: str) -> dict[str, Any]:
     return {"payload": payload, "sig": _sign(payload, key)}
 
 
+def sign_intent_ed25519(mandate: IntentMandate, private_key: str) -> dict[str, Any]:
+    """Wallet-side: sign with the user's private key (never on the server)."""
+    payload = mandate.payload()
+    return {"payload": payload, "sig": _sign_ed25519(payload, private_key),
+            "alg": ED25519}
+
+
+def sign_cart_ed25519(mandate: CartMandate, private_key: str) -> dict[str, Any]:
+    payload = mandate.payload()
+    return {"payload": payload, "sig": _sign_ed25519(payload, private_key),
+            "alg": ED25519}
+
+
 def verify_intent(blob: Any, *, now: int | None = None,
                   order_total_paise: int | None = None,
                   expected_mission_id: str | None = None) -> dict[str, Any]:
@@ -132,7 +214,7 @@ def verify_intent(blob: Any, *, now: int | None = None,
     currency = str(payload.get("currency", ""))
     if currency not in SUPPORTED_CURRENCIES:
         raise MandateError("MANDATE_BAD_CURRENCY", f"currency={currency}")
-    if not _verify(str(blob["sig"]), payload, _key()):
+    if not _verify_signature(blob, payload):
         raise MandateError("MANDATE_BAD_SIGNATURE")
     now = int(time.time()) if now is None else now
     if int(payload.get("expires_at", 0)) <= now:
@@ -156,7 +238,7 @@ def verify_cart(blob: Any, *, proposal_hash: str, amount_paise: int,
     version = int(payload.get("version", 0))
     if version not in SUPPORTED_VERSIONS:
         raise MandateError("MANDATE_BAD_VERSION", f"version={version}")
-    if not _verify(str(blob["sig"]), payload, _key()):
+    if not _verify_signature(blob, payload):
         raise MandateError("MANDATE_BAD_SIGNATURE")
     now = int(time.time())
     if int(payload.get("expires_at", 0)) <= now:

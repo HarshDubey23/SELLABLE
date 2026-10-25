@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from . import razorpay_client as rp_client
+from . import revocation
 from .approval import get_legacy_proposal_hash as verify_legacy
 from .approval import register as register_binding
 from .audit import chain
@@ -302,8 +303,23 @@ async def evaluate_proposal(req: ProposalReq, *,
     # R6 contract: state["proposal_ts"] is {mission_id: [ts, ...]}.
     # The signed mission snapshot also rides along so the upsell engine
     # can pre-gate offers against the same bounds the gateway enforces.
+    #
+    # The rate window is proof memory, so it lives in SQLite: an
+    # in-process list reset to empty on every restart, which let a
+    # mission past R6 simply by restarting the server. The history is
+    # read back from disk and handed to the (still pure) gateway.
+    now_proposal = int(time.time())
+    store.execute(
+        "INSERT INTO proposal_events (mission_id, ts) VALUES (?, ?)",
+        (mission.mission_id, now_proposal))
+    recent_ts = [int(r["ts"]) for r in store.query(
+        "SELECT ts FROM proposal_events WHERE mission_id = ? AND ts > ? "
+        "ORDER BY ts", (mission.mission_id, now_proposal - 600))]
     state = mission_state.setdefault(mission.mission_id, {"proposal_ts": {}})
-    state["proposal_ts"].setdefault(mission.mission_id, []).append(int(time.time()))
+    state["proposal_ts"][mission.mission_id] = recent_ts
+    # R8 reads revocation from the same durable record the executor checks.
+    if revocation.is_revoked(mission.mission_id):
+        state["aborted_missions"] = {mission.mission_id}
     state["mission"] = {
         "intent": mission.intent,
         "budget_paise": mission.budget_paise,
@@ -405,6 +421,9 @@ async def evaluate_proposal(req: ProposalReq, *,
             merchant_id=settlement.merchant_id if settlement else "",
             negotiation_transcript_hash=(
                 settlement.transcript_hash if settlement else ""),
+            # The executor enforces this across every purchase in the
+            # mission, not just this one (same formula as R1).
+            mission_budget_paise=int(mission.budget_paise * mission.upsell_cap),
         )
         approved_bindings[seq] = proposal_hash or ""
 
@@ -556,21 +575,27 @@ async def tool_create_order(req: CreateOrderReq,
     # binding with neither pinned skips the check.
     negotiated = q.get("negotiated") or {}
 
-    # ---- STEP 2: binding gate (atomic single-use consumption) ---------
+    # ---- STEP 2: binding gate -----------------------------------------
+    # Checked here WITHOUT consuming. Every other check that can refuse a
+    # legitimate request for a recoverable reason (a mandate signed with
+    # the wrong amount, say) runs before the binding is consumed, so the
+    # user can correct it and retry the same approval. Consumption is the
+    # last step before the execution row is opened (STEP 2c).
+    binding_args = dict(
+        seq=req.approve_seq,
+        mission_id=q["mission_id"],
+        proposal_hash=req.proposal_hash,
+        cart_hash=req.proposal_hash,
+        quote_id=req.quote_id,
+        amount_paise=q["total_paise"],
+        currency="INR",
+        skus=quote_skus,
+        merchant_id=str(negotiated.get("merchant_id", "")),
+        negotiation_transcript_hash=str(
+            negotiated.get("transcript_hash", "")),
+    )
     if not resuming:
-        ok, code, _binding = verify_binding(
-            seq=req.approve_seq,
-            mission_id=q["mission_id"],
-            proposal_hash=req.proposal_hash,
-            cart_hash=req.proposal_hash,
-            quote_id=req.quote_id,
-            amount_paise=q["total_paise"],
-            currency="INR",
-            skus=quote_skus,
-            merchant_id=str(negotiated.get("merchant_id", "")),
-            negotiation_transcript_hash=str(
-                negotiated.get("transcript_hash", "")),
-        )
+        ok, code, _binding = verify_binding(**binding_args, consume=False)
         if not ok:
             chain.append(
                 "executor", "binding_rejected",
@@ -632,16 +657,66 @@ async def tool_create_order(req: CreateOrderReq,
                   "amount_paise": total_paise},
                  review_state="verified")
 
+    # ---- STEP 2b: mission-level conditions, re-checked at execution ----
+    # An approval is evidence about the moment it was issued. Revocation
+    # and cumulative spend can change after that, so both are read again
+    # here, before anything is consumed or dispatched.
+    if revocation.is_revoked(q["mission_id"]):
+        chain.append("executor", "mission_revoked",
+                     {"mission_id": q["mission_id"], "order_blocked": True},
+                     error_code="MISSION_REVOKED", review_state="blocked")
+        raise HTTPException(409, detail={
+            "ok": False,
+            "error": {"error_code": "MISSION_REVOKED", "rule_id": "R8_ABORT",
+                      "message": "the mission was revoked; approvals issued "
+                                 "under it can no longer execute",
+                      "retryable": False}})
+
+    budget_cap = _binding.mission_budget_paise if _binding else None
+    if budget_cap is not None:
+        committed = ex.committed_spend(q["mission_id"])
+        if committed + total_paise > budget_cap:
+            raise _budget_refusal(q["mission_id"], committed, total_paise, budget_cap)
+
+    # ---- STEP 2c: consume the approval (atomic, single use) -----------
+    if not resuming:
+        ok, code, _binding = verify_binding(**binding_args)
+        if not ok:
+            chain.append(
+                "executor", "binding_rejected",
+                {"mission_id": q["mission_id"],
+                 "approve_seq": req.approve_seq,
+                 "code": code},
+                error_code=code, review_state="blocked_binding")
+            raise HTTPException(403, detail={
+                "ok": False,
+                "error": {"error_code": code, "rule_id": None,
+                          "message": f"approval binding failed: {code}",
+                          "retryable": False}})
+
     # ---- STEP 3: durable execution record ----------------------------
     idem_key = rp_client.derive_idempotency_key(
         "create_order", q["mission_id"], req.proposal_hash, req.approve_seq)
     provider = provider_mod.get_provider()
 
-    row, _created = ex.open_execution(
-        mission_id=q["mission_id"], proposal_hash=req.proposal_hash,
-        approve_seq=req.approve_seq, quote_id=req.quote_id,
-        amount_paise=total_paise, currency="INR",
-        idempotency_key=idem_key, provider=provider.name)
+    try:
+        row, _created = ex.open_execution(
+            mission_id=q["mission_id"], proposal_hash=req.proposal_hash,
+            approve_seq=req.approve_seq, quote_id=req.quote_id,
+            amount_paise=total_paise, currency="INR",
+            idempotency_key=idem_key, provider=provider.name,
+            budget_cap_paise=budget_cap, check_revoked=True)
+    except ex.MissionBudgetExhausted as exc:
+        # Lost a race with another purchase in the same mission between
+        # the pre-check and here. Fail closed.
+        raise _budget_refusal(q["mission_id"], exc.committed_paise,
+                              exc.amount_paise, exc.cap_paise) from exc
+    except ex.MissionRevoked as exc:
+        raise HTTPException(409, detail={
+            "ok": False,
+            "error": {"error_code": "MISSION_REVOKED", "rule_id": "R8_ABORT",
+                      "message": "the mission was revoked",
+                      "retryable": False}}) from exc
 
     if row["state"] == ex.APPROVED:
         try:
@@ -649,9 +724,14 @@ async def tool_create_order(req: CreateOrderReq,
         except ex.IllegalTransition:
             pass  # another request advanced it first; the claim below decides
 
+    # execution_id is the unique identity of this authorization's attempt.
+    # It rides in the provider's notes so reconciliation and the replay
+    # check below can recognise THIS order, not merely an order for an
+    # identical basket.
     notes = {"quote_id": q["quote_id"],
              "mission_id": q["mission_id"],
-             "proposal_hash": req.proposal_hash}
+             "proposal_hash": req.proposal_hash,
+             "execution_id": execution_id}
     fault = (x_sellable_fault or "").strip()
     if fault:
         # Fault injection simulates the CLIENT's view of the provider call —
@@ -672,6 +752,62 @@ async def tool_create_order(req: CreateOrderReq,
                       "provider": provider.name,
                       "note": "deliberate reliability drill, not an incident"},
                      review_state="drill")
+
+    # STEP 3b: has this exact authorization already been paid at the
+    # provider? Normally no. It can be yes if local state was rolled back
+    # (a database restored from a backup taken before the payment): the
+    # binding then reads unconsumed and the execution row is gone, but the
+    # provider -- outside the rollback boundary -- still holds the order,
+    # tagged with this deterministic execution_id. Adopt it instead of
+    # paying twice. If the provider cannot be read, nothing is dispatched
+    # and the row stays EXECUTION_PENDING, which is safe to retry.
+    #
+    # A drill that by construction sends nothing (`remote_lost`,
+    # `remote_reject`) has nothing to replay-check and must not touch the
+    # provider at all, so it skips this read.
+    try:
+        prior = None if fault in ("remote_lost", "remote_reject") else \
+            provider.find_order_by_correlation(
+                proposal_hash=req.proposal_hash, amount_paise=total_paise,
+                execution_id=execution_id, quote_id=q["quote_id"])
+    except Exception as exc:
+        raise HTTPException(503, detail={
+            "ok": False,
+            "error": {"error_code": "REPLAY_CHECK_UNAVAILABLE",
+                      "message": "could not confirm with the provider that this "
+                                 "authorization has not already been paid; "
+                                 "nothing was dispatched",
+                      "detail": str(exc)[:200],
+                      "execution_id": execution_id,
+                      "retryable": True}}) from exc
+    if prior is not None:
+        try:
+            ex.transition(execution_id, ex.REMOTE_ATTEMPTED)
+        except ex.IllegalTransition:
+            current = ex.get(execution_id)
+            raise HTTPException(409, detail={
+                "ok": False,
+                "error": {"error_code": "EXECUTION_IN_PROGRESS",
+                          "message": "another request is already executing "
+                                     "this authorization",
+                          "execution_id": execution_id,
+                          "execution_state": current["state"] if current else "UNKNOWN",
+                          "retryable": False}})
+        _persist_order(prior, q, req, idem, total_paise)
+        ex.transition(execution_id, ex.EXECUTED, remote_order_id=prior["id"])
+        chain.append("executor", "replay_adopted_existing_order",
+                     {"execution_id": execution_id, "order_id": prior["id"],
+                      "mission_id": q["mission_id"]},
+                     idempotency_key=idem_key, review_state="reconciled")
+        return {"order_id": prior["id"], "amount_paise": total_paise,
+                "amount_display": f"Rs {total_paise/100:,.0f}",
+                "currency": "INR", "status": prior.get("status", "created"),
+                "execution_id": execution_id,
+                "execution_state": ex.EXECUTED,
+                "provider": provider.name,
+                "duplicate": True,
+                "adopted_from_provider": True,
+                "checkout_url": f"/checkout/{prior['id']}"}
 
     # STEP 4: the attempt is recorded on disk BEFORE it is dispatched.
     # If the process dies on the next line, boot recovery finds this row
@@ -765,6 +901,39 @@ async def tool_create_order(req: CreateOrderReq,
             "provider": provider.name,
             "razorpay_key_id": os.environ.get("RAZORPAY_KEY_ID", ""),
             "checkout_url": f"/checkout/{rp['id']}"}
+
+
+def _budget_refusal(mission_id: str, committed: int, amount: int,
+                    cap: int) -> HTTPException:
+    chain.append("executor", "mission_budget_exhausted",
+                 {"mission_id": mission_id, "committed_paise": committed,
+                  "amount_paise": amount, "budget_paise": cap},
+                 error_code="MISSION_BUDGET_EXHAUSTED", review_state="blocked")
+    return HTTPException(409, detail={
+        "ok": False,
+        "error": {"error_code": "MISSION_BUDGET_EXHAUSTED", "rule_id": "R1_BUDGET",
+                  "message": (f"{committed} paise already committed in this "
+                              f"mission; {amount} more would exceed its "
+                              f"budget of {cap}"),
+                  "committed_paise": committed, "budget_paise": cap,
+                  "retryable": False}})
+
+
+class RevokeReq(BaseModel):
+    mission_id: str
+    reason: str = ""
+
+
+@router.post("/tools/revoke_mission", dependencies=[Depends(require_api_key)])
+async def tool_revoke_mission(req: RevokeReq):
+    """Revoke a mission. New proposals fail R8 and approvals already issued
+    under it can no longer execute. Idempotent; never un-revokes."""
+    newly = revocation.revoke(req.mission_id, req.reason)
+    chain.append("user", "mission_revoked",
+                 {"mission_id": req.mission_id, "reason": req.reason[:200]},
+                 review_state="revoked")
+    return {"ok": True, "mission_id": req.mission_id, "revoked": True,
+            "already_revoked": not newly}
 
 
 def _persist_order(rp: dict, q: dict, req: "CreateOrderReq", idem: str,
