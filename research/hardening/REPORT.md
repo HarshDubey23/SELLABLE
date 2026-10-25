@@ -18,12 +18,13 @@ and `pytest research/certification_baseline -v -rxX` still gives 3 passed,
 | Baseline properties holding (`research/certification_baseline`) | 2 of 10 on the API path (+1 MCP test) | 10 of 10 (+1 MCP test) |
 | New regression tests (`tests/hardening`) | none | 13 passed |
 | Existing tests runnable without FastAPI's TestClient | 360 passed, 1 skipped | 360 passed, 1 skipped (same set) |
-| Full suite (578 existing tests incl. TestClient) | passes | **not yet run: see below** |
+| Full suite in CI (Ubuntu and Windows, Python 3.10 and 3.12) | passes | **605 passed, 6 skipped, all four jobs green** ([run #5](https://github.com/HarshDubey23/SELLABLE/actions/runs/40167805627), commit fefdca2) |
 
-The remaining ~217 existing tests use FastAPI's TestClient, which could not
-be installed in the audit environment, so they have not been run against
-this branch yet. Run `make test` on `hardening` (or the CI workflow) before
-merging.
+The first CI run on the branch failed one existing test,
+`test_undispatched_fault_makes_no_money_call_on_the_real_provider`: the new
+replay check read the provider even during a `remote_lost` drill, which by
+design must not touch it. Drills that never dispatch now skip that read
+(commit fefdca2), and the next run passed on all four jobs.
 
 The one environment failure in both columns
 (`test_the_chaos_safety_check_refuses_when_it_cannot_prove_test_mode`) comes
