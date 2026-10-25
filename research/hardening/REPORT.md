@@ -1,19 +1,19 @@
 # Hardening report: the eight baseline findings
 
-The certification baseline (tag `baseline-2429725`, folder
+The certification baseline (branch `certification-baseline` (commit 2429725), folder
 `research/certification_baseline/`) found that 8 of 10 payment-trace
 properties did not hold on SELLABLE's `/tools` API path. This branch
 (`hardening`) fixes them as ordinary engineering, **without** a trace
 certifier, so that a later certifier can be measured against a hardened
 system rather than against bugs.
 
-The original evidence is not rewritten: `git checkout baseline-2429725`
+The original evidence is not rewritten: `git checkout certification-baseline`
 and `pytest research/certification_baseline -v -rxX` still gives 3 passed,
 8 xfailed.
 
 ## Results
 
-| | Baseline (`baseline-2429725`) | Hardened (`hardening`) |
+| | Baseline (commit 2429725) | Hardened (`hardening`) |
 |---|---|---|
 | Baseline properties holding (`research/certification_baseline`) | 2 of 10 on the API path (+1 MCP test) | 10 of 10 (+1 MCP test) |
 | New regression tests (`tests/hardening`) | none | 13 passed |
@@ -69,7 +69,7 @@ operational event, but the code paths exercised are the real ones.
 ## Reproduce
 
 ```bash
-git checkout baseline-2429725 && pytest research/certification_baseline -v -rxX   # 3 passed, 8 xfailed
+git checkout certification-baseline && pytest research/certification_baseline -v -rxX   # 3 passed, 8 xfailed
 git checkout hardening && pytest research/certification_baseline tests/hardening -v # 24 passed
 make test                                                                         # full suite
 ```

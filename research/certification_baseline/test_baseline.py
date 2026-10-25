@@ -2,10 +2,10 @@
 
 Every test asserts the property a trace certifier should guarantee.
 
-History: at tag `baseline-2429725` (the original audit) 8 of these were
+History: at branch `certification-baseline` (commit 2429725) (the original audit) 8 of these were
 marked xfail(strict=True) because the system did not hold them. On the
 `hardening` branch every one of the 8 now passes, so the markers are gone;
-checkout the tag to reproduce the original 3 passed / 8 xfailed.
+check out that branch to reproduce the original 3 passed / 8 xfailed.
 
 Run from the repo root:
     pytest research/certification_baseline -v -rxX
