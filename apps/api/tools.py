@@ -761,10 +761,15 @@ async def tool_create_order(req: CreateOrderReq,
     # tagged with this deterministic execution_id. Adopt it instead of
     # paying twice. If the provider cannot be read, nothing is dispatched
     # and the row stays EXECUTION_PENDING, which is safe to retry.
+    #
+    # A drill that by construction sends nothing (`remote_lost`,
+    # `remote_reject`) has nothing to replay-check and must not touch the
+    # provider at all, so it skips this read.
     try:
-        prior = provider.find_order_by_correlation(
-            proposal_hash=req.proposal_hash, amount_paise=total_paise,
-            execution_id=execution_id, quote_id=q["quote_id"])
+        prior = None if fault in ("remote_lost", "remote_reject") else \
+            provider.find_order_by_correlation(
+                proposal_hash=req.proposal_hash, amount_paise=total_paise,
+                execution_id=execution_id, quote_id=q["quote_id"])
     except Exception as exc:
         raise HTTPException(503, detail={
             "ok": False,
