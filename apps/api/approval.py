@@ -41,9 +41,11 @@ authoritative check goes through `verify_binding()`.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from . import money as money_counter
@@ -67,6 +69,9 @@ class ApprovalBinding:
     # Market extension. Empty for every non-negotiated purchase.
     merchant_id: str = ""
     negotiation_transcript_hash: str = ""
+    # Hardening. None / "" on rows written before these columns existed.
+    mission_budget_paise: int | None = None
+    policy_digest: str = ""
 
     def is_expired(self, now_ts: int | None = None) -> bool:
         now_ts = now_ts if now_ts is not None else int(time.time())
@@ -113,11 +118,36 @@ class ApprovalBinding:
                 and self.negotiation_transcript_hash
                 != negotiation_transcript_hash):
             return False, "TRANSCRIPT_MISMATCH"
+        # Policy lineage: an approval is only as good as the rules it was
+        # checked against. If the rule set changed after approval, the
+        # approval is stale and the purchase must be proposed again. A
+        # legacy row with no digest recorded has nothing to compare.
+        if self.policy_digest and self.policy_digest != current_policy_digest():
+            return False, "POLICY_CHANGED"
         return True, "OK"
 
 
 _DEFAULT_TTL_SECONDS = 30 * 60
 _POLICY_VERSION = "sellable-v1.0"
+
+
+@lru_cache(maxsize=1)
+def current_policy_digest() -> str:
+    """SHA-256 over the policy an approval is checked against.
+
+    Covers the policy version label, the canonical rule registry and the
+    hash of the gateway's own source, so editing a rule, re-ordering the
+    registry or changing any gateway file yields a different digest. It is
+    recorded on every binding at approval and compared at execution.
+    """
+    from .gateway.proof import compute_proof
+    from .gateway.registry import RULE_REGISTRY
+    material = json.dumps(
+        {"policy_version": _POLICY_VERSION,
+         "rules": RULE_REGISTRY,
+         "gateway_source_sha256": compute_proof()["source_sha256"]},
+        sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(material.encode()).hexdigest()
 
 
 def _row_to_binding(row: dict[str, Any]) -> ApprovalBinding:
@@ -138,7 +168,14 @@ def _row_to_binding(row: dict[str, Any]) -> ApprovalBinding:
         merchant_id=_text(row, "merchant_id"),
         negotiation_transcript_hash=_text(
             row, "negotiation_transcript_hash"),
+        mission_budget_paise=_int_or_none(row, "mission_budget_paise"),
+        policy_digest=_text(row, "policy_digest"),
     )
+
+
+def _int_or_none(row: dict[str, Any], key: str) -> int | None:
+    value = row.get(key) if hasattr(row, "get") else None
+    return int(value) if value is not None else None
 
 
 def _text(row: dict[str, Any], key: str) -> str:
@@ -160,20 +197,30 @@ def register(seq: int, *, mission_id: str, proposal_hash: str,
              mandate_version: int = 1,
              merchant_id: str = "",
              negotiation_transcript_hash: str = "",
+             mission_budget_paise: int | None = None,
+             policy_digest: str | None = None,
              now_ts: int | None = None) -> ApprovalBinding:
-    """Persist a fresh binding in SQLite. Called by tools.submit_proposal when APPROVE."""
+    """Persist a fresh binding in SQLite. Called by tools.submit_proposal when APPROVE.
+
+    `mission_budget_paise` is the mission's effective budget, which the
+    executor enforces cumulatively across every purchase in the mission.
+    `policy_digest` defaults to the policy in force right now.
+    """
     now_ts = now_ts if now_ts is not None else int(time.time())
     expires_at = now_ts + ttl_seconds
     skus_json = json.dumps(skus)
+    digest = policy_digest if policy_digest is not None else current_policy_digest()
 
     store.execute(
         "INSERT INTO bindings (seq, mission_id, proposal_hash, cart_hash, "
         "quote_id, amount_paise, currency, skus, mandate_version, issued_at, "
-        "expires_at, consumed_at, merchant_id, negotiation_transcript_hash) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+        "expires_at, consumed_at, merchant_id, negotiation_transcript_hash, "
+        "mission_budget_paise, policy_digest) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
         (seq, mission_id, proposal_hash, cart_hash, quote_id, amount_paise,
          currency, skus_json, str(mandate_version), now_ts, expires_at,
-         merchant_id or None, negotiation_transcript_hash or None)
+         merchant_id or None, negotiation_transcript_hash or None,
+         mission_budget_paise, digest or None)
     )
 
     return ApprovalBinding(
@@ -191,6 +238,8 @@ def register(seq: int, *, mission_id: str, proposal_hash: str,
         policy_version=_POLICY_VERSION,
         merchant_id=merchant_id,
         negotiation_transcript_hash=negotiation_transcript_hash,
+        mission_budget_paise=mission_budget_paise,
+        policy_digest=digest,
     )
 
 
@@ -210,9 +259,15 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
            currency: str, skus: list[tuple[str, int]],
            merchant_id: str = "",
            negotiation_transcript_hash: str = "",
-           now_ts: int | None = None
+           now_ts: int | None = None,
+           consume: bool = True,
            ) -> tuple[bool, str, ApprovalBinding | None]:
     """The money executor's gate.
+
+    With `consume=False` every field is checked exactly as below but the
+    binding is left unconsumed. The executor uses that to run its other
+    non-consuming checks (mandates, revocation, budget) first, so a
+    recoverable refusal does not destroy a valid approval.
 
     Returns (ok, error_code, binding). When ok=False, error_code names
     the failed invariant; the caller MUST reject the order.
@@ -244,6 +299,9 @@ def verify(*, seq: int, mission_id: str, proposal_hash: str,
     if not ok:
         money_counter.record(f"binding_{reason.lower()}", seq=seq)
         return False, reason, b
+
+    if not consume:
+        return True, "OK", b
 
     # Mark as consumed atomically
     now_ts_consumed = now_ts if now_ts is not None else int(time.time())

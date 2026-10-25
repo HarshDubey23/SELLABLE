@@ -1,33 +1,34 @@
 # Certification baseline
 
-Which payment-trace properties SELLABLE guarantees today, measured before any
-certifier exists. Each test asserts the property a trace certifier should
-provide; the ones the system does not yet hold are marked
-`xfail(strict=True)`, so the suite stays green while a gap exists and goes red
-when a change closes it.
+Which payment-trace properties SELLABLE guarantees, each asserted as the
+property a trace certifier should provide. The tests call the real route
+functions in `apps/api/tools.py` and `apps/api/execution_api.py` on the
+simulated provider, and live outside `tests/`, so `make ci`, the README test
+count and `docs/generated/truth.json` are unaffected.
 
 ```bash
 pytest research/certification_baseline -v -rxX
 ```
 
-The tests call the real route functions in `apps/api/tools.py` and
-`apps/api/execution_api.py` on the simulated provider. They live outside
-`tests/`, so `make ci`, the README test count and `docs/generated/truth.json`
-are unaffected.
+The original audit is preserved at tag `baseline-2429725`, where the 8 gaps
+are marked `xfail(strict=True)` and the run gives 3 passed, 8 xfailed. On the
+`hardening` branch all 8 were fixed as ordinary engineering (no certifier),
+the markers removed, and all 11 pass. Fixes, severity and what remains
+trusted: [`research/hardening/REPORT.md`](../hardening/REPORT.md).
 
-| Property | API path (`/tools`) |
-|---|---|
-| Replaying an executed authorization returns the same order | holds |
-| A lost provider response is recovered without a second charge | holds |
-| Cumulative spend in a mission stays within its budget | **no**: three Rs 1,499 orders execute under a Rs 3,000 mission |
-| Revoking a mission stops payments it already approved | **no**: new proposals fail R8; an earlier approval still executes |
-| Reconciliation only accepts the execution's own order | **no**: an identical basket's order is adopted, so an unpaid purchase is recorded as executed |
-| An executed approval cannot pay again after a database restore | **no**: two provider orders for one approval (simulated provider) |
-| The gateway's rate window survives a restart | **no**: `mission_state` is in process memory only |
-| An approval records the policy version it passed | **no**: `bindings` has no policy-version column |
-| The verifier cannot mint the user's mandates | **no**: HMAC mandates are checked with the signing key |
-| A refused mandate does not burn a valid approval | **no**: the binding is consumed before mandates are checked |
+| Property | Baseline (`baseline-2429725`) | Hardened |
+|---|---|---|
+| Replaying an executed authorization returns the same order | holds | holds |
+| A lost provider response is recovered without a second charge | holds | holds |
+| Cumulative spend in a mission stays within its budget | no: three Rs 1,499 orders execute under a Rs 3,000 mission | holds |
+| Revoking a mission stops payments it already approved | no: no revoke route; an earlier approval still executes | holds |
+| Reconciliation accepts only the execution's own order | no: an identical basket's order is adopted, so an unpaid purchase is recorded as executed | holds |
+| An executed approval cannot pay again after a database restore | no: two provider orders for one approval (simulated provider) | holds, by checking the provider before dispatch |
+| The gateway's rate window survives a restart | no: in process memory only | holds |
+| An approval records the policy it passed | no: no policy field stored | holds (policy digest) |
+| The verifier cannot mint the user's mandates | no: HMAC checked with the signing key | holds in user-held Ed25519 mode; default is still HMAC |
+| A refused mandate does not burn a valid approval | no: consumed before mandates were checked | holds |
 
-The MCP server path (`mcp_server/`) re-checks cumulative spend and revocation
-at execution; `test_mcp_path_rechecks_cumulative_spend_and_revocation` pins
-that. Neither path records which policy a payment satisfied.
+The MCP server path (`mcp_server/`) already re-checked cumulative spend and
+revocation at execution at the baseline;
+`test_mcp_path_rechecks_cumulative_spend_and_revocation` pins that.

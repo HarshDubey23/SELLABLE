@@ -17,6 +17,8 @@ import os
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -220,6 +222,23 @@ def init_schema() -> None:
                     ON payment_executions(state);
                 CREATE INDEX IF NOT EXISTS idx_exec_mission
                     ON payment_executions(mission_id);
+                -- A revoked mission stays revoked across restarts, and the
+                -- executor re-reads this at the money boundary, so an
+                -- approval issued before the revocation cannot still pay.
+                CREATE TABLE IF NOT EXISTS mission_revocations (
+                    mission_id TEXT PRIMARY KEY,
+                    reason TEXT,
+                    revoked_at INTEGER NOT NULL
+                );
+                -- The gateway's rate window (R6) is proof memory: it can
+                -- only hold if the proposal history survives a restart.
+                CREATE TABLE IF NOT EXISTS proposal_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mission_id TEXT NOT NULL,
+                    ts INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_proposal_events_mission
+                    ON proposal_events(mission_id, ts);
             """)
             conn.commit()
         finally:
@@ -252,6 +271,12 @@ _BINDING_EXTRA_COLUMNS = {
     # nothing to pin, and the executor skips a check it has no subject for.
     "merchant_id": "TEXT",
     "negotiation_transcript_hash": "TEXT",
+    # Hardening. The mission's effective budget at approval time, so the
+    # executor can enforce cumulative spend across purchases, and the
+    # digest of the policy the approval passed, so a rule change between
+    # approval and execution invalidates it. NULL on legacy rows.
+    "mission_budget_paise": "INTEGER",
+    "policy_digest": "TEXT",
 }
 
 _WEBHOOK_EXTRA_COLUMNS = {
@@ -380,6 +405,30 @@ def _migrate_webhook_columns() -> None:
                 "WHERE processing_state IS NULL"
             )
             conn.commit()
+        finally:
+            conn.close()
+
+
+@contextmanager
+def transaction() -> Iterator[sqlite3.Connection]:
+    """One connection, one write transaction, taken with BEGIN IMMEDIATE.
+
+    For a read-then-write that must not interleave with another writer:
+    the in-process lock serializes threads, and BEGIN IMMEDIATE takes
+    SQLite's write lock up front, so a second process cannot slip a write
+    between the read and the write either. Commits on success, rolls back
+    on any exception. Do not call the module's other helpers inside it:
+    they take the same non-reentrant lock.
+    """
+    with _lock:
+        conn = _connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 

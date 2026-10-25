@@ -1,10 +1,11 @@
-"""Certification baseline: which payment-trace properties SELLABLE holds today.
+"""Certification baseline: which payment-trace properties SELLABLE holds.
 
 Every test asserts the property a trace certifier should guarantee.
-Properties the current system does not yet hold are marked
-xfail(strict=True): the suite stays green while the gap exists, and turns
-red the moment a change closes it, so the marker has to be removed
-deliberately.
+
+History: at tag `baseline-2429725` (the original audit) 8 of these were
+marked xfail(strict=True) because the system did not hold them. On the
+`hardening` branch every one of the 8 now passes, so the markers are gone;
+checkout the tag to reproduce the original 3 passed / 8 xfailed.
 
 Run from the repo root:
     pytest research/certification_baseline -v -rxX
@@ -22,7 +23,6 @@ from fastapi import HTTPException
 
 SKU = "BAT-001"                       # Rs 1,499 in apps/api/products.py
 BUDGET = 300000                       # Rs 3,000: room for two, not three
-GAP = pytest.mark.xfail(strict=True, reason="baseline gap (certification target)")
 
 
 # ------------------------------------------------------------------ helpers
@@ -167,9 +167,8 @@ def test_mcp_path_rechecks_cumulative_spend_and_revocation(tmp_path, monkeypatch
     assert server.tool_place_order(p["approval_id"])["status"] == "REFUSED"
 
 
-# ------------------------------------------------- properties not yet held
+# ------------------------------- properties that were gaps at the baseline
 
-@GAP
 def test_cumulative_spend_in_a_mission_stays_within_its_budget():
     """Trace non-compositionality: each order passes R1 and the intent
     ceiling alone; three of them exceed the mission budget together."""
@@ -193,23 +192,21 @@ def test_cumulative_spend_in_a_mission_stays_within_its_budget():
     assert spent <= BUDGET, f"executed {spent} paise against a {BUDGET} paise budget"
 
 
-@GAP
 def test_revoking_a_mission_stops_payments_it_already_approved():
-    """Stale approval. The API path has no revoke route, so the mission is
-    marked aborted where R8 reads it; new proposals then fail R8."""
+    """Stale approval. At the baseline the API path had no revoke route at
+    all; the hardened path revokes durably and re-checks at execution."""
     from apps.api import execution as ex
     from apps.api import tools
     mid = "m-revoked"
     mission = _mission(mid)
     a = _authorize(mid, mission)
-    tools.mission_state[mid]["aborted_missions"] = {mid}
+    _call(tools.tool_revoke_mission, tools.RevokeReq(mission_id=mid, reason="user changed mind"))
     s, p = _propose(mission)
     assert p["data"]["rule_id"] == "R8_ABORT"                  # gateway refuses new ones
     so, out = _order(a, "idem-revoked")
     assert not (so == 200 and out["execution_state"] == ex.EXECUTED)
 
 
-@GAP
 def test_reconciliation_only_accepts_the_executions_own_order():
     """Execution conformance on recovery. Two identical baskets in one
     mission share a proposal hash; the second request never leaves the
@@ -230,7 +227,6 @@ def test_reconciliation_only_accepts_the_executions_own_order():
         f"unpaid purchase recorded as paid via {rec.get('remote_order_id')}"
 
 
-@GAP
 def test_an_executed_approval_cannot_pay_again_after_a_database_restore(_isolated):
     from apps.api import tools
     from apps.api.audit import chain
@@ -248,7 +244,6 @@ def test_an_executed_approval_cannot_pay_again_after_a_database_restore(_isolate
     assert len(_provider_orders(a["proposal_hash"])) <= 1
 
 
-@GAP
 def test_the_rate_window_survives_a_restart():
     """Proof memory: R6 can only hold if the proposal history persists."""
     from apps.api import tools
@@ -264,27 +259,33 @@ def test_the_rate_window_survives_a_restart():
     assert p["data"]["rule_id"] == "R6_RATE_LIMIT"
 
 
-@GAP
 def test_an_approval_records_the_policy_version_it_passed():
-    """Policy lineage: needed to audit or re-certify after a rule change."""
-    from apps.api.store import db as store
-    cols = {r["name"] for r in store.query("PRAGMA table_info(bindings)")}
-    assert "policy_version" in cols
+    """Policy lineage: needed to audit or re-certify after a rule change.
+    (The baseline test looked for a `policy_version` column; the hardened
+    binding records a digest of the whole policy instead.)"""
+    from apps.api import approval
+    a = _authorize("m-lineage")
+    b = approval.get(a["approve_seq"])
+    assert b.policy_digest == approval.current_policy_digest()
+    assert len(b.policy_digest) == 64
 
 
-@GAP
-def test_the_verifier_cannot_mint_the_users_mandates():
-    """Custody: mandates are HMACs, checked with the key that signs them,
-    so the server that verifies them can also produce them."""
+def test_the_verifier_cannot_mint_the_users_mandates(monkeypatch):
+    """Custody. At the baseline, mandates were HMACs checked with the key
+    that signs them. In user-held mode the server has only the user's
+    public key: whatever it can sign with its own secrets is refused."""
     from apps.api import execution as ex
+    from apps.api.mandates.mandates import generate_keypair
+    _wallet_private, public = generate_keypair()
+    monkeypatch.setenv("USER_MANDATE_PUBLIC_KEY", public)
     a = _authorize("m-custody")
     minted = dict(a, intent_mandate=_intent("m-custody"),
                   cart_mandate=_cart("m-custody", a["proposal_hash"], a["_total"]))
     s, out = _order(minted, "idem-custody")
     assert not (s == 200 and out["execution_state"] == ex.EXECUTED)
+    assert s == 403 and out["code"] == "MANDATE_ALG_NOT_ALLOWED"
 
 
-@GAP
 def test_a_refused_mandate_does_not_burn_a_valid_approval():
     """Completion: the binding is consumed before the mandates are checked."""
     a = _authorize("m-burn")

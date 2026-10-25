@@ -67,6 +67,34 @@ def _is_real(value: str) -> bool:
     return not is_placeholder(value)
 
 
+def order_matches(order_notes: dict[str, Any], order_amount: int, *,
+                  proposal_hash: str, amount_paise: int,
+                  execution_id: str | None = None,
+                  quote_id: str | None = None) -> bool:
+    """Is this provider order the one a given execution created?
+
+    Basket equality alone is not identity: two purchases of the same
+    basket in one mission share a proposal hash and an amount, and
+    matching on those let reconciliation adopt the FIRST purchase's order
+    as proof that the SECOND, which was never sent, had been paid.
+
+    So when the caller names the execution, an order counts only if it
+    carries that execution_id in its notes. Orders written before notes
+    carried an execution_id fall back to the quote they were created
+    from, which is also unique per purchase. A caller that names neither
+    gets the old proposal-hash-and-amount match.
+    """
+    if (order_notes.get("proposal_hash") != proposal_hash
+            or int(order_amount) != int(amount_paise)):
+        return False
+    if execution_id is None:
+        return True
+    noted = order_notes.get("execution_id")
+    if noted:
+        return str(noted) == execution_id
+    return quote_id is not None and order_notes.get("quote_id") == quote_id
+
+
 def razorpay_credentials_present() -> bool:
     """True only when both Razorpay keys look like real credentials."""
     return (_is_real(os.environ.get("RAZORPAY_KEY_ID", ""))
@@ -81,7 +109,10 @@ class MoneyProvider(Protocol):
                      idempotency_key: str) -> dict[str, Any]: ...
 
     def find_order_by_correlation(self, *, proposal_hash: str,
-                                  amount_paise: int) -> dict[str, Any] | None: ...
+                                  amount_paise: int,
+                                  execution_id: str | None = None,
+                                  quote_id: str | None = None
+                                  ) -> dict[str, Any] | None: ...
 
 
 class LiveRazorpayProvider:
@@ -153,7 +184,10 @@ class LiveRazorpayProvider:
             raise AmbiguousRemoteOutcome(f"unparseable response: {exc}") from exc
 
     def find_order_by_correlation(self, *, proposal_hash: str,
-                                  amount_paise: int) -> dict[str, Any] | None:
+                                  amount_paise: int,
+                                  execution_id: str | None = None,
+                                  quote_id: str | None = None
+                                  ) -> dict[str, Any] | None:
         """Authoritative reconciliation read.
 
         Razorpay exposes no public "fetch by idempotency key" lookup, so
@@ -178,8 +212,11 @@ class LiveRazorpayProvider:
             items = data.get("items", [])
             for item in items:
                 notes = item.get("notes") or {}
-                if (notes.get("proposal_hash") == proposal_hash
-                        and int(item.get("amount", -1)) == amount_paise):
+                if order_matches(notes, int(item.get("amount", -1)),
+                                 proposal_hash=proposal_hash,
+                                 amount_paise=amount_paise,
+                                 execution_id=execution_id,
+                                 quote_id=quote_id):
                     return item
             if len(items) < _RECONCILE_PAGE_SIZE:
                 break  # last page
@@ -246,10 +283,15 @@ class SimulatedProvider:
         return order
 
     def find_order_by_correlation(self, *, proposal_hash: str,
-                                  amount_paise: int) -> dict[str, Any] | None:
+                                  amount_paise: int,
+                                  execution_id: str | None = None,
+                                  quote_id: str | None = None
+                                  ) -> dict[str, Any] | None:
         for order in self._orders.values():
-            if (order["notes"].get("proposal_hash") == proposal_hash
-                    and order["amount"] == amount_paise):
+            if order_matches(order["notes"], order["amount"],
+                             proposal_hash=proposal_hash,
+                             amount_paise=amount_paise,
+                             execution_id=execution_id, quote_id=quote_id):
                 return order
         return None
 
