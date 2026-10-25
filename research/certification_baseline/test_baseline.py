@@ -2,7 +2,8 @@
 
 Every test asserts the property a trace certifier should guarantee.
 
-History: at branch `certification-baseline` (commit 2429725) (the original audit) 8 of these were
+History: in the original audit (branch `certification-baseline`, commit
+2429725) 8 of these were
 marked xfail(strict=True) because the system did not hold them. On the
 `hardening` branch every one of the 8 now passes, so the markers are gone;
 check out that branch to reproduce the original 3 passed / 8 xfailed.

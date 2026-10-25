@@ -10,8 +10,8 @@ count and `docs/generated/truth.json` are unaffected.
 pytest research/certification_baseline -v -rxX
 ```
 
-The original audit is preserved at branch `certification-baseline` (commit 2429725), where the 8 gaps
-are marked `xfail(strict=True)` and the run gives 3 passed, 8 xfailed. On the
+The original audit is preserved on the `certification-baseline` branch
+(commit 2429725), where the 8 gaps are marked `xfail(strict=True)` and the run gives 3 passed, 8 xfailed. On the
 `hardening` branch all 8 were fixed as ordinary engineering (no certifier),
 the markers removed, and all 11 pass. Fixes, severity and what remains
 trusted: [`research/hardening/REPORT.md`](../hardening/REPORT.md).

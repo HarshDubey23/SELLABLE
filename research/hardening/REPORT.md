@@ -1,6 +1,6 @@
 # Hardening report: the eight baseline findings
 
-The certification baseline (branch `certification-baseline` (commit 2429725), folder
+The certification baseline (branch `certification-baseline`, commit 2429725, folder
 `research/certification_baseline/`) found that 8 of 10 payment-trace
 properties did not hold on SELLABLE's `/tools` API path. This branch
 (`hardening`) fixes them as ordinary engineering, **without** a trace
@@ -18,7 +18,12 @@ and `pytest research/certification_baseline -v -rxX` still gives 3 passed,
 | Baseline properties holding (`research/certification_baseline`) | 2 of 10 on the API path (+1 MCP test) | 10 of 10 (+1 MCP test) |
 | New regression tests (`tests/hardening`) | none | 13 passed |
 | Existing tests runnable without FastAPI's TestClient | 360 passed, 1 skipped | 360 passed, 1 skipped (same set) |
-| Full suite (578 tests incl. TestClient) | passes in CI | **see CI on the `hardening` branch** |
+| Full suite (578 existing tests incl. TestClient) | passes | **not yet run: see below** |
+
+The remaining ~217 existing tests use FastAPI's TestClient, which could not
+be installed in the audit environment, so they have not been run against
+this branch yet. Run `make test` on `hardening` (or the CI workflow) before
+merging.
 
 The one environment failure in both columns
 (`test_the_chaos_safety_check_refuses_when_it_cannot_prove_test_mode`) comes
