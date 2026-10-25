@@ -1,6 +1,6 @@
 """Regression tests for the hardening of the /tools money path.
 
-Each test pins one fix for a gap the certification baseline found at tag
+Each test pins one fix for a gap the certification baseline found on branch
 `certification-baseline` (see research/certification_baseline/). They call the
 real route functions on the simulated provider; nothing reaches a network.
 """
