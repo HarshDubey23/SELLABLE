@@ -65,21 +65,21 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config 
   "mcpServers": {
     "sellable": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+      "args": ["sellable-mcp"]
     }
   }
 }
 ```
 
-Prefer pip? Run `pip install git+https://github.com/HarshDubey23/SELLABLE`, then use
-`"command": "sellable-mcp"` with no args.
+Prefer pip? Run `pip install sellable-mcp`, then use `"command": "sellable-mcp"` with no args.
+For the unreleased `main` branch, install from `git+https://github.com/HarshDubey23/SELLABLE`.
 
 ## Give the agent a mission (you, not the agent)
 
 Missions are signed with a key that lives in `~/.sellable/key` and is never exposed as a tool:
 
 ```bash
-uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new \
+uvx sellable-mcp mission new \
     --budget 2000 --category books --category stationery --forbid electronics --hours 24
 ```
 
