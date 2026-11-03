@@ -41,7 +41,11 @@ then point your client at it with `"command": "sellable-mcp"` (or `"command": "u
 ["sellable-mcp"]`). Client-by-client setup: [mcp_server/README.md](mcp_server/README.md). Using
 a plain chat-completions loop instead of an MCP client?
 [examples/openai_tools_agent.py](examples/openai_tools_agent.py) wires the same tools into any
-OpenAI-compatible API.
+OpenAI-compatible API. Using LangChain instead?
+[examples/langchain_agent.py](examples/langchain_agent.py) loads those tools through LangChain's
+MCP adapter and runs one shopping task inside a mission you signed. LangChain stays optional
+(`pip install "langchain[mcp]>=1.4" langchain-openai`); the script prints that hint if it is
+missing, and it adds no tool that takes an amount or a payee.
 
 ## The problem
 
@@ -270,7 +274,7 @@ typed by hand. Regenerate with `make truth`.
 
 | | |
 |---|---|
-| Tests | **618 passed**, 6 skipped (browser E2E — needs Playwright and a running server) |
+| Tests | **622 passed**, 9 skipped (browser E2E needs Playwright and a running server; the LangChain example's shopping tests need its optional extra) |
 | Adversarial scenarios | **8 of 8 blocked**, with **0 calls** to the money boundary |
 | Policy rules | 12, in one canonical registry that drives the engine, `/policy`, the UI and the tests |
 | Gateway latency | **p95 under 5 ms** over 2,000 in-process evaluations. The exact figure is machine-dependent and lives in `truth.json`; CI asserts the bound, not a number it cannot reproduce |
@@ -449,8 +453,8 @@ apps/api/
   ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
 mcp_server/                   the MCP server, standard library only (published as sellable-mcp)
-examples/                     SELLABLE tools in a plain chat-completions agent loop
-tests/                        618 tests
+examples/                     chat-completions loop, and an optional LangChain agent
+tests/                        622 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code
 docs/archive/                 build log and superseded documents
