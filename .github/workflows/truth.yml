@@ -29,7 +29,10 @@ jobs:
           pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
       - run: python scripts/generate_truth.py
       - name: Summary
-        run: python -c "import json;t=json.load(open('docs/generated/truth.json'))['tests'];print(f\"::notice title=tests::{t['summary_line']}\")"
+        run: |
+          python -c "import json;t=json.load(open('docs/generated/truth.json'))['tests'];print(f\"::notice title=tests::{t['summary_line']}\")"
+          # Also in the log, for readers who cannot download artifacts.
+          echo "----- BEGIN truth.json -----"; cat docs/generated/truth.json; echo; echo "----- END truth.json -----"
       - uses: actions/upload-artifact@v4
         with:
           name: truth
