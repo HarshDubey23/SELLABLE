@@ -8,6 +8,11 @@ on PyPI as `sellable-mcp`.
 
 ## [Unreleased]
 
+### Added
+- `examples/langchain_agent.py`: load SELLABLE's MCP tools through LangChain's
+  MCP adapter and shop inside a signed mission. LangChain is optional; the
+  script prints an install hint when it is missing.
+
 ## [2.0.0] - 2026-11-03
 
 First release published to PyPI. The code is the MCP server line that the
