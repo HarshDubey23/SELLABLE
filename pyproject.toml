@@ -24,7 +24,31 @@ description = "MCP server: an AI shopping agent that structurally cannot spend y
 readme = "mcp_server/README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Harsh Dubey", email = "harshimp123455@gmail.com" }]
+keywords = ["mcp", "mcp-server", "ai-agents", "agentic-commerce", "prompt-injection", "llm-security", "payments"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Office/Business :: Financial :: Point-Of-Sale",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/HarshDubey23/SELLABLE"
+Documentation = "https://github.com/HarshDubey23/SELLABLE/tree/main/docs"
+Source = "https://github.com/HarshDubey23/SELLABLE"
+Issues = "https://github.com/HarshDubey23/SELLABLE/issues"
+Changelog = "https://github.com/HarshDubey23/SELLABLE/blob/main/CHANGELOG.md"
+"Live sandbox" = "https://sellable-mcp.onrender.com"
 
 [project.scripts]
 sellable-mcp = "mcp_server.server:main"
