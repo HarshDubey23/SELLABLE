@@ -26,6 +26,9 @@ packaging and maintenance tooling around it.
   for coding agents.
 - Automated pull request review that reads `AGENTS.md` and focuses on the
   money path.
+- Evidence workflow: push a `truth/*` branch to regenerate
+  `docs/generated/truth.json` on a clean runner. README numbers refreshed
+  from it (618 tests passing).
 - `examples/openai_tools_agent.py`: SELLABLE's MCP tools exposed as
   OpenAI-style function tools for any chat-completions agent loop.
 
