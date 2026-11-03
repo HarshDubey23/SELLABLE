@@ -1,0 +1,39 @@
+name: Regenerate evidence
+
+# Runs scripts/generate_truth.py on a clean runner and uploads the new
+# docs/generated/truth.json as an artifact, for when no local machine has the
+# full dependency set. Push any branch named truth/<something>, or run it
+# from the Actions tab. Then commit the artifact and update the README
+# numbers that scripts/verify_readme.py checks.
+
+on:
+  push:
+    branches: ["truth/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  truth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
+      - run: python scripts/generate_truth.py
+      - name: Summary
+        run: |
+          python -c "import json;t=json.load(open('docs/generated/truth.json'))['tests'];print(f\"::notice title=tests::{t['summary_line']}\")"
+          # Also in the log, for readers who cannot download artifacts.
+          echo "----- BEGIN truth.json -----"; cat docs/generated/truth.json; echo; echo "----- END truth.json -----"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: truth
+          path: docs/generated/truth.json

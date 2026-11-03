@@ -7,20 +7,41 @@
 **An AI agent that can shop for you, and structurally cannot spend your money.**
 
 [![CI](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshDubey23/SELLABLE/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/sellable-mcp)](https://pypi.org/project/sellable-mcp/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Track](https://img.shields.io/badge/Razorpay%20Buildathon-AI%20Growth%20%26%20Agentic%20Commerce-0C2340)](https://razorpay.com/buildathon)
 
-[Try it live](https://sellable-mcp.onrender.com) · [Quick start](#quick-start) · [How it works](#how-it-works) · [The hard part](#the-hard-part-what-happens-when-you-dont-know-what-happened) · [Architecture](docs/architecture/) · [What I'd fix next](#limitations)
+[Try it live](https://sellable-mcp.onrender.com) · [60-second start](#60-second-start) · [How it works](#how-it-works) · [Threat model](#threat-model) · [Benchmark](#against-real-models) · [Architecture](docs/architecture/) · [Limitations](#limitations) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-> **Plug it into your agent in one paste.** SELLABLE runs as a remote MCP server:
-> add `https://sellable-mcp.onrender.com/mcp` to Claude, ChatGPT, Cursor or VS Code and ask it to
-> buy you two novels. Each connection gets its own signed sandbox mission and simulated payments.
-> Or open [the home page](https://sellable-mcp.onrender.com) and try to make it overspend from your
-> browser. Details in [mcp_server/README.md](mcp_server/README.md).
+## 60-second start
+
+**No install.** Add the public sandbox to Claude, ChatGPT, Cursor or VS Code and ask it to buy
+you two novels. Each connection gets its own signed sandbox mission and simulated payments:
+
+```json
+{ "mcpServers": { "sellable": { "url": "https://sellable-mcp.onrender.com/mcp" } } }
+```
+
+Or open [the home page](https://sellable-mcp.onrender.com) and try to make it overspend from your
+browser.
+
+**Local, with your own budget.** Standard library only, nothing is charged:
+
+```bash
+pip install sellable-mcp
+sellable-mcp mission new --budget 2000 --category books --forbid electronics
+```
+
+then point your client at it with `"command": "sellable-mcp"` (or `"command": "uvx", "args":
+["sellable-mcp"]`). Client-by-client setup: [mcp_server/README.md](mcp_server/README.md). Using
+a plain chat-completions loop instead of an MCP client?
+[examples/openai_tools_agent.py](examples/openai_tools_agent.py) wires the same tools into any
+OpenAI-compatible API.
 
 ## The problem
 
@@ -100,6 +121,18 @@ Full detail: [system architecture](docs/architecture/system.md) ·
 [money safety](docs/architecture/money-safety.md) ·
 [trust boundaries](docs/architecture/trust-boundary.md)
 
+## Threat model
+
+| | |
+|---|---|
+| **Attacker controls** | everything the model reads: product descriptions, reviews, scraped listings, merchant model output, the user's chat text. Assume the model is fully prompt-injected |
+| **Attacker wants** | a payment the user did not authorize: a higher amount, a different payee, a forbidden item, more quantity, a replayed or widened approval |
+| **Trusted** | the server-side catalog, the signed mission and mandate (keys held outside the agent), the gateway code, the payment provider's authoritative order state |
+| **Defence** | the model's vocabulary has no amount or payee; deterministic rules decide; the approval is single use and hash-bound to the exact basket; execution records intent before dispatch |
+| **Out of scope** | a compromised server or catalog, a stolen signing key, the user knowingly signing a bad mission, choosing a bad product *inside* the budget. See [Limitations](#limitations) |
+
+Found a way through? Please report it privately: [SECURITY.md](SECURITY.md).
+
 ## The hard part: what happens when you don't know what happened
 
 The gateway is the part that demos well. This is the part I think is
@@ -160,7 +193,7 @@ client's MCP config:
   "mcpServers": {
     "sellable": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+      "args": ["sellable-mcp"]
     }
   }
 }
@@ -169,8 +202,11 @@ client's MCP config:
 Then give the agent a budget from your own terminal:
 
 ```bash
-uvx --from git+https://github.com/HarshDubey23/SELLABLE sellable-mcp mission new --budget 2000 --category books
+uvx sellable-mcp mission new --budget 2000 --category books
 ```
+
+To run the unreleased `main` branch instead, use
+`"args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]`.
 
 Setup details, the tool list and its tests: [`mcp_server/README.md`](mcp_server/README.md).
 
@@ -257,6 +293,13 @@ Prompt Guard flagged none of the injected listings. These read as seller copy, n
 jailbreaks. Some SELLABLE wins come from the interface having no price or payee field at all,
 which is the point; the gateway also rejected 20 proposals the models actually made (13 of them
 for a forbidden item).
+
+Reproduce it:
+
+```bash
+python -m eval.llm_injection.report                 # re-score the committed episodes, no keys needed
+GROQ_API_KEY=... python -m eval.llm_injection.run   # re-run against live models
+```
 
 Test coverage by area — the shape matters more than the total:
 
@@ -405,6 +448,8 @@ apps/api/
   ├── recovery/               executor-side payment recovery (NOT under agent/)
   ├── web/                    the three pages and the design system
   └── issuer.py               in-process signer for the browser demo (disclosed)
+mcp_server/                   the MCP server, standard library only (published as sellable-mcp)
+examples/                     SELLABLE tools in a plain chat-completions agent loop
 tests/                        578 tests
 scripts/generate_truth.py     regenerates every number in this README
 docs/architecture/            the diagrams, derived from the code

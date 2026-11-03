@@ -1,0 +1,22 @@
+name: Feature or integration request
+description: A new capability, MCP client, agent framework or payment provider.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The use case, not the solution. Who is the agent shopping for, and what goes wrong today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Optional. If it touches the money path, say how the model stays unable to state an amount or payee.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself

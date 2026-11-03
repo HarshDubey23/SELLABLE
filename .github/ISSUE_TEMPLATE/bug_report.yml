@@ -1,0 +1,46 @@
+name: Bug report
+description: Something does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Found a way to make an agent move money it shouldn't?** Please don't file it here.
+        Report it privately: see [SECURITY.md](https://github.com/HarshDubey23/SELLABLE/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands, MCP client config, or a short script. Include tool calls and responses if it involves an agent.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - MCP server, local (stdio / uvx / pip)
+        - MCP server, remote sandbox (sellable-mcp.onrender.com)
+        - Full app (python run.py)
+        - Tests / CI
+        - Docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "sellable-mcp 2.0.0, or a commit SHA"
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python version, MCP client
+      placeholder: "Windows 11, Python 3.12, Cursor"

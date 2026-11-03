@@ -49,5 +49,6 @@ video_submission.txt
 # reviewer. Kept on disk, out of the repo.
 docs/submission/DEMO_RECORDING_SCRIPT.docx
 build/
+dist/
 *.egg-info/
 eval/llm_injection/episodes/*.log
