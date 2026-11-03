@@ -154,3 +154,43 @@ def test_protocol_errors(setup):
     assert c.call("tools/call", {"name": "nope", "arguments": {}})["error"]["code"] == -32602
     assert c.call("resources/list")["error"]["code"] == -32601
     assert c.call("ping")["result"] == {}
+
+
+def test_version_flag_matches_server_info(tmp_path):
+    r = cli(tmp_path, "--version")
+    assert r.returncode == 0, r.stderr
+
+    c = Client(tmp_path)
+    try:
+        init = c.call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                     "clientInfo": {"name": "pytest", "version": "0"}})
+        version = init["result"]["serverInfo"]["version"]
+    finally:
+        c.close()
+
+    assert r.stdout.strip() == f"sellable-mcp {version}"
+
+
+def test_version_output_is_single_line_on_stdout(tmp_path):
+    r = cli(tmp_path, "--version")
+    assert r.returncode == 0
+    assert r.stdout.strip().count("\n") == 0
+    assert r.stderr == ""
+
+
+def test_version_flag_does_not_break_existing_subcommands(tmp_path):
+    r = cli(tmp_path, "mission", "new", "--budget", "500", "--category", "books")
+    assert r.returncode == 0, r.stderr
+    assert "Signed." in r.stdout
+
+    r = cli(tmp_path, "mission", "list")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["missions"]
+
+
+def test_missing_subcommand_action_still_errors(tmp_path):
+    assert cli(tmp_path, "mission").returncode == 2
+
+
+def test_unknown_flag_still_rejected(tmp_path):
+    assert cli(tmp_path, "--definitely-not-a-flag").returncode == 2
