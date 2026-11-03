@@ -1,0 +1,71 @@
+name: Codex PR review
+
+# Reviews every pull request against AGENTS.md and posts the result as a
+# comment. Needs an OPENAI_API_KEY repository secret
+# (Settings -> Secrets and variables -> Actions). Without the secret, or on
+# pull requests from forks (which never receive secrets), the job is skipped
+# rather than failing.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  codex:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      final_message: ${{ steps.run_codex.outputs.final-message }}
+    steps:
+      - name: Check for the API key
+        id: key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::OPENAI_API_KEY is not set; skipping Codex review."; fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Codex
+        id: run_codex
+        if: steps.key.outputs.present == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/review.md
+          output-file: codex-output.md
+          sandbox: read-only
+
+  post_feedback:
+    needs: codex
+    if: needs.codex.outputs.final_message != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          CODEX_FINAL_MESSAGE: ${{ needs.codex.outputs.final_message }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `### Automated review\n\n${process.env.CODEX_FINAL_MESSAGE}`,
+            });
