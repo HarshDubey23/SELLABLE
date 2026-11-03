@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/HarshDubey23/SELLABLE/security/advisories/new
+    about: Ways to make an agent move money it shouldn't. Please report privately.
+  - name: Try the live sandbox
+    url: https://sellable-mcp.onrender.com
+    about: Connect an MCP client or try to make it overspend from your browser.
