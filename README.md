@@ -46,6 +46,8 @@ OpenAI-compatible API. Using LangChain instead?
 MCP adapter and runs one shopping task inside a mission you signed. LangChain stays optional
 (`pip install "langchain[mcp]>=1.4" langchain-openai`); the script prints that hint if it is
 missing, and it adds no tool that takes an amount or a payee.
+[examples/llamaindex_agent.py](examples/llamaindex_agent.py) does the same with a LlamaIndex
+`FunctionAgent` (`pip install llama-index-tools-mcp llama-index-llms-openai-like`).
 
 ## The problem
 

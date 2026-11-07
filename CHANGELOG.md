@@ -12,6 +12,16 @@ on PyPI as `sellable-mcp`.
 - `examples/langchain_agent.py`: load SELLABLE's MCP tools through LangChain's
   MCP adapter and shop inside a signed mission. LangChain is optional; the
   script prints an install hint when it is missing.
+- `examples/llamaindex_agent.py`: the same flow through LlamaIndex's MCP tool
+  spec and a `FunctionAgent`; LlamaIndex is optional (#16).
+- `sellable-mcp audit log [--limit N] [--mission ID]`: readable audit events (#19).
+- `sellable-mcp config --client claude|cursor|vscode|windsurf` (#20).
+- `sellable-mcp catalog search/get` (#17) and `sellable-mcp mission inspect` (#18).
+- MCP setup snippets for Zed, Cline and Continue (#10, untested).
+
+### Changed
+- Keyword planner matches simple plurals ("laptops" finds a laptop) (#7).
+- CI lints `mcp_server/` and `examples/` with ruff (#12).
 
 ## [2.0.0] - 2026-11-03
 
