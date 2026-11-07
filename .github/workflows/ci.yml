@@ -71,7 +71,7 @@ jobs:
 
       - name: Gateway Purity & Static Analysis
         run: |
-          ruff check apps/api/gateway/
+          ruff check apps/api/gateway/ mcp_server/ examples/
           mypy --strict apps/api/gateway/
 
       - name: Verify the README against the generated evidence
