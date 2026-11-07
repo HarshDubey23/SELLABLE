@@ -226,3 +226,27 @@ def test_cli_mission_inspect(setup):
     assert json.loads(cli(home, "mission", "inspect", mid).stdout)["status"] == "REVOKED"
     unknown = cli(home, "mission", "inspect", "m_fake")
     assert unknown.returncode == 1 and "unknown mission" in unknown.stdout
+
+
+def test_cli_audit_log(setup):
+    c, mid, home = setup
+    ok = c.tool("propose_purchase", mission_id=mid, items=[{"sku": cheapest(c, "books"), "qty": 1}])
+    order = c.tool("place_order", approval_id=ok["approval_id"])
+    r = cli(home, "audit", "log")
+    assert r.returncode == 0, r.stderr
+    rows = json.loads(r.stdout)
+    assert [x["type"] for x in rows] == ["MISSION_SIGNED", "PROPOSAL", "ORDER"]
+    assert rows[0]["actor"] == "user-cli" and rows[1]["status"] == "APPROVE"
+    assert rows[2]["status"] == f"PAID {order['order_id']}" and rows[2]["mission_id"] == mid
+    assert json.loads(cli(home, "audit", "log", "--mission", "m_fake").stdout) == []
+    last = json.loads(cli(home, "audit", "log", "--limit", "1").stdout)
+    assert [x["type"] for x in last] == ["ORDER"]
+
+
+def test_cli_config_client(tmp_path):
+    default = json.loads(cli(tmp_path, "config").stdout)
+    assert set(default) == {"mcpServers"} and "sellable" in default["mcpServers"]
+    assert json.loads(cli(tmp_path, "config", "--client", "cursor").stdout) == default
+    vs = json.loads(cli(tmp_path, "config", "--client", "vscode").stdout)
+    assert vs["servers"]["sellable"]["type"] == "stdio"
+    assert cli(tmp_path, "config", "--client", "emacs").returncode == 2

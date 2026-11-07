@@ -9,7 +9,8 @@
     sellable-mcp catalog get <sku>
     sellable-mcp orders
     sellable-mcp audit verify
-    sellable-mcp config          # prints the MCP client config snippet
+    sellable-mcp audit log [--limit 20] [--mission <id>]
+    sellable-mcp config [--client claude|cursor|vscode|windsurf]   # MCP client config snippet
     sellable-mcp --version       # prints the installed version
 """
 from __future__ import annotations
@@ -48,6 +49,31 @@ def _inspect(mission_id: str) -> dict | None:
             "order_ids": [o["order_id"] for o in orders], "approval_ids": list(apvs)}
 
 
+def _audit_rows(limit: int, mission: str | None) -> list[dict]:
+    rows = []
+    for e in store.audit_entries():
+        b = e["body"]
+        if mission and b.get("mission_id") != mission:
+            continue
+        status = (b.get("rule_id") or b.get("decision") if b["type"] == "PROPOSAL"
+                  else f"PAID {b['order_id']}" if b["type"] == "ORDER" else None)
+        rows.append({"seq": b.get("seq"),
+                     "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(b.get("ts", 0))),
+                     "type": b["type"], "actor": b.get("by", "agent"),
+                     "mission_id": b.get("mission_id"), "status": status})
+    return rows[-limit:] if limit > 0 else rows
+
+
+def _client_config(client: str | None) -> dict:
+    # shortcut: git fallback while sellable-mcp is not on PyPI; use plain `uvx sellable-mcp` once it is (#20).
+    cmd = "sellable-mcp" if shutil.which("sellable-mcp") else "uvx"
+    args = [] if cmd == "sellable-mcp" else [
+        "--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+    if client == "vscode":  # VS Code's .vscode/mcp.json uses "servers" and an explicit type
+        return {"servers": {"sellable": {"type": "stdio", "command": cmd, "args": args}}}
+    return {"mcpServers": {"sellable": {"command": cmd, "args": args}}}
+
+
 def main(argv: list[str]) -> int:
     from mcp_server.server import SERVER_INFO  # single source of truth for the version
     ap = argparse.ArgumentParser(prog="sellable-mcp")
@@ -75,7 +101,11 @@ def main(argv: list[str]) -> int:
     sub.add_parser("orders")
     au = sub.add_parser("audit").add_subparsers(dest="action", required=True)
     au.add_parser("verify")
-    sub.add_parser("config")
+    al = au.add_parser("log", help="recent audit events, oldest first")
+    al.add_argument("--limit", type=int, default=20, help="last N events; 0 for all")
+    al.add_argument("--mission")
+    sub.add_parser("config").add_argument(
+        "--client", choices=["claude", "cursor", "vscode", "windsurf"])
     a = ap.parse_args(argv)
 
     if a.cmd == "mission" and a.action == "new":
@@ -113,13 +143,12 @@ def main(argv: list[str]) -> int:
         return 1 if "error" in res else 0
     elif a.cmd == "orders":
         _print(list(store.orders().values()))
+    elif a.cmd == "audit" and a.action == "log":
+        _print(_audit_rows(a.limit, a.mission))
     elif a.cmd == "audit":
         res = store.verify_audit()
         _print(res)
         return 0 if res["ok"] else 2
     elif a.cmd == "config":
-        cmd = "sellable-mcp" if shutil.which("sellable-mcp") else "uvx"
-        args = [] if cmd == "sellable-mcp" else [
-            "--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
-        _print({"mcpServers": {"sellable": {"command": cmd, "args": args}}})
+        _print(_client_config(a.client))
     return 0
