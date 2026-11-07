@@ -137,6 +137,25 @@ _STOP = {"a", "an", "the", "and", "or", "for", "with", "under", "below",
          "something", "every", "weekend", "play", "use", "using", "new"}
 
 
+def _singular(word: str) -> str:
+    """Fold simple English plurals so "laptops" meets "laptop".
+
+    Applied to both sides, so an imperfect fold ("lens" -> "len") still
+    matches itself. Words ending -ss/-us/-is ("glass", "bus") are left alone.
+    """
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if word.endswith(("sses", "shes", "ches", "xes", "zes")):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith(("ss", "us", "is")) and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _words(text: str) -> set[str]:
+    return {_singular(w) for w in re.findall(r"[a-z]+", text)}
+
+
 def keyword_plan(mission_text: str, catalog: dict[str, Any],
                  max_items: int = 5) -> MissionPlan | None:
     """The deterministic fallback. Scores catalog entries by word overlap.
@@ -145,7 +164,7 @@ def keyword_plan(mission_text: str, catalog: dict[str, Any],
     arbitrary item dressed up as an answer.
     """
     text = (mission_text or "").lower()
-    words = {w for w in re.findall(r"[a-z]+", text) if w not in _STOP
+    words = {_singular(w) for w in re.findall(r"[a-z]+", text) if w not in _STOP
              and len(w) > 2}
 
     budget = parse_budget_paise(mission_text)
@@ -187,8 +206,8 @@ def keyword_plan(mission_text: str, catalog: dict[str, Any],
         # before matching, so they can still appear in names without
         # dragging the wrong product into an answer.
         # Whole words. "mat" must not match "basmati".
-        identity_words = set(re.findall(r"[a-z]+", identity))
-        blurb_words = set(re.findall(r"[a-z]+", blurb))
+        identity_words = _words(identity)
+        blurb_words = _words(blurb)
         meaningful = [w for w in words if w not in _CONTEXT_WORDS]
         identity_hits = sum(1 for w in meaningful if w in identity_words)
         if not identity_hits:
@@ -201,7 +220,7 @@ def keyword_plan(mission_text: str, catalog: dict[str, Any],
         # hit scored the same as naming the thing outright. Matching whole
         # words in the family, and weighting that above everything else,
         # puts the laptop first and leaves the stand as an accessory.
-        family_words = set(family.split())
+        family_words = _words(family)
         exact_family = sum(1 for w in meaningful if w in family_words)
         blurb_hits = sum(1 for w in meaningful if w in blurb_words)
         score = exact_family * 40 + identity_hits * 10 + blurb_hits
