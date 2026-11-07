@@ -74,6 +74,52 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config 
 Prefer pip? Run `pip install sellable-mcp`, then use `"command": "sellable-mcp"` with no args.
 For the unreleased `main` branch, install from `git+https://github.com/HarshDubey23/SELLABLE`.
 
+### Zed, Cline and Continue
+
+Written from each client's official MCP docs and **not yet tested by a maintainer**. If you try one,
+please open a PR adding the client version it worked with. The local snippets install from git
+until `sellable-mcp` is on PyPI; after that, `"args": ["sellable-mcp"]` is enough.
+
+**Zed** (`settings.json`, under `context_servers`):
+
+```json
+{
+  "context_servers": {
+    "sellable": { "url": "https://sellable-mcp.onrender.com/mcp" },
+    "sellable-local": { "command": "uvx", "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"] }
+  }
+}
+```
+
+**Cline** (MCP Servers → Configure → `cline_mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "sellable": { "type": "streamableHttp", "url": "https://sellable-mcp.onrender.com/mcp" },
+    "sellable-local": { "command": "uvx", "args": ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"] }
+  }
+}
+```
+
+**Continue** (`.continue/mcpServers/sellable.yaml`):
+
+```yaml
+name: SELLABLE
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: SELLABLE (sandbox)
+    type: streamable-http
+    url: https://sellable-mcp.onrender.com/mcp
+  - name: SELLABLE (local)
+    command: uvx
+    args: ["--from", "git+https://github.com/HarshDubey23/SELLABLE", "sellable-mcp"]
+```
+
+`sellable-mcp config --client vscode` (or `claude`, `cursor`, `windsurf`) prints the local block
+for those clients.
+
 ## Give the agent a mission (you, not the agent)
 
 Missions are signed with a key that lives in `~/.sellable/key` and is never exposed as a tool:
