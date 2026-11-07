@@ -31,7 +31,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from apps.api.gateway import engine  # noqa: E402
 from apps.api.gateway.types import Decision, Proposal, ProposalItem  # noqa: E402
 from apps.api.products import CATALOG  # noqa: E402
-
 from mcp_server import store  # noqa: E402
 
 SUPPORTED_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")

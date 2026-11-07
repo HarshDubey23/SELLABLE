@@ -476,3 +476,27 @@ def test_a_setup_spans_families_rather_than_repeating_one():
     families = [str((CATALOG[s].get("attributes") or {}).get(
         "family", CATALOG[s]["category"])) for s in plan.skus]
     assert len(set(families)) >= 3,         f"a setup should span families, got {families}"
+
+
+# --------------------------------------------------------- plurals
+
+def _tiny_catalog(*names: str) -> dict:
+    return {f"T-{i}": {"name": n, "category": "misc", "price_paise": 100_00, "attributes": {}}
+            for i, n in enumerate(names)}
+
+
+def test_simple_plurals_match_the_singular_product():
+    """'laptops' must find a laptop, not make the planner refuse (issue #7)."""
+    from apps.api.market.agents.buyer import _singular, keyword_plan
+    from apps.api.products import CATALOG
+
+    plan = keyword_plan("laptops under Rs 90,000", CATALOG)
+    assert plan is not None and any(s.startswith("LAP-") for s in plan.skus)
+
+    cat = _tiny_catalog("AA Battery Pack", "Storage Box", "Drinking Glass")
+    assert keyword_plan("batteries under Rs 500", cat).skus == ["T-0"]
+    assert keyword_plan("boxes under Rs 500", cat).skus == ["T-1"]
+    assert keyword_plan("glasses under Rs 500", cat).skus == ["T-2"]
+    # -ss words must not be stemmed into something else.
+    assert _singular("glass") == "glass"
+    assert keyword_plan("glass under Rs 500", cat).skus == ["T-2"]
