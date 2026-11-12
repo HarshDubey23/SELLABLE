@@ -22,43 +22,87 @@ a hash-chained audit log.
 No dependencies beyond the Python standard library. Payments use a **simulated provider**:
 orders are recorded locally and nothing is charged.
 
-## Connect without installing anything (remote MCP)
+## Connect to the remote demo
 
-A public sandbox runs at **https://sellable-mcp.onrender.com/mcp**. Every connection gets its own
-throwaway store and a signed ₹2,000 mission for books and stationery, with electronics forbidden.
-Payments are simulated. Open the URL's home page to try it in the browser first.
+The hosted demo endpoint is:
+
+`https://sellable-mcp.onrender.com/mcp`
+
+**Availability note:** this endpoint returned `This service has been suspended.` during client testing on 2026-11-12. The configurations below show the intended remote setup, but remote connectivity is currently unverified. Use the local STDIO setup below to run the server.
+
+The public demo is designed to provide an isolated store and a signed ₹2,000 mission for books and stationery, with electronics forbidden. Payments are simulated.
+
+### Cline — remote
+
+Open Cline → MCP Servers → Configure MCP Servers and add this entry to `mcpServers`:
 
 ```json
-{ "mcpServers": { "sellable": { "url": "https://sellable-mcp.onrender.com/mcp" } } }
+{
+  "mcpServers": {
+    "sellable": {
+      "type": "streamableHttp",
+      "url": "https://sellable-mcp.onrender.com/mcp"
+    }
+  }
+}
 ```
 
-- **Claude**: Settings → Connectors → Add custom connector → paste the URL.
-- **ChatGPT**: Settings → Connectors → Advanced → Developer mode → Create → paste the URL, no auth.
-- **Cursor, VS Code, Windsurf**: the JSON above in your `mcpServers` block.
+### Zed — remote
 
-Want a different demo mission? The person configuring the client sets it in the URL, never the
-agent: `/mcp?budget=5000&category=cricket&category=fitness&forbid=electronics&hours=6`.
-Values are clamped (₹100 to ₹1,00,000, 1 to 24 hours, real categories only).
+Open Settings → AI → MCP Servers → Add Server → Add Remote Server, or add this to your Zed settings:
 
-The free host sleeps when idle, so the first request after a while can take about a minute.
+> Zed may initiate an OAuth flow when a remote server has no Authorization header. The
+> SELLABLE demo does not document OAuth support, so this configuration is an example only
+> and is not verified. Prefer the local STDIO configuration below.
 
-### Host your own
-
-```bash
-# public demo, like the one above
-sellable-mcp serve --http --sandbox --host 0.0.0.0 --port 8765
-
-# private: your own signed missions, every request needs the token
-SELLABLE_MCP_TOKEN=$(openssl rand -hex 24) sellable-mcp serve --http --host 0.0.0.0 --port 8765
+```json
+{
+  "context_servers": {
+    "sellable": {
+      "url": "https://sellable-mcp.onrender.com/mcp"
+    }
+  }
+}
 ```
 
-Streamable HTTP, JSON responses, one `Mcp-Session-Id` per client, 90 requests a minute per IP,
-`SELLABLE_ALLOWED_ORIGINS` to restrict browser origins. Still standard library only.
+### Continue — remote
 
-## Install locally (one line, no clone)
+Create a YAML file in `.continue/mcpServers/`, for example `sellable-remote.yaml`:
 
-You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config (Cursor:
-`~/.cursor/mcp.json`; VS Code, Windsurf and other clients use the same `mcpServers` block):
+```yaml
+name: SELLABLE MCP Remote
+version: 1.0.0
+schema: v1
+
+mcpServers:
+  - name: sellable
+    type: streamable-http
+    url: https://sellable-mcp.onrender.com/mcp
+```
+
+Continue MCP servers are available in Agent mode.
+
+## Run locally (STDIO)
+
+Local mode runs the server process on your machine and does not depend on the hosted demo.
+
+### Prerequisites
+
+- Python 3.10 or newer
+- [uv](https://docs.astral.sh/uv/) for the one-line installation, or a local SELLABLE checkout
+
+### Option A: install from PyPI
+
+Add this configuration to the relevant MCP client. The server communicates over standard input/output (STDIO).
+
+```json
+{
+  "command": "uvx",
+  "args": ["sellable-mcp"]
+}
+```
+
+For Cline, place it under the `mcpServers` key:
 
 ```json
 {
@@ -71,8 +115,103 @@ You need [uv](https://docs.astral.sh/uv/). Add this to your MCP client's config 
 }
 ```
 
-Prefer pip? Run `pip install sellable-mcp`, then use `"command": "sellable-mcp"` with no args.
-For the unreleased `main` branch, install from `git+https://github.com/HarshDubey23/SELLABLE`.
+### Option B: run from a local checkout
+
+Clone the repository, create its virtual environment, and install the project:
+
+```bash
+git clone https://github.com/HarshDubey23/SELLABLE.git
+cd SELLABLE
+uv sync
+```
+
+Use the absolute path to the environment's executable in your client configuration:
+
+`/absolute/path/to/SELLABLE/.venv/bin/sellable-mcp`
+
+Do not copy the example path literally. Replace it with the path on your machine.
+
+### Cline — local
+
+Open Cline → MCP Servers → Configure MCP Servers. Add:
+
+```json
+{
+  "mcpServers": {
+    "sellable": {
+      "command": "/absolute/path/to/SELLABLE/.venv/bin/sellable-mcp"
+    }
+  }
+}
+```
+
+### Zed — local
+
+Open Settings → AI → MCP Servers → Add Server → Add Local Server, or add this to your Zed settings:
+
+```json
+{
+  "context_servers": {
+    "sellable": {
+      "command": "/absolute/path/to/SELLABLE/.venv/bin/sellable-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Continue — local
+
+Create `.continue/mcpServers/sellable.yaml` in your workspace:
+
+```yaml
+name: SELLABLE MCP
+version: 1.0.0
+schema: v1
+
+mcpServers:
+  - name: sellable
+    type: stdio
+    command: /absolute/path/to/SELLABLE/.venv/bin/sellable-mcp
+    args: []
+```
+
+Replace the command path with your local absolute path. Switch Continue to Agent mode to use MCP tools.
+
+## Client verification
+
+The following local configurations were checked on macOS. Tool discovery and server connection are reported separately; a green connection indicator alone does not prove that tools were discovered or invoked.
+
+| Client | Version | Local verification |
+|---|---:|---|
+| Cline | 4.0.12 | 10 SELLABLE tools discovered |
+| Zed | 1.28.1 | Server showed active; tool discovery and invocation not verified |
+| Continue | 2.0.0 | 10 SELLABLE tools discovered |
+
+Screenshots captured during local setup:
+
+- `screenshots/cline-local-mcp.png`
+- `screenshots/continue-local-mcp.png`
+
+Tool discovery was verified in Cline and Continue. An actual tool invocation was not part of this verification.
+
+### Official client documentation
+
+- [Cline MCP documentation](https://docs.cline.bot/mcp/mcp-overview)
+- [Zed MCP documentation](https://zed.dev/docs/ai/mcp)
+- [Continue MCP documentation](https://docs.continue.dev/customize/deep-dives/mcp)
+
+### Host your own remote server
+
+```bash
+# Public demo
+sellable-mcp serve --http --sandbox --host 0.0.0.0 --port 8765
+
+# Private: requests require the token
+SELLABLE_MCP_TOKEN=$(openssl rand -hex 24) sellable-mcp serve --http --host 0.0.0.0 --port 8765
+```
+
+The HTTP server uses Streamable HTTP, JSON responses, one `Mcp-Session-Id` per client, and a rate limit of 90 requests per minute per IP. Use `SELLABLE_ALLOWED_ORIGINS` to restrict browser origins.
 
 ## Give the agent a mission (you, not the agent)
 
