@@ -194,3 +194,59 @@ def test_missing_subcommand_action_still_errors(tmp_path):
 
 def test_unknown_flag_still_rejected(tmp_path):
     assert cli(tmp_path, "--definitely-not-a-flag").returncode == 2
+
+
+def test_cli_catalog_search_and_get(tmp_path):
+    r = cli(tmp_path, "catalog", "search", "--category", "books", "--limit", "2")
+    assert r.returncode == 0, r.stderr
+    res = json.loads(r.stdout)["results"]
+    assert len(res) == 2 and all(p["category"] == "books" for p in res)
+    got = cli(tmp_path, "catalog", "get", res[0]["sku"])
+    assert got.returncode == 0 and json.loads(got.stdout)["sku"] == res[0]["sku"]
+    bad = cli(tmp_path, "catalog", "get", "NOPE-1")
+    assert bad.returncode == 1 and "unknown sku" in json.loads(bad.stdout)["error"]
+
+
+def test_cli_mission_inspect(setup):
+    c, mid, home = setup
+    sku = cheapest(c, "books")
+    paid = c.tool("propose_purchase", mission_id=mid, items=[{"sku": sku, "qty": 1}])
+    order = c.tool("place_order", approval_id=paid["approval_id"])
+    pending = c.tool("propose_purchase", mission_id=mid, items=[{"sku": sku, "qty": 1}])
+    r = cli(home, "mission", "inspect", mid)
+    assert r.returncode == 0, r.stderr
+    info = json.loads(r.stdout)
+    price = order["amount_paise"]
+    assert info["status"] == "ACTIVE" and info["budget_paise"] == 200000
+    assert info["spent_paise"] == price and info["committed_paise"] == 2 * price
+    assert info["remaining_paise"] == 200000 - 2 * price
+    assert info["order_ids"] == [order["order_id"]]
+    assert set(info["approval_ids"]) == {paid["approval_id"], pending["approval_id"]}
+    assert cli(home, "mission", "revoke", mid).returncode == 0
+    assert json.loads(cli(home, "mission", "inspect", mid).stdout)["status"] == "REVOKED"
+    unknown = cli(home, "mission", "inspect", "m_fake")
+    assert unknown.returncode == 1 and "unknown mission" in unknown.stdout
+
+
+def test_cli_audit_log(setup):
+    c, mid, home = setup
+    ok = c.tool("propose_purchase", mission_id=mid, items=[{"sku": cheapest(c, "books"), "qty": 1}])
+    order = c.tool("place_order", approval_id=ok["approval_id"])
+    r = cli(home, "audit", "log")
+    assert r.returncode == 0, r.stderr
+    rows = json.loads(r.stdout)
+    assert [x["type"] for x in rows] == ["MISSION_SIGNED", "PROPOSAL", "ORDER"]
+    assert rows[0]["actor"] == "user-cli" and rows[1]["status"] == "APPROVE"
+    assert rows[2]["status"] == f"PAID {order['order_id']}" and rows[2]["mission_id"] == mid
+    assert json.loads(cli(home, "audit", "log", "--mission", "m_fake").stdout) == []
+    last = json.loads(cli(home, "audit", "log", "--limit", "1").stdout)
+    assert [x["type"] for x in last] == ["ORDER"]
+
+
+def test_cli_config_client(tmp_path):
+    default = json.loads(cli(tmp_path, "config").stdout)
+    assert set(default) == {"mcpServers"} and "sellable" in default["mcpServers"]
+    assert json.loads(cli(tmp_path, "config", "--client", "cursor").stdout) == default
+    vs = json.loads(cli(tmp_path, "config", "--client", "vscode").stdout)
+    assert vs["servers"]["sellable"]["type"] == "stdio"
+    assert cli(tmp_path, "config", "--client", "emacs").returncode == 2

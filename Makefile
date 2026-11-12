@@ -37,7 +37,7 @@ test:
 ci:
 	python scripts/doctor.py
 	pytest -q
-	ruff check apps/api/gateway/
+	ruff check apps/api/gateway/ mcp_server/ examples/
 	mypy --strict apps/api/gateway/
 	python scripts/verify_readme.py
 	python scripts/final_verify.py --strict
